@@ -243,6 +243,20 @@ def train(cfg: Config):
         assert all(torch.equal(p, live[k]) for k, p in get_peft_model_state_dict(model).items())
         result["final_checkpoint"] = {"path": ckpt, "step": step, "reloaded_bitwise_equal": True}
 
+    def save_log(status):
+        """results/<run>/training.json; written when training ends and again after the final evaluation."""
+        torch.cuda.synchronize()
+        _, total = torch.cuda.mem_get_info()
+        mem = {"peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30,
+               "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30, "device_gib": total / 2**30}
+        mem["within_budget"] = mem["peak_reserved_gib"] < GPU_BUDGET_GIB
+        result["status"], result["memory"] = status, mem
+        (RESULTS / name).mkdir(parents=True, exist_ok=True)
+        (RESULTS / name / "training.json").write_text(json.dumps({k: v for k, v in result.items() if k != "final"}, indent=1))
+        return mem
+
+    save_log("training complete; final evaluation pending")  # survives a failure in the evaluation below
+
     if t.full_val and ckpt is not None:
         trained_full = evaluate(model, tok, val_all)
         tm, bm = metrics(trained_full), metrics(base_full)
@@ -271,14 +285,7 @@ def train(cfg: Config):
             "label_scores": {"ids": [e["id"] for e in val_all], **scores}, "predictions": trained_full,
         }, indent=1))
 
-    torch.cuda.synchronize()
-    free, total = torch.cuda.mem_get_info()
-    mem = {"peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30,
-           "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30, "device_gib": total / 2**30}
-    mem["within_budget"] = mem["peak_reserved_gib"] < GPU_BUDGET_GIB
-    result["memory"] = mem
-    (RESULTS / name).mkdir(parents=True, exist_ok=True)
-    (RESULTS / name / "training.json").write_text(json.dumps({k: v for k, v in result.items() if k != "final"}, indent=1))
+    mem = save_log("complete")  # memory peaks now include the final evaluation
     if "final" in result:
         write_benchmark(name, result)
 
