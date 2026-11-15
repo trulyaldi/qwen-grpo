@@ -114,6 +114,7 @@ def test_resumed_run_equals_uninterrupted_run_bitwise(sandbox, tmp_path, monkeyp
     assert same_tensors(state(part, 4)["optimizer"], state(full, 4)["optimizer"])
     assert same_tensors(state(part, 4)["rng"]["torch"], state(full, 4)["rng"]["torch"])
     assert out["batches_by_mixed_groups"] == ref["batches_by_mixed_groups"]
+    assert sorted(p.name for p in (full / "results" / "tiny" / "plots").iterdir())[0] == "gradient_norm.png"  # train writes plots
 
 
 def test_resume_refuses_other_configs_later_checkpoints_and_adapter_only_checkpoints(sandbox, tmp_path):
@@ -214,3 +215,33 @@ def test_overwrite_deletes_earlier_outputs_only_when_enabled(sandbox, tmp_path):
     out = trainer.train(config.load(tmp_path / "cfg.yaml"), device="cpu")
     assert out["successful_steps"] == 4 and not stale.exists() and other.exists()
     assert sorted(p.name for p in (root / "checkpoints").glob("tiny_step*")) == [f"tiny_step{i}" for i in (0, 2, 4)]
+
+
+def test_adapter_loading_takes_effect_and_rejects_other_targets(tmp_path):
+    """Moved from the removed tests/test_verification.py: a loaded adapter changes the logits to the saved model's."""
+    spec = (("q_proj", "v_proj", "o_proj"), 2)
+    torch.manual_seed(1)
+    trained = tiny_lora_model(torch.float32, "cpu", spec, 8, 16, 0.0, None)
+    for n, p in trained.named_parameters():
+        if "lora_B" in n:
+            torch.nn.init.normal_(p, std=0.5)
+    trained.save_pretrained(tmp_path / "ckpt")
+    fresh = tiny_lora_model(torch.float32, "cpu", spec, 8, 16, 0.0, None)  # B = 0: behaves as the base model
+    ids = torch.tensor([[1, 2, 3, 4, 5]])
+    logits = lambda m: m(input_ids=ids).logits.detach()
+    before = logits(fresh)
+    checkpointing.load_adapter(fresh, tmp_path / "ckpt")
+    assert torch.equal(logits(fresh), logits(trained)) and (logits(fresh) - before).abs().max() > 1e-3
+    with pytest.raises(SystemExit, match="adapter tensors differ"):
+        checkpointing.load_adapter(tiny_lora_model(torch.float32, "cpu", (("o_proj",), 1), 8, 16, 0.0, None), tmp_path / "ckpt")
+
+
+def test_training_plots_from_a_log(tmp_path):
+    from qwen_grpo.reporting import training_plots
+    rows = [{"step": s, "attempt": s + (s > 2), "mixed_groups": 1 + (s % 2), "mean_reward": 0.5 + 0.01 * s, "grad_norm": 0.3,
+             "loss": 1e-8} for s in range(1, 6)]
+    log = {"config": {"B": 2}, "training": rows, "zero_signal": [{"attempt": 3, "mixed_groups": 0}],
+           "evaluations": [{"step": s, "metrics": {"accuracy": 0.78 + 0.001 * s, "n": 160}} for s in (0, 5)]}
+    made = training_plots(log, tmp_path)
+    assert sorted(made) == sorted(p.name for p in tmp_path.iterdir()) == sorted(
+        ["reward.png", "validation_accuracy.png", "mixed_reward_fraction.png", "gradient_norm.png", "loss.png"])

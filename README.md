@@ -13,12 +13,11 @@ qwen_grpo/          reusable implementation (no scripts, no experiment hyperpara
   config.py         YAML run configuration: strict loading, validation, normalization of saved configs
   trainer.py        multi-step GRPO + LoRA run: train(cfg, resume=None); logs, checkpoints, final evaluation
   checkpointing.py  adapter save/load/config checks, resumable training state (optimizer, progress, RNG)
-  verification.py   base / adapter / merged / LR=0 comparisons, merge equivalence, parameter deltas, reward integrity
-  reporting.py      verification JSON, plots and report.md from saved files
+  reporting.py      training diagnostics plots from a training log
   training.py       prompt batching, rollout grouping, rewards, one GRPO optimizer update
   evaluation.py     greedy predictions, metrics, complete-label scores, ROC AUC, paired bootstraps
 configs/            YAML run configurations: default.yaml (the historical last2 B=2 run), qwen3_4b.yaml (untested example)
-scripts/run.py      entry point: train [--resume] | validate | test | verify | report --config <yaml>
+scripts/run.py      entry point: train [--resume] | validate | test --config <yaml>
 research/           historical experiments: each script has a main() and writes to results/ or checkpoints/
   baseline.py       greedy base-model evaluation
   train_grpo.py     historical, Stage 1: one full-rank GRPO step on one fp32 matrix, LR=0 control
@@ -64,7 +63,6 @@ rejects unknown, missing or ill-typed keys and values the code does not support.
 | `data` | `train_samples`, `val_subset`, `subset_seed` | balanced subsets of the cached splits |
 | `training` | `batch_size`, `batch_mode`, `group_size`, `learning_rate`, `max_steps`, `max_attempts`, `clip_eps`, `temperature`, `max_new_tokens`, `seed`, `eval_every`, `full_val` | `learning_rate: 0.0` is the negative control |
 | `evaluation` (optional) | `max_new_tokens` (4), `batch_size` (32), `score_batch_size` (8), `bootstrap_samples` (10000), `bootstrap_seed` (42) | greedy evaluation in `train`, `validate`, `test`; the defaults are the saved baseline's settings |
-| `verification` | `split`, `merge_subset`, `negative_control`, `statistics` | `verify` only; its bootstrap is `statistics` (2000 resamples by default), not `evaluation` |
 
 Optional keys were added after the first YAML runs. Their defaults are the values those runs used, so older configs and
 the `yaml_config` saved in older training logs still load and compare as before.
@@ -83,28 +81,22 @@ Every checkpoint `checkpoints/<name>_step<N>/` written by `train` (steps that ar
 the last step) holds the adapter plus `training_state.pt`: AdamW state, step and attempt counters, the training log so
 far and the CPU/CUDA/Python RNG states. `train --resume checkpoints/<name>_step<N>` with the same YAML reloads all of it,
 replays the prompt stream to the saved attempt, and continues; the result equals the uninterrupted run bitwise (checked on
-CPU by `tests/test_trainer.py` and on the GPU for the default config). Resume refuses a different config (the
-`verification` section may differ) and refuses to overwrite checkpoints later than `<N>`. Checkpoints from before this
+CPU by `tests/test_trainer.py` and on the GPU for the default config). Resume refuses a different config (only
+`run.overwrite` may differ) and refuses to overwrite checkpoints later than `<N>`. Checkpoints from before this
 feature (all those committed so far) hold the adapter only and cannot resume; they evaluate as before.
 
-### Verifying a checkpoint
+### Validation and negative control
 
-```bash
-.venv/bin/python scripts/run.py verify --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
-.venv/bin/python scripts/run.py report --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>   # no model loaded
-```
+`train` evaluates the validation subset at step 0 (the zero adapter, i.e. the base model) and at every checkpoint, and with
+`training.full_val` compares the final checkpoint with the base model on the full validation split (accuracy, macro-F1,
+ROC AUC, paired bootstrap CIs, prediction flips). It also writes `results/<name>/plots/`: rollout reward, validation-subset
+accuracy, mixed-reward fraction, gradient norm and loss per step. `validate` repeats the base-vs-trained comparison for
+any saved checkpoint. For an LR=0 negative control, train a copy of the config with `learning_rate: 0.0` and its own
+`run.name`; the training log then records whether parameters and subset predictions stayed unchanged.
 
-`verify` never retrains the checkpoint. On `verification.split` it compares the base model (the saved baseline is reused
-after an in-process drift check), the adapter-attached model, the merged model (PEFT `merge_and_unload`, also checked in fp32
-on CPU) and, if configured, an LR=0 control. It writes `results/verification/<checkpoint>/`: `evaluation/<model>.json` (raw
-predictions, label scores, metrics), `verification/*.json` (parameter deltas, policy change, merge equivalence, negative
-control, paired bootstrap CIs, reward integrity, training diagnostics), `plots/` and `report.md`. `report` rebuilds `plots/`
-and `report.md` from those files.
-
-LR=0 control: set `verification.negative_control.checkpoint` to an existing control of the same config (its training log is
-checked), or `train: true` to run one first as `<run.name>_lr0`. A second `verify` with `train: true` refuses because
-`<run.name>_lr0` then exists; point `checkpoint:` at the control it produced instead. Training plots need the run's
-`results/<run.name>/training.json`; runs from this version on also save their initial adapter as `checkpoints/<run>_step0`.
+A separate `verify` workflow (adapter vs merged model, merge equivalence, reward integrity) existed until it was removed in
+the cleanup after commit `f403e12`; its outputs remain in `results/verification/` as historical evidence and can be
+regenerated by checking out that commit.
 
 Historical runs (before YAML configs) were launched with command-line flags; their exact settings are in the `config` block
 of each training log.

@@ -6,7 +6,8 @@ with the YAML evaluation settings (defaults: those of the saved baseline, so run
 Checkpoints hold the adapter and the training state (optimizer, progress, log so far, RNG), so a run resumes from any
 checkpoint it saved and continues as the uninterrupted run would have (tests/test_trainer.py checks this bitwise on CPU).
 Outputs: results/<run>/training.json (config, environment, per-step log, subset evaluations, memory), results/<run>/validation.json
-(raw full-validation predictions and label scores of the final checkpoint), results/benchmarks/<run>.{json,md} (metrics).
+(raw full-validation predictions and label scores of the final checkpoint), results/<run>/plots/ (training diagnostics:
+reward, validation-subset accuracy, mixed-reward fraction, gradient norm, loss), results/benchmarks/<run>.{json,md} (metrics).
 """
 import hashlib
 import importlib.metadata
@@ -31,6 +32,7 @@ from qwen_grpo.evaluation import (BENCHMARKS, RESULTS, confusion_table, evaluate
                                   settings, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, lora_modules
 from qwen_grpo.policy import generate_rollouts
+from qwen_grpo.reporting import training_plots
 from qwen_grpo.sentiment import SPLITS_PATH, build_prompts, load_splits, parse_label
 from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_step
 
@@ -142,7 +144,7 @@ def check_resume(cfg, checkpoint, state):
     name, step = run_of(checkpoint)
     if name != cfg.run.name or step != state["step"]:
         raise SystemExit(f"{checkpoint} is not a checkpoint of run {cfg.run.name!r}")
-    strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items() if k != "verification"}
+    strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items()}
     if strip(normalized(state["config"])) != strip(as_dict(cfg)):
         raise SystemExit(f"{checkpoint} was trained with a different config; resume needs the same YAML settings")
     if later := sorted(rel(p) for p in CHECKPOINTS.glob(f"{name}_step*") if (run_of(p)[1] or 0) > step):
@@ -386,6 +388,8 @@ def train(cfg: Config, resume=None, device="cuda"):
         }, indent=1))
 
     mem = save_log("complete")  # memory peaks now include the final evaluation
+    (RESULTS / name / "plots").mkdir(exist_ok=True)
+    training_plots(result, RESULTS / name / "plots")
     if "final" in result:
         write_benchmark(name, result, cfg.run.gpu_budget_gib)
 

@@ -78,29 +78,8 @@ class Training:
 
 
 @dataclass(frozen=True)
-class NegativeControl:
-    checkpoint: str | None  # an LR=0 checkpoint of this config (provenance checked), or null
-    train: bool  # true: run the LR=0 control with train() before verifying (run.name + "_lr0"); never implicit
-
-
-@dataclass(frozen=True)
-class Statistics:
-    confidence_level: float
-    bootstrap_samples: int
-    seed: int
-
-
-@dataclass(frozen=True)
-class Verification:
-    split: str  # held-out split: validation (model selection) or test (final report only)
-    merge_subset: int  # examples for the full-logit adapter-vs-merged comparison
-    negative_control: NegativeControl
-    statistics: Statistics
-
-
-@dataclass(frozen=True)
 class Evaluation:
-    """Greedy evaluation and the bootstrap of train's full-validation and validate/test (verify uses its statistics).
+    """Greedy evaluation and the paired bootstrap of train's full-validation and of validate/test.
     Defaults are the settings of the saved baseline; bf16 outputs depend on batch shape, so batch sizes matter too."""
     max_new_tokens: int = MAX_NEW
     batch_size: int = BATCH
@@ -116,7 +95,6 @@ class Config:
     lora: Lora
     data: Data
     training: Training
-    verification: Verification
     evaluation: Evaluation = field(default_factory=Evaluation)
 
 
@@ -140,8 +118,6 @@ def _build(cls, raw, where):
             values[f.name] = _build(LoraTargets, v, key)
         elif f.type == str | LoraTargets and type(v) is str:
             values[f.name] = v
-        elif f.type == str | None and (v is None or type(v) is str):
-            values[f.name] = v
         elif f.type is float and isinstance(v, (int, float)) and not isinstance(v, bool):
             values[f.name] = float(v)
         elif type(v) is f.type:  # exact: rejects True for an int, 1 for a bool, "1e-4" for a float
@@ -152,8 +128,7 @@ def _build(cls, raw, where):
 
 
 def validate(cfg: Config) -> Config:
-    m, lo, d, t, v, e = cfg.model, cfg.lora, cfg.data, cfg.training, cfg.verification, cfg.evaluation
-    nc, st = v.negative_control, v.statistics
+    m, lo, d, t, e = cfg.model, cfg.lora, cfg.data, cfg.training, cfg.evaluation
     custom = lo.targets if isinstance(lo.targets, LoraTargets) else None
     checks = [
         (re.fullmatch(r"[A-Za-z0-9_.-]+", cfg.run.name) is not None, "run.name: letters, digits, '_', '.', '-' only"),
@@ -183,15 +158,9 @@ def validate(cfg: Config) -> Config:
         (t.temperature == 1.0, "training.temperature: only 1.0 (log-probs are computed from untempered logits, so "
                                "any other value would make the sampler differ from the policy being optimized)"),
         (t.max_new_tokens >= 1 and t.eval_every >= 1, "training.max_new_tokens and training.eval_every: >= 1"),
-        (v.split in ("validation", "test"), "verification.split: validation or test"),
-        (v.merge_subset >= 1, "verification.merge_subset: >= 1"),
-        (not (nc.train and nc.checkpoint), "verification.negative_control: set checkpoint or train, not both"),
-        (0 < st.confidence_level < 1, "verification.statistics.confidence_level: in (0, 1)"),
         (min(e.max_new_tokens, e.batch_size, e.score_batch_size) >= 1, "evaluation: token and batch sizes >= 1"),
         (e.bootstrap_samples >= 1000 and e.bootstrap_samples % 1000 == 0,
          "evaluation.bootstrap_samples: a multiple of 1000, >= 1000 (resampled in chunks of 1000)"),
-        (st.bootstrap_samples >= 100 and st.bootstrap_samples % 100 == 0,
-         "verification.statistics.bootstrap_samples: a multiple of 100, >= 100 (resampled in chunks of 100)"),
     ]
     errors = [msg for ok, msg in checks if not ok]
     if errors:
@@ -208,5 +177,6 @@ def as_dict(cfg: Config) -> dict:
 
 
 def normalized(raw: dict) -> dict:
-    """A saved config dict (e.g. a training log's yaml_config) in the current schema, defaults filled in."""
-    return as_dict(_build(Config, raw, "saved config"))
+    """A saved config dict (e.g. a training log's yaml_config) in the current schema, defaults filled in. Configs saved
+    before the verify workflow was removed carry a `verification` section; it never affected training and is dropped."""
+    return as_dict(_build(Config, {k: v for k, v in raw.items() if k != "verification"}, "saved config"))

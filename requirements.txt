@@ -5,5 +5,5 @@ huggingface-hub==0.36.2
 pytest==9.2.0
 peft==0.21.3
 pyyaml==6.0.3  # configs/*.yaml
-matplotlib==3.10.7  # verification plots (qwen_grpo/reporting.py)
+matplotlib==3.10.7  # training plots (qwen_grpo/reporting.py)
 trl==1.18.0  # research/trl_reference only
