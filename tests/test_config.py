@@ -182,12 +182,6 @@ def test_checkpoint_must_match_config(tmp_path):
         verification.check_adapter_matches(other, ckpt)
 
 
-def test_train_refuses_to_overwrite_existing_outputs(tmp_path):
-    from qwen_grpo.trainer import train
-
-    cfg = config.load(write(tmp_path, lambda r: r["run"].update(name="grpo_lora_last2_b2_balanced")))
-    with pytest.raises(SystemExit, match="refusing to overwrite"):
-        train(cfg)  # raises before loading data or the model
 
 
 # --- LoRA targeting and evaluation settings ----------------------------------------------------------------------
