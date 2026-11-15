@@ -1,0 +1,31 @@
+{
+ "checkpoint": "checkpoints/default_rerun_step30",
+ "split": "validation",
+ "n": 1066,
+ "label_balance": {
+  "NEGATIVE": 533,
+  "POSITIVE": 533
+ },
+ "notes": {
+  "base": "reused results/baseline/validation.json; first 32 examples re-scored in-process: identical",
+  "lr_zero": "LR=0 control checkpoints/default_lr0_step30 evaluated with the adapter attached",
+  "adapter": "checkpoints/default_rerun_step30 attached to Qwen/Qwen3-0.6B (bfloat16)",
+  "merged": "PEFT merge_and_unload in torch.bfloat16 (W0 + (a/r)BA rounded to the base dtype), in place"
+ },
+ "training_log": {
+  "source": "results/default_rerun/training.json",
+  "missing_reason": null
+ },
+ "gpu_memory": {
+  "peak_allocated_gib": 1.5346407890319824,
+  "peak_reserved_gib": 2.595703125,
+  "host_peak_rss_gib_after_fp32_check": 4.278133392333984,
+  "host_peak_rss_gib": 4.278133392333984
+ },
+ "models": [
+  "base",
+  "lr_zero",
+  "adapter",
+  "merged"
+ ]
+}

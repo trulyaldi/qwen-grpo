@@ -1,0 +1,259 @@
+{
+ "adapter_vs_base": {
+  "n": 1066,
+  "level": 0.95,
+  "resamples": 2000,
+  "seed": 42,
+  "accuracy": {
+   "ref": 0.7485928705440901,
+   "new": 0.726078799249531,
+   "diff": -0.0225140712945591,
+   "ci": [
+    -0.04690431519699812,
+    0.001876172607879925
+   ],
+   "ci_excludes_zero": false
+  },
+  "macro_f1": {
+   "ref": 0.7493387633947897,
+   "new": 0.7221500685260793,
+   "diff": -0.02718869486871034,
+   "ci": [
+    -0.05081598043055353,
+    -0.003523873122229567
+   ],
+   "ci_excludes_zero": true
+  },
+  "auc": {
+   "ref": 0.8277335623695391,
+   "new": 0.8366304221564369,
+   "diff": 0.008896859786897804,
+   "ci": [
+    0.0063390345983125014,
+    0.011584529848040578
+   ],
+   "ci_excludes_zero": true
+  },
+  "paired_changes": {
+   "NEGATIVE": {
+    "base_wrong_now_right": 0,
+    "base_right_now_wrong": 99
+   },
+   "POSITIVE": {
+    "base_wrong_now_right": 75,
+    "base_right_now_wrong": 0
+   },
+   "flips": {
+    "NEGATIVE->POSITIVE": 173,
+    "None->POSITIVE": 1
+   },
+   "invalid_to_valid": 1,
+   "valid_to_invalid": 0
+  }
+ },
+ "merged_vs_base": {
+  "n": 1066,
+  "level": 0.95,
+  "resamples": 2000,
+  "seed": 42,
+  "accuracy": {
+   "ref": 0.7485928705440901,
+   "new": 0.7326454033771107,
+   "diff": -0.01594746716697936,
+   "ci": [
+    -0.039399624765478425,
+    0.0075046904315197
+   ],
+   "ci_excludes_zero": false
+  },
+  "macro_f1": {
+   "ref": 0.7493387633947897,
+   "new": 0.7292910733425202,
+   "diff": -0.020047690052269473,
+   "ci": [
+    -0.04381304312692154,
+    0.0034001093174166187
+   ],
+   "ci_excludes_zero": false
+  },
+  "auc": {
+   "ref": 0.8277335623695391,
+   "new": 0.8374541076916037,
+   "diff": 0.009720545322064567,
+   "ci": [
+    0.007197656368250796,
+    0.012271022461270938
+   ],
+   "ci_excludes_zero": true
+  },
+  "paired_changes": {
+   "NEGATIVE": {
+    "base_wrong_now_right": 0,
+    "base_right_now_wrong": 92
+   },
+   "POSITIVE": {
+    "base_wrong_now_right": 75,
+    "base_right_now_wrong": 0
+   },
+   "flips": {
+    "NEGATIVE->POSITIVE": 166,
+    "None->POSITIVE": 1
+   },
+   "invalid_to_valid": 1,
+   "valid_to_invalid": 0
+  }
+ },
+ "merged_vs_adapter": {
+  "n": 1066,
+  "level": 0.95,
+  "resamples": 2000,
+  "seed": 42,
+  "accuracy": {
+   "ref": 0.726078799249531,
+   "new": 0.7326454033771107,
+   "diff": 0.006566604127579738,
+   "ci": [
+    0.0,
+    0.013133208255159476
+   ],
+   "ci_excludes_zero": false
+  },
+  "macro_f1": {
+   "ref": 0.7221500685260793,
+   "new": 0.7292910733425202,
+   "diff": 0.007141004816440866,
+   "ci": [
+    0.000252327294794504,
+    0.014701384519111743
+   ],
+   "ci_excludes_zero": true
+  },
+  "auc": {
+   "ref": 0.8366304221564369,
+   "new": 0.8374541076916037,
+   "diff": 0.0008236855351667627,
+   "ci": [
+    -0.0008836579381813444,
+    0.0025857653763433274
+   ],
+   "ci_excludes_zero": false
+  },
+  "paired_changes": {
+   "NEGATIVE": {
+    "base_wrong_now_right": 9,
+    "base_right_now_wrong": 2
+   },
+   "POSITIVE": {
+    "base_wrong_now_right": 1,
+    "base_right_now_wrong": 1
+   },
+   "flips": {
+    "POSITIVE->NEGATIVE": 10,
+    "NEGATIVE->POSITIVE": 3
+   },
+   "invalid_to_valid": 0,
+   "valid_to_invalid": 0
+  }
+ },
+ "lr_zero_vs_base": {
+  "n": 1066,
+  "level": 0.95,
+  "resamples": 2000,
+  "seed": 42,
+  "accuracy": {
+   "ref": 0.7485928705440901,
+   "new": 0.7485928705440901,
+   "diff": 0.0,
+   "ci": [
+    0.0,
+    0.0
+   ],
+   "ci_excludes_zero": false
+  },
+  "macro_f1": {
+   "ref": 0.7493387633947897,
+   "new": 0.7493387633947897,
+   "diff": 0.0,
+   "ci": [
+    0.0,
+    0.0
+   ],
+   "ci_excludes_zero": false
+  },
+  "auc": {
+   "ref": 0.8277335623695391,
+   "new": 0.8277335623695391,
+   "diff": 0.0,
+   "ci": [
+    0.0,
+    0.0
+   ],
+   "ci_excludes_zero": false
+  },
+  "paired_changes": {
+   "NEGATIVE": {
+    "base_wrong_now_right": 0,
+    "base_right_now_wrong": 0
+   },
+   "POSITIVE": {
+    "base_wrong_now_right": 0,
+    "base_right_now_wrong": 0
+   },
+   "flips": {},
+   "invalid_to_valid": 0,
+   "valid_to_invalid": 0
+  }
+ },
+ "adapter_vs_lr_zero": {
+  "n": 1066,
+  "level": 0.95,
+  "resamples": 2000,
+  "seed": 42,
+  "accuracy": {
+   "ref": 0.7485928705440901,
+   "new": 0.726078799249531,
+   "diff": -0.0225140712945591,
+   "ci": [
+    -0.04690431519699812,
+    0.001876172607879925
+   ],
+   "ci_excludes_zero": false
+  },
+  "macro_f1": {
+   "ref": 0.7493387633947897,
+   "new": 0.7221500685260793,
+   "diff": -0.02718869486871034,
+   "ci": [
+    -0.05081598043055353,
+    -0.003523873122229567
+   ],
+   "ci_excludes_zero": true
+  },
+  "auc": {
+   "ref": 0.8277335623695391,
+   "new": 0.8366304221564369,
+   "diff": 0.008896859786897804,
+   "ci": [
+    0.0063390345983125014,
+    0.011584529848040578
+   ],
+   "ci_excludes_zero": true
+  },
+  "paired_changes": {
+   "NEGATIVE": {
+    "base_wrong_now_right": 0,
+    "base_right_now_wrong": 99
+   },
+   "POSITIVE": {
+    "base_wrong_now_right": 75,
+    "base_right_now_wrong": 0
+   },
+   "flips": {
+    "NEGATIVE->POSITIVE": 173,
+    "None->POSITIVE": 1
+   },
+   "invalid_to_valid": 1,
+   "valid_to_invalid": 0
+  }
+ }
+}

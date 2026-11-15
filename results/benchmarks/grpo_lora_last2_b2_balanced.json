@@ -1,0 +1,203 @@
+{
+ "run": "grpo_lora_last2_b2_balanced",
+ "model": "Qwen/Qwen3-0.6B",
+ "seed": 42,
+ "split": "validation",
+ "checkpoint": "checkpoints/grpo_lora_last2_b2_balanced_step30",
+ "step": 30,
+ "predictions": "results/grpo_lora_last2_b2_balanced/validation.json",
+ "training_log": "results/grpo_lora_last2_b2_balanced/training.json",
+ "baseline_predictions": "results/baseline/validation.json",
+ "config": {
+  "lr": 0.0001,
+  "steps": 30,
+  "max_attempts": 300,
+  "train_samples": 32,
+  "B": 2,
+  "G": 6,
+  "batch_mode": "balanced",
+  "batch_policy": "balanced (see batches()); a zero-signal batch is consumed, not retried",
+  "rollout_max_new_tokens": 8,
+  "eval_max_new_tokens": 4,
+  "eval_batch": 32,
+  "sampling": {
+   "do_sample": true,
+   "temperature": 1.0,
+   "top_p": 1.0,
+   "top_k": 0
+  },
+  "clip_eps": 0.2,
+  "kl_beta": 0.0,
+  "optimizer": "AdamW(weight_decay=0)",
+  "grad_clipping": null,
+  "lora": {
+   "targets": "last2-attention",
+   "target_regex": "model\\.layers\\.(26|27)\\.self_attn\\.(q|v|o)_proj",
+   "modules": [
+    "model.layers.26.self_attn.q_proj",
+    "model.layers.26.self_attn.v_proj",
+    "model.layers.26.self_attn.o_proj",
+    "model.layers.27.self_attn.q_proj",
+    "model.layers.27.self_attn.v_proj",
+    "model.layers.27.self_attn.o_proj"
+   ],
+   "trainable_params": 131072,
+   "r": 8,
+   "alpha": 16,
+   "dropout": 0.0
+  },
+  "dtypes": {
+   "base": "torch.bfloat16",
+   "lora": "torch.float32"
+  },
+  "gpu_budget_gib": 4.0,
+  "checkpoint_contents": "adapter weights + adapter_config only (no optimizer/RNG state)",
+  "initial_checkpoint": "checkpoints/grpo_lora_last2_b2_balanced_step0"
+ },
+ "base": {
+  "n": 1066,
+  "accuracy": 0.7485928705440901,
+  "invalid_rate": 0.0028142589118198874,
+  "predicted_positive_rate": 0.46622889305816134,
+  "predicted_negative_rate": 0.5309568480300187,
+  "recall_NEGATIVE": 0.7823639774859287,
+  "recall_POSITIVE": 0.7148217636022514,
+  "macro_f1": 0.7493387633947897,
+  "confusion": {
+   "NEGATIVE": {
+    "NEGATIVE": 417,
+    "POSITIVE": 149
+   },
+   "POSITIVE": {
+    "NEGATIVE": 116,
+    "POSITIVE": 381
+   },
+   "None": {
+    "NEGATIVE": 0,
+    "POSITIVE": 3
+   }
+  }
+ },
+ "trained": {
+  "n": 1066,
+  "accuracy": 0.726078799249531,
+  "invalid_rate": 0.001876172607879925,
+  "predicted_positive_rate": 0.6294559099437148,
+  "predicted_negative_rate": 0.36866791744840527,
+  "recall_NEGATIVE": 0.5966228893058161,
+  "recall_POSITIVE": 0.8555347091932458,
+  "macro_f1": 0.7221500685260793,
+  "confusion": {
+   "NEGATIVE": {
+    "NEGATIVE": 318,
+    "POSITIVE": 75
+   },
+   "POSITIVE": {
+    "NEGATIVE": 215,
+    "POSITIVE": 456
+   },
+   "None": {
+    "NEGATIVE": 0,
+    "POSITIVE": 2
+   }
+  }
+ },
+ "accuracy_diff": -0.0225140712945591,
+ "bootstrap_ci95": [
+  -0.04690431519699812,
+  0.001876172607879925
+ ],
+ "bootstrap": {
+  "resamples": 10000,
+  "seed": 42,
+  "paired_by": "id"
+ },
+ "paired_changes": {
+  "NEGATIVE": {
+   "base_wrong_now_right": 0,
+   "base_right_now_wrong": 99
+  },
+  "POSITIVE": {
+   "base_wrong_now_right": 75,
+   "base_right_now_wrong": 0
+  },
+  "flips": {
+   "NEGATIVE->POSITIVE": 173,
+   "None->POSITIVE": 1
+  },
+  "invalid_to_valid": 1,
+  "valid_to_invalid": 0
+ },
+ "vs_saved": {
+  "base": {
+   "ref_metrics": {
+    "n": 1066,
+    "accuracy": 0.7485928705440901,
+    "invalid_rate": 0.0028142589118198874,
+    "predicted_positive_rate": 0.46622889305816134,
+    "predicted_negative_rate": 0.5309568480300187,
+    "recall_NEGATIVE": 0.7823639774859287,
+    "recall_POSITIVE": 0.7148217636022514,
+    "macro_f1": 0.7493387633947897,
+    "confusion": {
+     "NEGATIVE": {
+      "NEGATIVE": 417,
+      "POSITIVE": 149
+     },
+     "POSITIVE": {
+      "NEGATIVE": 116,
+      "POSITIVE": 381
+     },
+     "None": {
+      "NEGATIVE": 0,
+      "POSITIVE": 3
+     }
+    }
+   },
+   "accuracy_diff": -0.0225140712945591,
+   "ci95": [
+    -0.04690431519699812,
+    0.001876172607879925
+   ],
+   "paired_changes": {
+    "NEGATIVE": {
+     "base_wrong_now_right": 0,
+     "base_right_now_wrong": 99
+    },
+    "POSITIVE": {
+     "base_wrong_now_right": 75,
+     "base_right_now_wrong": 0
+    },
+    "flips": {
+     "NEGATIVE->POSITIVE": 173,
+     "None->POSITIVE": 1
+    },
+    "invalid_to_valid": 1,
+    "valid_to_invalid": 0
+   }
+  }
+ },
+ "auc": {
+  "trained": 0.8366304221564369,
+  "base": 0.8277335623695391
+ },
+ "auc_vs": {
+  "base": {
+   "auc_diff": 0.008896859786897804,
+   "ci": [
+    0.006320158471464929,
+    0.011517605398308275
+   ],
+   "ci95": [
+    0.006320158471464929,
+    0.011517605398308275
+   ]
+  }
+ },
+ "memory": {
+  "peak_allocated_gib": 1.636277198791504,
+  "peak_reserved_gib": 2.44140625,
+  "device_gib": 3.99957275390625,
+  "within_budget": true
+ }
+}

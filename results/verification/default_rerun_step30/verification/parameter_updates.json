@@ -1,0 +1,115 @@
+{
+ "tensors": {
+  "base_model.model.model.layers.26.self_attn.o_proj.lora_A.weight": {
+   "delta": 0.09098067879676819,
+   "init_norm": 1.6395920515060425,
+   "relative": 0.05548982670000025,
+   "changed": true
+  },
+  "base_model.model.model.layers.26.self_attn.o_proj.lora_B.weight": {
+   "delta": 0.0694362223148346,
+   "init_norm": 0.0,
+   "relative": null,
+   "changed": true
+  },
+  "base_model.model.model.layers.26.self_attn.q_proj.lora_A.weight": {
+   "delta": 0.09998681396245956,
+   "init_norm": 1.6358766555786133,
+   "relative": 0.06112124262027201,
+   "changed": true
+  },
+  "base_model.model.model.layers.26.self_attn.q_proj.lora_B.weight": {
+   "delta": 0.1066463515162468,
+   "init_norm": 0.0,
+   "relative": null,
+   "changed": true
+  },
+  "base_model.model.model.layers.26.self_attn.v_proj.lora_A.weight": {
+   "delta": 0.0717296451330185,
+   "init_norm": 1.6307913064956665,
+   "relative": 0.04398456433224131,
+   "changed": true
+  },
+  "base_model.model.model.layers.26.self_attn.v_proj.lora_B.weight": {
+   "delta": 0.0720788985490799,
+   "init_norm": 0.0,
+   "relative": null,
+   "changed": true
+  },
+  "base_model.model.model.layers.27.self_attn.o_proj.lora_A.weight": {
+   "delta": 0.09785671532154083,
+   "init_norm": 1.6233770847320557,
+   "relative": 0.06027971950687751,
+   "changed": true
+  },
+  "base_model.model.model.layers.27.self_attn.o_proj.lora_B.weight": {
+   "delta": 0.06529095768928528,
+   "init_norm": 0.0,
+   "relative": null,
+   "changed": true
+  },
+  "base_model.model.model.layers.27.self_attn.q_proj.lora_A.weight": {
+   "delta": 0.1083153784275055,
+   "init_norm": 1.6348551511764526,
+   "relative": 0.06625380747007527,
+   "changed": true
+  },
+  "base_model.model.model.layers.27.self_attn.q_proj.lora_B.weight": {
+   "delta": 0.12291745841503143,
+   "init_norm": 0.0,
+   "relative": null,
+   "changed": true
+  },
+  "base_model.model.model.layers.27.self_attn.v_proj.lora_A.weight": {
+   "delta": 0.08276672661304474,
+   "init_norm": 1.6488078832626343,
+   "relative": 0.05019792023875291,
+   "changed": true
+  },
+  "base_model.model.model.layers.27.self_attn.v_proj.lora_B.weight": {
+   "delta": 0.06920285522937775,
+   "init_norm": 0.0,
+   "relative": null,
+   "changed": true
+  }
+ },
+ "effective": {
+  "model.layers.26.self_attn.q_proj": {
+   "delta_frobenius": 0.12657245993614197,
+   "relative_to_W0": 0.0024430281028542163,
+   "trained_frobenius": 0.12657245993614197
+  },
+  "model.layers.26.self_attn.v_proj": {
+   "delta_frobenius": 0.08373410254716873,
+   "relative_to_W0": 0.00276654822541394,
+   "trained_frobenius": 0.08373410254716873
+  },
+  "model.layers.26.self_attn.o_proj": {
+   "delta_frobenius": 0.08091847598552704,
+   "relative_to_W0": 0.002031941908716376,
+   "trained_frobenius": 0.08091847598552704
+  },
+  "model.layers.27.self_attn.q_proj": {
+   "delta_frobenius": 0.14642152190208435,
+   "relative_to_W0": 0.0032939740515225335,
+   "trained_frobenius": 0.14642152190208435
+  },
+  "model.layers.27.self_attn.v_proj": {
+   "delta_frobenius": 0.08198690414428711,
+   "relative_to_W0": 0.0024778239661992526,
+   "trained_frobenius": 0.08198690414428711
+  },
+  "model.layers.27.self_attn.o_proj": {
+   "delta_frobenius": 0.07629197835922241,
+   "relative_to_W0": 0.0018107485705355906,
+   "trained_frobenius": 0.07629197835922241
+  }
+ },
+ "total_delta": 0.31165577907600245,
+ "tensors_changed": 12,
+ "tensors_total": 12,
+ "init_source": "saved checkpoints/default_rerun_step0",
+ "init_validated_by_control": true,
+ "only_lora_tensors_in_checkpoint": true,
+ "status": "PASS"
+}

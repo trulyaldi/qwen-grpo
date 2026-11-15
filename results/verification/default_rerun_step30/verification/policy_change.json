@@ -1,0 +1,32 @@
+{
+ "adapter": {
+  "n": 1066,
+  "mean_abs_score_change": 0.6504717259816336,
+  "max_abs_score_change": 1.3748369216918945,
+  "mean_score_change": 0.6504717259816336,
+  "prediction_disagreement_rate": 0.16322701688555347,
+  "correctness_changed": 174,
+  "improved": 75,
+  "degraded": 99
+ },
+ "merged": {
+  "n": 1066,
+  "mean_abs_score_change": 0.6233294508358774,
+  "max_abs_score_change": 1.2500112056732178,
+  "mean_score_change": 0.6233294508358774,
+  "prediction_disagreement_rate": 0.15666041275797374,
+  "correctness_changed": 167,
+  "improved": 75,
+  "degraded": 92
+ },
+ "lr_zero": {
+  "n": 1066,
+  "mean_abs_score_change": 0.0,
+  "max_abs_score_change": 0.0,
+  "mean_score_change": 0.0,
+  "prediction_disagreement_rate": 0.0,
+  "correctness_changed": 0,
+  "improved": 0,
+  "degraded": 0
+ }
+}

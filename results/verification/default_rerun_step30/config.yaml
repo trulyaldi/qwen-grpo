@@ -1,0 +1,38 @@
+run:
+  name: default_rerun
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: bfloat16
+  thinking: false
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+  targets: last2-attention
+data:
+  train_samples: 32
+  val_subset: 160
+  subset_seed: 42
+training:
+  batch_size: 2
+  batch_mode: balanced
+  group_size: 6
+  learning_rate: 0.0001
+  max_steps: 30
+  max_attempts: 300
+  clip_eps: 0.2
+  temperature: 1.0
+  max_new_tokens: 8
+  seed: 42
+  eval_every: 10
+  full_val: true
+verification:
+  split: validation
+  merge_subset: 8
+  negative_control:
+    checkpoint: checkpoints/default_lr0_step30
+    train: false
+  statistics:
+    confidence_level: 0.95
+    bootstrap_samples: 2000
+    seed: 42

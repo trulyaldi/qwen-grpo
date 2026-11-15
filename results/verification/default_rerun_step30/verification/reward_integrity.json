@@ -1,0 +1,226 @@
+{
+ "probes": [
+  {
+   "response": "POSITIVE",
+   "label": "POSITIVE",
+   "parsed": "POSITIVE",
+   "training_reward": 1.0,
+   "strict_correct": true
+  },
+  {
+   "response": "NEGATIVE",
+   "label": "POSITIVE",
+   "parsed": "NEGATIVE",
+   "training_reward": 0.0,
+   "strict_correct": false
+  },
+  {
+   "response": "positive",
+   "label": "POSITIVE",
+   "parsed": "POSITIVE",
+   "training_reward": 1.0,
+   "strict_correct": false
+  },
+  {
+   "response": " POSITIVE ",
+   "label": "POSITIVE",
+   "parsed": "POSITIVE",
+   "training_reward": 1.0,
+   "strict_correct": false
+  },
+  {
+   "response": "POSITIVE\n\n",
+   "label": "POSITIVE",
+   "parsed": "POSITIVE",
+   "training_reward": 1.0,
+   "strict_correct": false
+  },
+  {
+   "response": "POSITIVE.",
+   "label": "POSITIVE",
+   "parsed": null,
+   "training_reward": 0.0,
+   "strict_correct": false
+  },
+  {
+   "response": "POSITIVE NEGATIVE",
+   "label": "POSITIVE",
+   "parsed": null,
+   "training_reward": 0.0,
+   "strict_correct": false
+  },
+  {
+   "response": "POSITIVE because the movie was good",
+   "label": "POSITIVE",
+   "parsed": null,
+   "training_reward": 0.0,
+   "strict_correct": false
+  },
+  {
+   "response": "The answer is POSITIVE",
+   "label": "POSITIVE",
+   "parsed": null,
+   "training_reward": 0.0,
+   "strict_correct": false
+  },
+  {
+   "response": "**POSITIVE**",
+   "label": "POSITIVE",
+   "parsed": null,
+   "training_reward": 0.0,
+   "strict_correct": false
+  },
+  {
+   "response": "POS",
+   "label": "POSITIVE",
+   "parsed": null,
+   "training_reward": 0.0,
+   "strict_correct": false
+  },
+  {
+   "response": "NEGATIVE POSITIVE",
+   "label": "POSITIVE",
+   "parsed": null,
+   "training_reward": 0.0,
+   "strict_correct": false
+  }
+ ],
+ "parser_contract": "strip() + upper() + exact match to POSITIVE/NEGATIVE",
+ "strict_contract": "response == canonical label",
+ "models": {
+  "base": {
+   "n": 1066,
+   "disagreements": 0,
+   "disagreement_rate": 0.0,
+   "examples": [],
+   "logged_correct_mismatches": 0,
+   "response_forms": {
+    "NEGATIVE": 566,
+    "POSITIVE": 497,
+    "Satisfying": 1,
+    "DECASIA": 1,
+    "Honest": 1
+   },
+   "invalid_rate": 0.0028142589118198874
+  },
+  "lr_zero": {
+   "n": 1066,
+   "disagreements": 0,
+   "disagreement_rate": 0.0,
+   "examples": [],
+   "logged_correct_mismatches": 0,
+   "response_forms": {
+    "NEGATIVE": 566,
+    "POSITIVE": 497,
+    "Satisfying": 1,
+    "DECASIA": 1,
+    "Honest": 1
+   },
+   "invalid_rate": 0.0028142589118198874
+  },
+  "adapter": {
+   "n": 1066,
+   "disagreements": 0,
+   "disagreement_rate": 0.0,
+   "examples": [],
+   "logged_correct_mismatches": 0,
+   "response_forms": {
+    "POSITIVE": 671,
+    "NEGATIVE": 393,
+    "DECASIA": 1,
+    "Honest": 1
+   },
+   "invalid_rate": 0.001876172607879925
+  },
+  "merged": {
+   "n": 1066,
+   "disagreements": 0,
+   "disagreement_rate": 0.0,
+   "examples": [],
+   "logged_correct_mismatches": 0,
+   "response_forms": {
+    "POSITIVE": 664,
+    "NEGATIVE": 400,
+    "DECASIA": 1,
+    "Honest": 1
+   },
+   "invalid_rate": 0.001876172607879925
+  }
+ },
+ "training_rollouts": {
+  "n": 372,
+  "disagreements": 7,
+  "disagreement_rate": 0.01881720430107527,
+  "examples": [
+   {
+    "attempt": 6,
+    "input": "sitting in the third row of the imax cinema at sydney's darling harbour , but i sometimes felt as though i was in the tiny two seater plane that carried the giant camera around australia , sweeping and gliding , banking and hovering over some of the most not",
+    "response": "Positive",
+    "label": "POSITIVE",
+    "training_reward": 1.0,
+    "strict_correct": false
+   },
+   {
+    "attempt": 10,
+    "input": "if you ignore the cliches and concentrate on city by the sea's interpersonal drama , it ain't half-bad .",
+    "response": "Positive",
+    "label": "POSITIVE",
+    "training_reward": 1.0,
+    "strict_correct": false
+   },
+   {
+    "attempt": 10,
+    "input": "the plot grinds on with yawn-provoking dullness .",
+    "response": "Negative",
+    "label": "NEGATIVE",
+    "training_reward": 1.0,
+    "strict_correct": false
+   },
+   {
+    "attempt": 18,
+    "input": "glizty but formulaic and silly . . . cagney's 'top of the world' has been replaced by the bottom of the barrel .",
+    "response": "Negative",
+    "label": "NEGATIVE",
+    "training_reward": 1.0,
+    "strict_correct": false
+   },
+   {
+    "attempt": 25,
+    "input": "robin williams departs from his fun friendly demeanor in exchange for a darker unnerving role .",
+    "response": " NEGATIVE",
+    "label": "NEGATIVE",
+    "training_reward": 1.0,
+    "strict_correct": false
+   },
+   {
+    "attempt": 26,
+    "input": "it's bright , pristine style and bold colors make it as much fun as reading an oversized picture book before bedtime .",
+    "response": "positive",
+    "label": "POSITIVE",
+    "training_reward": 1.0,
+    "strict_correct": false
+   },
+   {
+    "attempt": 29,
+    "input": "elegant and eloquent [meditation] on death and that most elusive of passions , love .",
+    "response": "positive",
+    "label": "POSITIVE",
+    "training_reward": 1.0,
+    "strict_correct": false
+   }
+  ],
+  "logged_reward_rescore_mismatches": 0,
+  "response_forms": {
+   "NEGATIVE": 176,
+   "POSITIVE": 175,
+   "POSTIVE": 3,
+   "positive": 3,
+   "Positive": 2,
+   "-NEGATIVE": 2,
+   "Negative": 2,
+   " NEGATIVE": 2,
+   "NOTICE: Your message appears to have": 1,
+   "SENSE: NEGATIVE": 1
+  }
+ }
+}
