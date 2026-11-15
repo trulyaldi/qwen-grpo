@@ -246,9 +246,9 @@ def train(cfg: Config):
     if t.full_val and ckpt is not None:
         trained_full = evaluate(model, tok, val_all)
         tm, bm = metrics(trained_full), metrics(base_full)
-        diff, lo, hi = paired_bootstrap([p["correct"] for p in base_full], [p["correct"] for p in trained_full])
+        diff, ci_lo, ci_hi = paired_bootstrap([p["correct"] for p in base_full], [p["correct"] for p in trained_full])
         out_path = RESULTS / name / "validation.json"
-        result["final"] = {"base": bm, "trained": tm, "accuracy_diff": diff, "bootstrap_ci95": [lo, hi],
+        result["final"] = {"base": bm, "trained": tm, "accuracy_diff": diff, "bootstrap_ci95": [ci_lo, ci_hi],
                            "bootstrap": {"resamples": BOOTSTRAP, "seed": SEED, "paired_by": "id"},
                            "paired_changes": paired_changes(base_full, trained_full),
                            "vs_saved": {ref: paired_compare(json.loads(p.read_text())["predictions"], trained_full)
