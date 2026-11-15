@@ -1,0 +1,34 @@
+# GRPO + LoRA on Qwen3-0.6B. All keys are required; see qwen_grpo/config.py for meanings and allowed values.
+# Values reproduce the historical "last2 B=2 balanced" run except run.name (new outputs, nothing overwritten).
+run:
+  name: default
+
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: bfloat16
+  thinking: false
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+  targets: last2-attention   # q/v/o projections of layers 26-27; last-o-proj = layer 27 o_proj only
+
+data:
+  train_samples: 32
+  val_subset: 160
+  subset_seed: 42
+
+training:
+  batch_size: 2
+  batch_mode: balanced       # cycle (B=1) | balanced (B=2, one prompt per label) | unconstrained
+  group_size: 6
+  learning_rate: 1.0e-4      # write floats with a decimal point: PyYAML reads 1e-4 as a string
+  max_steps: 30
+  max_attempts: 300
+  clip_eps: 0.2
+  temperature: 1.0
+  max_new_tokens: 8
+  seed: 42
+  eval_every: 10
+  full_val: true

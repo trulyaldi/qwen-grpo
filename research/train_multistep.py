@@ -1,11 +1,12 @@
-"""Multi-step GRPO + LoRA on Qwen3-0.6B: fp32 adapters on selected projections of a frozen bf16 model.
+"""Multi-step GRPO + LoRA on Qwen3-0.6B: fp32 adapters on selected projections of a frozen base model.
 
-Rollouts: T=1 sampling, MAX_NEW_TOKENS. Evaluation: evaluation.predict (greedy, evaluation.MAX_NEW tokens, BATCH chunks).
+Run through scripts/run.py train --config <yaml>; every setting comes from the config (qwen_grpo/config.py).
+Rollouts: sampled at training.temperature, training.max_new_tokens. Evaluation: evaluation.predict (greedy, evaluation.MAX_NEW
+tokens, BATCH chunks), fixed so that every run is comparable with the baseline.
 Checkpoints hold adapter weights only; optimizer and RNG state are not saved, so they cannot resume training exactly.
 Outputs: results/<run>/training.json (config, per-step log, subset evaluations, memory), results/<run>/validation.json
 (raw full-validation predictions and label scores of the final checkpoint), results/benchmarks/<run>.{json,md} (metrics).
 """
-import argparse
 import hashlib
 import json
 import math
@@ -19,8 +20,8 @@ from transformers import AutoTokenizer
 
 from qwen_grpo.evaluation import (BATCH, BOOTSTRAP, MAX_NEW, confusion_table, evaluate, label_scores, metrics, metrics_table,
                                   paired_auc_bootstrap, paired_bootstrap, paired_changes, paired_compare, summary, win_matrix)
-from qwen_grpo.model import (ALPHA, DTYPE, EOS_IDS, EXPECTED_MODULES, MODEL, RANK, TARGETS, digest, expected_lora_params,
-                             lora_model, lora_modules)
+from qwen_grpo.config import DTYPES, Config, as_dict
+from qwen_grpo.model import EOS_IDS, EXPECTED_MODULES, MODEL, TARGETS, digest, expected_lora_params, lora_model, lora_modules
 from qwen_grpo.policy import generate_rollouts
 from qwen_grpo.sentiment import build_prompts, load_splits, parse_label
 from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_step
@@ -29,20 +30,19 @@ from research.baseline import BENCHMARKS, RESULTS, predictions_path
 ROOT = Path(__file__).parents[1]
 BASE_FILE = predictions_path("validation")
 SUFFIX = {"last-o-proj": "", "last2-attention": "_last2"}
-BATCH_MODES = ("cycle", "balanced", "unconstrained")
-TRAIN_SAMPLES, VAL_SUBSET, G = 32, 160, 6
-MAX_NEW_TOKENS, MAX_STEPS, EVAL_EVERY = 8, 30, 10
-LEARNING_RATE, CLIP_EPS, SEED = 1e-4, 0.2, 42
+REFERENCE_STEPS = 30  # final step of the saved historical runs in REFERENCES
+SEED = 42  # bootstrap seed; also the seed of the historical runs (research/trl_reference uses it)
 GPU_BUDGET_GIB = 4.0
 
 
 def output_name(targets, tag="", B=1, mode="cycle"):
+    """Naming scheme of the historical runs (before YAML configs), used only to locate REFERENCES."""
     return f"grpo_lora{SUFFIX[targets]}" + (f"_b{B}_{mode}" if B > 1 else "") + tag
 
 
 def _ref(targets, B=1, mode="cycle"):
     name = output_name(targets, B=B, mode=mode)
-    return RESULTS / name / "validation.json", ROOT / "checkpoints" / f"{name}_step{MAX_STEPS}", targets
+    return RESULTS / name / "validation.json", ROOT / "checkpoints" / f"{name}_step{REFERENCE_STEPS}", targets
 
 
 # Saved final (step-30) predictions (and adapters, for label scoring) of earlier runs: (predictions, checkpoint, targets).
@@ -100,50 +100,42 @@ def write_benchmark(name, result):
     (BENCHMARKS / f"{name}.md").write_text("\n".join(md) + "\n")
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--lr", type=float, default=LEARNING_RATE)
-    ap.add_argument("--steps", type=int, default=MAX_STEPS)
-    ap.add_argument("--train-samples", type=int, default=TRAIN_SAMPLES)
-    ap.add_argument("--val-subset", type=int, default=VAL_SUBSET)
-    ap.add_argument("--eval-every", type=int, default=EVAL_EVERY)
-    ap.add_argument("--max-attempts", type=int, default=None, help="rollout-group budget (default 10 * steps)")
-    ap.add_argument("--full-val", action=argparse.BooleanOptionalAction, default=True)
-    ap.add_argument("--lora-targets", choices=TARGETS, default="last-o-proj")
-    ap.add_argument("--batch-size", type=int, default=1, help="prompts per optimizer step (B)")
-    ap.add_argument("--batch-mode", choices=BATCH_MODES, default=None, help="default: cycle for B=1")
-    ap.add_argument("--tag", default="", help="suffix for output names, e.g. _smoke or _lr0")
-    args = ap.parse_args()
-    B, mode = args.batch_size, args.batch_mode or ("cycle" if args.batch_size == 1 else None)
-    if (mode == "cycle") != (B == 1) or (mode == "balanced" and B != 2):
-        ap.error("B=1 uses --batch-mode cycle; balanced needs --batch-size 2; B>1 needs an explicit mode")
-    max_attempts = args.max_attempts or 10 * args.steps
-    name = output_name(args.lora_targets, args.tag, B, mode)
+def existing_outputs(name):
+    return sorted([*RESULTS.glob(name), *(BENCHMARKS.glob(f"{name}.*")), *(ROOT / "checkpoints").glob(f"{name}_step*")])
+
+
+def train(cfg: Config):
+    t, lo, d = cfg.training, cfg.lora, cfg.data
+    B, mode, G, name = t.batch_size, t.batch_mode, t.group_size, cfg.run.name
+    if clash := existing_outputs(name):
+        raise SystemExit(f"run.name {name!r} already has outputs, refusing to overwrite: {[str(c.relative_to(ROOT)) for c in clash]}")
+    dtype = DTYPES[cfg.model.dtype]
 
     splits = load_splits()
-    train = balanced_subset(splits["train"], args.train_samples, SEED)
+    train_set = balanced_subset(splits["train"], d.train_samples, d.subset_seed)
     val_all = [{"id": i, **r} for i, r in enumerate(splits["validation"])]
-    val_sub = sorted(balanced_subset(splits["validation"], args.val_subset, SEED), key=lambda e: e["id"])
+    val_sub = sorted(balanced_subset(splits["validation"], d.val_subset, d.subset_seed), key=lambda e: e["id"])
     base_file = json.loads(BASE_FILE.read_text())["predictions"]
     base_file_m = metrics(base_file)
     assert len(base_file) == 1066 and round(base_file_m["accuracy"], 4) == 0.7486 and sum(p["prediction"] is None for p in base_file) == 3
     assert [(p["id"], p["text"], p["label"]) for p in base_file] == [(e["id"], e["text"], e["label"]) for e in val_all]
 
-    torch.manual_seed(SEED)  # LoRA A init
-    tok = AutoTokenizer.from_pretrained(MODEL, padding_side="left")
+    torch.manual_seed(t.seed)  # LoRA A init
+    tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
     assert tok.pad_token_id == EOS_IDS[1]  # baseline.py pads with tok.pad_token_id, lora_model with EOS_IDS[1]
-    model = lora_model(DTYPE, "cuda", TARGETS[args.lora_targets])
+    model = lora_model(dtype, "cuda", TARGETS[lo.targets], lo.rank, lo.alpha, lo.dropout, cfg.model.name)
     torch.cuda.reset_peak_memory_stats()
     params = {n: p for n, p in model.named_parameters() if p.requires_grad}
     frozen = {n: p for n, p in model.named_parameters() if not p.requires_grad}
     modules = lora_modules(model)
     module_names = [n for n, _ in modules]
-    assert module_names == EXPECTED_MODULES[args.lora_targets], module_names
+    assert module_names == EXPECTED_MODULES[lo.targets], module_names
     n_trainable = sum(p.numel() for p in params.values())
-    assert n_trainable == expected_lora_params(modules) and len(params) == 2 * len(modules)
+    assert n_trainable == expected_lora_params(modules, lo.rank) and len(params) == 2 * len(modules)
+    assert all(m.r["default"] == lo.rank and m.scaling["default"] == lo.alpha / lo.rank for _, m in modules)
     assert all(".lora_A." in n or ".lora_B." in n for n in params)
     assert all(p.dtype == torch.float32 for p in params.values())
-    assert all(p.dtype == DTYPE for p in frozen.values())
+    assert all(p.dtype == dtype for p in frozen.values())
     names_A, names_B = [n for n in params if ".lora_A." in n], [n for n in params if ".lora_B." in n]
     pairs = [(m.lora_A["default"].weight, m.lora_B["default"].weight) for _, m in modules]
     assert all(params[n].abs().max() == 0 for n in names_B)  # adapter contributes exactly zero: initial model = base
@@ -152,25 +144,25 @@ def main():
     print(f"trainable parameters: {n_trainable:,} of {n_total:,} ({100 * n_trainable / n_total:.4f}%)")
     init = {n: p.detach().clone() for n, p in params.items()}
     frozen_digest = {n: digest(p) for n, p in frozen.items()}
-    optimizer = torch.optim.AdamW(params.values(), lr=args.lr, weight_decay=0.0)
+    optimizer = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
 
     result = {
-        "model": MODEL, "method": "GRPO+LoRA", "seed": SEED,
-        "config": {"lr": args.lr, "steps": args.steps, "max_attempts": max_attempts, "train_samples": args.train_samples,
-                   "train_ids": [e["id"] for e in train], "val_subset_ids": [e["id"] for e in val_sub],
+        "model": MODEL, "method": "GRPO+LoRA", "seed": t.seed, "yaml_config": as_dict(cfg),
+        "config": {"lr": t.learning_rate, "steps": t.max_steps, "max_attempts": t.max_attempts, "train_samples": d.train_samples,
+                   "train_ids": [e["id"] for e in train_set], "val_subset_ids": [e["id"] for e in val_sub],
                    "B": B, "G": G, "batch_mode": mode,
-                   "batch_policy": f"{mode} (see batches()); a zero-signal batch is consumed, not retried", "rollout_max_new_tokens": MAX_NEW_TOKENS, "eval_max_new_tokens": MAX_NEW,
-                   "eval_batch": BATCH, "sampling": {"do_sample": True, "temperature": 1.0, "top_p": 1.0, "top_k": 0},
-                   "clip_eps": CLIP_EPS, "kl_beta": 0.0, "optimizer": "AdamW(weight_decay=0)", "grad_clipping": None,
-                   "lora": {"targets": args.lora_targets, "target_regex": TARGETS[args.lora_targets], "modules": module_names,
-                            "trainable_params": n_trainable, "r": RANK, "alpha": ALPHA, "dropout": 0.0},
-                   "dtypes": {"base": str(DTYPE), "lora": "torch.float32"}, "gpu_budget_gib": GPU_BUDGET_GIB,
+                   "batch_policy": f"{mode} (see batches()); a zero-signal batch is consumed, not retried", "rollout_max_new_tokens": t.max_new_tokens, "eval_max_new_tokens": MAX_NEW,
+                   "eval_batch": BATCH, "sampling": {"do_sample": True, "temperature": t.temperature, "top_p": 1.0, "top_k": 0},
+                   "clip_eps": t.clip_eps, "kl_beta": 0.0, "optimizer": "AdamW(weight_decay=0)", "grad_clipping": None,
+                   "lora": {"targets": lo.targets, "target_regex": TARGETS[lo.targets], "modules": module_names,
+                            "trainable_params": n_trainable, "r": lo.rank, "alpha": lo.alpha, "dropout": lo.dropout},
+                   "dtypes": {"base": str(dtype), "lora": "torch.float32"}, "gpu_budget_gib": GPU_BUDGET_GIB,
                    "checkpoint_contents": "adapter weights + adapter_config only (no optimizer/RNG state)"},
         "training": [], "zero_signal": [], "evaluations": [],
     }
 
     base_full = None
-    if args.full_val:
+    if t.full_val:
         base_full = evaluate(model, tok, val_all)
         mism = [p["id"] for p, q in zip(base_full, base_file) if p["response"] != q["response"]]
         result["base_reproduction"] = {"n": len(base_full), "mismatched_ids": mism, "metrics": metrics(base_full)}
@@ -182,15 +174,15 @@ def main():
         print(f"  [val subset, step {step}] {summary(metrics(preds))}")
 
     eval_subset(0)
-    torch.manual_seed(SEED)  # rollout sampling
+    torch.manual_seed(t.seed)  # rollout sampling
     step = attempts = 0
     ckpt = None
-    stream, mixed_counts, t0 = batches(train, B, mode), Counter(), time.time()
-    while step < args.steps and attempts < max_attempts:
+    stream, mixed_counts, t0 = batches(train_set, B, mode, seed=t.seed), Counter(), time.time()
+    while step < t.max_steps and attempts < t.max_attempts:
         batch = next(stream)
         attempts += 1
         prompts = build_prompts(tok, [e["text"] for e in batch])
-        rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=MAX_NEW_TOKENS)
+        rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=t.max_new_tokens, temperature=t.temperature)
         check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].cuda(), G)
         responses = decode(tok, rollouts)
         rewards = group_rewards(responses, [e["label"] for e in batch], G)  # [B, G]
@@ -200,7 +192,7 @@ def main():
                  "mixed_groups": mixed, "responses": responses, "rewards": rewards.tolist(), "mean_reward": rewards.mean().item(),
                  "invalid_responses": sum(parse_label(r) is None for r in responses),
                  "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16]}
-        out = grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=CLIP_EPS)
+        out = grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=t.clip_eps)
         del rollouts
         if out is None:
             result["zero_signal"].append(group)
@@ -212,7 +204,7 @@ def main():
                    "update_norm": out["update_norm"],
                    "lora_A_norm": l2(params[n].norm().item() for n in names_A),
                    "lora_B_norm": l2(params[n].norm().item() for n in names_B),
-                   "effective_adapter_norm": l2(((ALPHA / RANK) * Bm @ A).norm().item() for A, Bm in pairs),
+                   "effective_adapter_norm": l2(((lo.alpha / lo.rank) * Bm @ A).norm().item() for A, Bm in pairs),
                    "change_from_init": math.sqrt(sum((p - init[n]).pow(2).sum().item() for n, p in params.items())),
                    "cuda_allocated_gib": torch.cuda.memory_allocated() / 2**30,
                    "peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30,
@@ -223,7 +215,7 @@ def main():
               f"loss {row['loss']:+.4f}  |g| {row['grad_norm']:.3e} (A {row['grad_norm_A']:.2e}, B {row['grad_norm_B']:.2e})  "
               f"|dtheta| {row['update_norm']:.2e}  |(a/r)BA| {row['effective_adapter_norm']:.3e}  "
               f"alloc {row['cuda_allocated_gib']:.2f}  peak res {row['peak_reserved_gib']:.2f} GiB")
-        if step % args.eval_every == 0 or step == args.steps:
+        if step % t.eval_every == 0 or step == t.max_steps:
             ckpt = f"checkpoints/{name}_step{step}"
             model.save_pretrained(ROOT / ckpt)
             eval_subset(step, ckpt)
@@ -233,12 +225,12 @@ def main():
     result["prompt_groups"], result["responses_generated"] = attempts * B, attempts * B * G
     result["batches_by_mixed_groups"] = {str(k): mixed_counts[k] for k in range(B + 1)}
     result["zero_signal_groups"] = len(result["zero_signal"])  # batches skipped: no group had mixed rewards
-    if step < args.steps:
-        print(f"Attempt budget exhausted: {step} of {args.steps} steps after {attempts} groups")
+    if step < t.max_steps:
+        print(f"Attempt budget exhausted: {step} of {t.max_steps} steps after {attempts} groups")
 
     result["frozen_changed"] = [n for n, p in frozen.items() if digest(p) != frozen_digest[n]]
     result["params_equal_init"] = all(torch.equal(p, init[n]) for n, p in params.items())
-    if args.lr == 0:
+    if t.learning_rate == 0:
         subset = [e["predictions"] for e in result["evaluations"]]
         result["control"] = {"params_equal_init": result["params_equal_init"],
                              "subset_predictions_unchanged": all(s == subset[0] for s in subset)}
@@ -251,7 +243,7 @@ def main():
         assert all(torch.equal(p, live[k]) for k, p in get_peft_model_state_dict(model).items())
         result["final_checkpoint"] = {"path": ckpt, "step": step, "reloaded_bitwise_equal": True}
 
-    if args.full_val and ckpt is not None:
+    if t.full_val and ckpt is not None:
         trained_full = evaluate(model, tok, val_all)
         tm, bm = metrics(trained_full), metrics(base_full)
         diff, lo, hi = paired_bootstrap([p["correct"] for p in base_full], [p["correct"] for p in trained_full])
@@ -265,7 +257,7 @@ def main():
         with model.disable_adapter():
             scores["base"] = label_scores(model, tok, val_all)
         for ref, (_, ref_ckpt, targets) in REFERENCES.items():  # same targets -> load into this model
-            if ref_ckpt is not None and targets == args.lora_targets and ref_ckpt.exists() and ref_ckpt != ROOT / ckpt:
+            if ref_ckpt is not None and targets == lo.targets and ref_ckpt.exists() and ref_ckpt != ROOT / ckpt:
                 set_peft_model_state_dict(model, load_peft_weights(str(ref_ckpt)))
                 scores[ref] = label_scores(model, tok, val_all)
         set_peft_model_state_dict(model, loaded)
@@ -293,7 +285,7 @@ def main():
     rows = result["training"]
     print(f"\nbatches by number of mixed groups: {result['batches_by_mixed_groups']}, prompt groups {attempts * B}, "
           f"responses {attempts * B * G}, train time {result['train_seconds']:.0f} s")
-    print(f"steps {step}/{args.steps}, batches {attempts}, zero-signal batches {result['zero_signal_groups']}, "
+    print(f"steps {step}/{t.max_steps}, batches {attempts}, zero-signal batches {result['zero_signal_groups']}, "
           f"frozen changed {len(result['frozen_changed'])}/{len(frozen)}, params equal init: {result['params_equal_init']}")
     if rows:
         print(f"grad norm range [{min(r['grad_norm'] for r in rows):.3e}, {max(r['grad_norm'] for r in rows):.3e}]  "
@@ -319,6 +311,3 @@ def main():
     if result["frozen_changed"] or ("control" in result and not all(result["control"].values())):
         raise SystemExit("FAILED: frozen weights changed or LR=0 control changed")
 
-
-if __name__ == "__main__":
-    main()

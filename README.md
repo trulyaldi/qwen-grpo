@@ -10,11 +10,14 @@ qwen_grpo/          reusable implementation (no scripts, no experiment hyperpara
   policy.py         rollout generation, teacher-forced log-probs
   sentiment.py      dataset splits, prompt, strict parser, reward
   model.py          base model id, EOS ids, bf16 base + fp32 LoRA (config, targets, inspection)
+  config.py         YAML run configuration: strict loading and validation
   training.py       prompt batching, rollout grouping, rewards, one GRPO optimizer update
   evaluation.py     greedy predictions, metrics, complete-label scores, ROC AUC, paired bootstraps
+configs/            YAML run configurations (default.yaml)
+scripts/run.py      entry point: train | validate | test --config <yaml>
 research/           experiments: each script has a main() and writes to results/ or checkpoints/
   baseline.py       greedy base-model evaluation
-  train_multistep.py  current training entry point: multi-step GRPO + LoRA runs (CLI)
+  train_multistep.py  multi-step GRPO + LoRA training loop, train(cfg); run via scripts/run.py
   train_grpo.py     historical, Stage 1: one full-rank GRPO step on one fp32 matrix, LR=0 control
   train_lora.py     historical, Stage 2: one LoRA GRPO step, precision and merge checks (shares train_grpo.py's constants)
   trl_reference/    independent reference with Hugging Face TRL GRPOTrainer (own results/, checkpoints/, findings.md)
@@ -35,18 +38,25 @@ uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt   
 
 ## Running experiments
 
-Run from the repository root as modules:
+Training and evaluation are driven by one YAML file. `configs/default.yaml` lists every setting; `qwen_grpo/config.py`
+rejects unknown, missing or ill-typed keys and values the code does not support. Run from the repository root:
 
 ```bash
-.venv/bin/python -m research.baseline
-.venv/bin/python -m research.train_multistep                                   # last o_proj, B=1
-.venv/bin/python -m research.train_multistep --lora-targets last2-attention    # q/v/o of layers 26-27, B=1
-.venv/bin/python -m research.train_multistep --lora-targets last2-attention --batch-size 2 --batch-mode balanced
-.venv/bin/python -m research.train_multistep --lora-targets last2-attention --batch-size 2 --batch-mode unconstrained
+.venv/bin/python scripts/run.py train    --config configs/default.yaml
+.venv/bin/python scripts/run.py validate --config configs/default.yaml --checkpoint checkpoints/default_step30
+.venv/bin/python scripts/run.py test     --config configs/default.yaml --checkpoint checkpoints/default_step30
+.venv/bin/python -m research.baseline --split validation    # base model; writes results/baseline/ and results/benchmarks/baseline.*
 .venv/bin/python -m research.trl_reference.train            # then .compare_gradients, .evaluate
 ```
 
-`python -m research.train_multistep --help` lists all options. The exact configuration of every saved run, including smoke and LR=0 runs, is in the `config` block of its `results/<run>/training.json`.
+For a new experiment, copy the YAML and change `run.name` (training refuses to overwrite existing outputs of that name).
+`train` writes `results/<name>/training.json` (with the exact YAML config), `checkpoints/<name>_step<N>/`, and, with
+`training.full_val`, `results/<name>/validation.json` and `results/benchmarks/<name>.{json,md}`. `validate`/`test` check that the
+adapter's saved config matches the YAML, evaluate it on the full split with the baseline's prompt, decoding and parser, and
+write `results/eval/<checkpoint>/<split>.json` with a paired comparison against the saved baseline predictions.
+
+Historical runs (before YAML configs) were launched with command-line flags; their exact settings are in the `config` block
+of each training log.
 
 ## Evidence
 

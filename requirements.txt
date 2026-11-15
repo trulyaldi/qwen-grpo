@@ -4,4 +4,5 @@ datasets==5.0.1
 huggingface-hub==0.36.2
 pytest==9.2.0
 peft==0.21.3
+pyyaml==6.0.3  # configs/*.yaml
 trl==1.18.0  # research/trl_reference only

@@ -421,3 +421,31 @@ LR=0 control: {'params_equal_init': True, 'subset_predictions_unchanged': True};
 2. **Compare in fp32 first.** Manual vs manual agrees to about 1e-5 in fp32, but bf16 batch-shape noise alone is 5–12% of the gradient. A bf16 L2L check needs a tolerance justified against that measured floor, not a fixed atol.
 3. **Compare gradients, not just logits and loss.** The logged loss is ≈ 0 by construction (§3.3), so loss agreement is nearly vacuous. Compare the LoRA gradients per tensor (relative norm and cosine), and remember that ∇A = 0 at the first step.
 4. **The reference is a single full forward and backward pass.** A streamed or checkpointed implementation must match Σ_k ∇L_k against this one-pass ∇L. No chunked reference exists in the training path yet.
+
+## Addendum: YAML workflow (added after the audit)
+
+At the owner's request, the YAML workflow that Phase 7 assumed now exists: `configs/default.yaml`, `qwen_grpo/config.py` and `scripts/run.py train|validate|test`. The argparse CLI of `research/train_multistep.py` was removed, so the YAML is the only source of run settings. The training loop itself is unchanged and is now called as `train(cfg)`.
+
+**Validation rules.**
+- Unknown, missing and ill-typed keys are errors.
+- Settings the code cannot honour are validated, not ignored:
+  - `model.name` must be Qwen3-0.6B;
+  - `thinking` must be false;
+  - `lora.dropout` must be 0, because the model is never in train mode;
+  - `training.temperature` must be 1, because log-probs come from untempered logits.
+- Evaluation decoding is not configurable, so every run stays comparable with the baseline.
+- `train` refuses to overwrite the outputs of an existing `run.name`.
+- `validate`/`test` refuse an adapter whose saved config differs from the YAML.
+
+**Evidence** (`tests/test_config.py`, 29 tests, no GPU):
+- strict loading and the value checks;
+- LoRA rank, alpha and targets reach the adapter;
+- sampling settings reach `generate()`;
+- CLI dispatch;
+- the adapter/config match;
+- the overwrite guard.
+
+**GPU checks:**
+- **B=2, G=4, 2 steps through `scripts/run.py train`.** Rewards re-scored by hand matched, `init_diff` was 0, 0/310 frozen tensors changed, and the reload was bitwise equal.
+- **`validate` on the resulting checkpoint:** full validation took 83 s, and the in-process base scores equal the saved baseline exactly.
+- **`validate` on the historical LR=0 adapter:** 1066/1066 responses are identical to the baseline, and the label scores are identical.

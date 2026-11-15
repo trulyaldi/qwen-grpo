@@ -21,15 +21,15 @@ EXPECTED_MODULES = {
 }
 
 
-def lora_config(target=TARGET):
-    return LoraConfig(r=RANK, lora_alpha=ALPHA, lora_dropout=0.0, bias="none", task_type="CAUSAL_LM", target_modules=target)
+def lora_config(target=TARGET, r=RANK, alpha=ALPHA, dropout=0.0):
+    return LoraConfig(r=r, lora_alpha=alpha, lora_dropout=dropout, bias="none", task_type="CAUSAL_LM", target_modules=target)
 
 
 
-def lora_model(dtype, device, target=TARGET):
-    base = AutoModelForCausalLM.from_pretrained(MODEL, dtype=dtype).to(device).eval()
+def lora_model(dtype, device, target=TARGET, r=RANK, alpha=ALPHA, dropout=0.0, name=MODEL):
+    base = AutoModelForCausalLM.from_pretrained(name, dtype=dtype).to(device).eval()
     base.generation_config = GenerationConfig(eos_token_id=EOS_IDS, pad_token_id=EOS_IDS[1])
-    return get_peft_model(base, lora_config(target)).eval()
+    return get_peft_model(base, lora_config(target, r, alpha, dropout)).eval()
 
 
 
@@ -39,9 +39,9 @@ def lora_modules(model):
 
 
 
-def expected_lora_params(modules):
+def expected_lora_params(modules, r=RANK):
     """sum over adapted Linear layers of r * (in + out): A is [r, in], B is [out, r]."""
-    return sum(RANK * (m.base_layer.in_features + m.base_layer.out_features) for _, m in modules)
+    return sum(r * (m.base_layer.in_features + m.base_layer.out_features) for _, m in modules)
 
 
 

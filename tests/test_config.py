@@ -1,0 +1,140 @@
+"""YAML config: strict loading, validation, wiring of values into the implementation, and CLI dispatch (no GPU)."""
+import copy
+from pathlib import Path
+
+import pytest
+import torch
+import yaml
+from peft import get_peft_model
+from transformers import GenerationConfig, Qwen3Config, Qwen3ForCausalLM
+
+from qwen_grpo import config
+from qwen_grpo.model import EOS_IDS, TARGETS, expected_lora_params, lora_config, lora_modules
+from qwen_grpo.policy import generate_rollouts
+from scripts import run
+
+ROOT = Path(__file__).parents[1]
+DEFAULT = ROOT / "configs" / "default.yaml"
+RAW = yaml.safe_load(DEFAULT.read_text())
+
+
+def write(tmp_path, edit):
+    raw = copy.deepcopy(RAW)
+    edit(raw)
+    path = tmp_path / "cfg.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    return path
+
+
+def test_default_config_loads_with_the_historical_run_values():
+    cfg = config.load(DEFAULT)
+    assert (cfg.lora.rank, cfg.lora.alpha, cfg.lora.targets) == (8, 16, "last2-attention")
+    t = cfg.training
+    assert (t.batch_size, t.batch_mode, t.group_size, t.learning_rate, t.max_steps, t.clip_eps) == (2, "balanced", 6, 1e-4, 30, 0.2)
+    assert (cfg.data.train_samples, cfg.data.subset_seed, t.seed, cfg.model.dtype) == (32, 42, 42, "bfloat16")
+
+
+@pytest.mark.parametrize("edit, message", [
+    (lambda r: r.update(extra=1), "unknown keys ['extra']"),
+    (lambda r: r["training"].update(lr=1e-4), "unknown keys ['lr']"),
+    (lambda r: r["lora"].pop("rank"), "missing keys ['rank']"),
+    (lambda r: r.pop("data"), "missing keys ['data']"),
+    (lambda r: r["training"].update(learning_rate="1e-4"), "expected float, got str"),
+    (lambda r: r["training"].update(group_size=True), "expected int, got bool"),
+    (lambda r: r["training"].update(group_size=6.0), "expected int, got float"),
+    (lambda r: r["model"].update(thinking=0), "expected bool, got int"),
+    (lambda r: r.update(lora=[8, 16]), "expected a mapping"),
+])
+def test_unknown_missing_and_ill_typed_keys_are_rejected(tmp_path, edit, message):
+    with pytest.raises(ValueError, match=message.replace("[", r"\[").replace("]", r"\]")):
+        config.load(write(tmp_path, edit))
+
+
+@pytest.mark.parametrize("edit, message", [
+    (lambda r: r["model"].update(name="Qwen/Qwen3-4B"), "model.name"),
+    (lambda r: r["model"].update(dtype="float16"), "model.dtype"),
+    (lambda r: r["model"].update(thinking=True), "model.thinking"),
+    (lambda r: r["lora"].update(targets="all"), "lora.targets"),
+    (lambda r: r["lora"].update(dropout=0.1), "lora.dropout"),
+    (lambda r: r["training"].update(temperature=0.7), "training.temperature"),
+    (lambda r: r["training"].update(batch_mode="cycle"), "cycle <=> batch_size 1"),
+    (lambda r: r["training"].update(batch_size=4), "balanced needs batch_size 2"),
+    (lambda r: r["training"].update(group_size=1), "training.group_size"),
+    (lambda r: r["training"].update(max_steps=301), "max_steps <= max_attempts"),
+    (lambda r: r["training"].update(learning_rate=-1.0), "training.learning_rate"),
+    (lambda r: r["data"].update(train_samples=31), "data.train_samples"),
+    (lambda r: r["run"].update(name="../escape"), "run.name"),
+])
+def test_unsupported_values_are_rejected(tmp_path, edit, message):
+    with pytest.raises(ValueError, match="invalid config") as e:
+        config.load(write(tmp_path, edit))
+    assert message in str(e.value)
+
+
+def test_lr_zero_and_float32_are_accepted(tmp_path):
+    cfg = config.load(write(tmp_path, lambda r: (r["training"].update(learning_rate=0), r["model"].update(dtype="float32"))))
+    assert cfg.training.learning_rate == 0.0 and isinstance(cfg.training.learning_rate, float)
+    assert config.DTYPES[cfg.model.dtype] is torch.float32
+
+
+def test_lora_settings_reach_the_adapter(tmp_path):
+    cfg = config.load(write(tmp_path, lambda r: r["lora"].update(rank=4, alpha=12, targets="last-o-proj")))
+    torch.manual_seed(0)
+    tiny = Qwen3ForCausalLM(Qwen3Config(vocab_size=64, hidden_size=16, intermediate_size=32, num_hidden_layers=28,
+                                        num_attention_heads=2, num_key_value_heads=1, head_dim=8))
+    lo = cfg.lora
+    model = get_peft_model(tiny, lora_config(TARGETS[lo.targets], lo.rank, lo.alpha, lo.dropout))
+    modules = lora_modules(model)
+    assert [n for n, _ in modules] == ["model.layers.27.self_attn.o_proj"]
+    _, m = modules[0]
+    assert m.r["default"] == 4 and m.scaling["default"] == 3.0 and m.lora_A["default"].weight.shape == (4, 16)
+    assert sum(p.numel() for p in model.parameters() if p.requires_grad) == expected_lora_params(modules, 4)
+
+
+def test_sampling_settings_reach_generate():
+    seen = {}
+
+    class Capture:
+        device = torch.device("cpu")
+        generation_config = GenerationConfig(eos_token_id=EOS_IDS)
+
+        def generate(self, input_ids, attention_mask, **kwargs):
+            seen.update(kwargs)
+            n = kwargs["num_return_sequences"]
+            return torch.cat([input_ids.repeat_interleave(n, 0), torch.full((len(input_ids) * n, 1), EOS_IDS[0])], 1)
+
+    from transformers import AutoTokenizer
+    tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B", padding_side="left")
+    generate_rollouts(Capture(), tok, ["a"], G=3, max_new_tokens=5, temperature=0.5)
+    assert (seen["temperature"], seen["num_return_sequences"], seen["max_new_tokens"], seen["do_sample"]) == (0.5, 3, 5, True)
+
+
+def test_cli_parsing_and_dispatch(monkeypatch):
+    calls = []
+    monkeypatch.setattr("research.train_multistep.train", lambda cfg: calls.append(("train", cfg.run.name)))
+    monkeypatch.setattr(run, "evaluate_checkpoint", lambda cfg, ckpt, split: calls.append((split, Path(ckpt).name)))
+    ckpt = ROOT / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"
+    run.main(["train", "--config", str(DEFAULT)])
+    run.main(["validate", "--config", str(DEFAULT), "--checkpoint", str(ckpt)])
+    run.main(["test", "--config", str(DEFAULT), "--checkpoint", str(ckpt)])
+    assert calls == [("train", "default"), ("validation", ckpt.name), ("test", ckpt.name)]
+    with pytest.raises(SystemExit):
+        run.parse(["validate", "--config", str(DEFAULT)])  # --checkpoint is required
+    with pytest.raises(SystemExit, match="not a LoRA checkpoint"):
+        run.main(["test", "--config", str(DEFAULT), "--checkpoint", str(ROOT / "checkpoints")])
+
+
+def test_checkpoint_must_match_config(tmp_path):
+    ckpt = ROOT / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"
+    run.check_adapter_matches(config.load(DEFAULT), ckpt)
+    other = config.load(write(tmp_path, lambda r: r["lora"].update(targets="last-o-proj")))
+    with pytest.raises(SystemExit, match="does not match the config"):
+        run.check_adapter_matches(other, ckpt)
+
+
+def test_train_refuses_to_overwrite_existing_outputs(tmp_path):
+    from research.train_multistep import train
+
+    cfg = config.load(write(tmp_path, lambda r: r["run"].update(name="grpo_lora_last2_b2_balanced")))
+    with pytest.raises(SystemExit, match="refusing to overwrite"):
+        train(cfg)  # raises before loading data or the model

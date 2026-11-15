@@ -4,7 +4,7 @@ from qwen_grpo.grpo import response_logprobs, response_mask
 
 
 @torch.no_grad()
-def generate_rollouts(model, tokenizer, prompts, G=4, max_new_tokens=8):
+def generate_rollouts(model, tokenizer, prompts, G=4, max_new_tokens=8, temperature=1.0):
     """B chat-formatted prompts -> B*G sampled rollouts; rows [b*G, (b+1)*G) belong to prompt b.
 
     Sampling settings are passed as kwargs so they override Qwen's shipped generation defaults.
@@ -16,7 +16,7 @@ def generate_rollouts(model, tokenizer, prompts, G=4, max_new_tokens=8):
 
     input_ids = model.generate(
         **batch,
-        do_sample=True, temperature=1.0, top_p=1.0, top_k=0,
+        do_sample=True, temperature=temperature, top_p=1.0, top_k=0,
         num_return_sequences=G, max_new_tokens=max_new_tokens,
         eos_token_id=eos_ids, pad_token_id=tokenizer.pad_token_id,
     )
