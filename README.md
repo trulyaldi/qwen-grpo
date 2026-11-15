@@ -1,6 +1,6 @@
 # qwen-grpo
 
-GRPO + LoRA fine-tuning of Qwen3 in non-thinking mode, implemented by hand and checked numerically. Current task: binary sentiment classification on Rotten Tomatoes with Qwen3-0.6B. L2L streaming and Qwen3-4B are not implemented yet.
+GRPO + LoRA fine-tuning of Qwen3 in non-thinking mode, implemented by hand and checked numerically. Current task: binary sentiment classification on Rotten Tomatoes with Qwen3-0.6B (RTX 3050 Ti, 4 GB). The code accepts any dense Qwen3 model (`configs/qwen3_4b.yaml`), but only 0.6B has been run. L2L streaming is not implemented yet.
 
 ## Layout
 
@@ -9,21 +9,23 @@ qwen_grpo/          reusable implementation (no scripts, no experiment hyperpara
   grpo.py           group advantages, response masks, token log-probs, clipped GRPO loss
   policy.py         rollout generation, teacher-forced log-probs
   sentiment.py      dataset splits, prompt, strict parser, reward
-  model.py          base model id, EOS ids, bf16 base + fp32 LoRA (config, targets, inspection)
-  config.py         YAML run configuration: strict loading and validation
+  model.py          EOS ids, bf16 base + fp32 LoRA, decoder-layer discovery and LoRA target resolution
+  config.py         YAML run configuration: strict loading, validation, normalization of saved configs
+  trainer.py        multi-step GRPO + LoRA run: train(cfg, resume=None); logs, checkpoints, final evaluation
+  checkpointing.py  adapter save/load/config checks, resumable training state (optimizer, progress, RNG)
   verification.py   base / adapter / merged / LR=0 comparisons, merge equivalence, parameter deltas, reward integrity
   reporting.py      verification JSON, plots and report.md from saved files
   training.py       prompt batching, rollout grouping, rewards, one GRPO optimizer update
   evaluation.py     greedy predictions, metrics, complete-label scores, ROC AUC, paired bootstraps
-configs/            YAML run configurations (default.yaml)
-scripts/run.py      entry point: train | validate | test | verify | report --config <yaml>
-research/           experiments: each script has a main() and writes to results/ or checkpoints/
+configs/            YAML run configurations: default.yaml (the historical last2 B=2 run), qwen3_4b.yaml (untested example)
+scripts/run.py      entry point: train [--resume] | validate | test | verify | report --config <yaml>
+research/           historical experiments: each script has a main() and writes to results/ or checkpoints/
   baseline.py       greedy base-model evaluation
-  train_multistep.py  multi-step GRPO + LoRA training loop, train(cfg); run via scripts/run.py
   train_grpo.py     historical, Stage 1: one full-rank GRPO step on one fp32 matrix, LR=0 control
   train_lora.py     historical, Stage 2: one LoRA GRPO step, precision and merge checks (shares train_grpo.py's constants)
   trl_reference/    independent reference with Hugging Face TRL GRPOTrainer (own results/, checkpoints/, findings.md)
-tests/              unit and small integration tests (tiny models; no 0.6B weights except the tokenizer)
+tests/              unit and small integration tests (tiny models; no weights, only tokenizer/config files)
+  test_historical.py  saved results/checkpoints still pass the current checks (baseline numbers, provenance, targets)
 data/               cached dataset splits (data/sentiment.json)
 results/            baseline/<split>.json and <run>/{validation,training}.json: raw predictions and training logs
   benchmarks/       <name>.json (metrics) and <name>.md (report) for the baseline and every GRPO + LoRA run
@@ -45,17 +47,45 @@ rejects unknown, missing or ill-typed keys and values the code does not support.
 
 ```bash
 .venv/bin/python scripts/run.py train    --config configs/default.yaml
+.venv/bin/python scripts/run.py train    --config configs/default.yaml --resume checkpoints/default_step20
 .venv/bin/python scripts/run.py validate --config configs/default.yaml --checkpoint checkpoints/default_step30
 .venv/bin/python scripts/run.py test     --config configs/default.yaml --checkpoint checkpoints/default_step30
 .venv/bin/python -m research.baseline --split validation    # base model; writes results/baseline/ and results/benchmarks/baseline.*
 .venv/bin/python -m research.trl_reference.train            # then .compare_gradients, .evaluate
 ```
 
+### YAML options
+
+| section | keys | notes |
+|---|---|---|
+| `run` | `name`, `gpu_budget_gib` (optional, 4.0) | `name` names every output; the budget is reported, not enforced |
+| `model` | `name`, `dtype`, `thinking` | `name`: any `Qwen/Qwen3-<size>B`; `dtype`: `bfloat16` or `float32` (base weights); `thinking`: `false` only |
+| `lora` | `rank`, `alpha`, `dropout`, `targets` | `targets`: a preset (`last2-attention`, `last-o-proj`) or `{modules: [q_proj, ...], num_layers: N}`: those Linear layers in each of the last N decoder layers, found on the loaded model |
+| `data` | `train_samples`, `val_subset`, `subset_seed` | balanced subsets of the cached splits |
+| `training` | `batch_size`, `batch_mode`, `group_size`, `learning_rate`, `max_steps`, `max_attempts`, `clip_eps`, `temperature`, `max_new_tokens`, `seed`, `eval_every`, `full_val` | `learning_rate: 0.0` is the negative control |
+| `evaluation` (optional) | `max_new_tokens` (4), `batch_size` (32), `score_batch_size` (8), `bootstrap_samples` (10000), `bootstrap_seed` (42) | greedy evaluation in `train`, `validate`, `test`; the defaults are the saved baseline's settings |
+| `verification` | `split`, `merge_subset`, `negative_control`, `statistics` | `verify` only; its bootstrap is `statistics` (2000 resamples by default), not `evaluation` |
+
+Optional keys were added after the first YAML runs. Their defaults are the values those runs used, so older configs and
+the `yaml_config` saved in older training logs still load and compare as before.
+
 For a new experiment, copy the YAML and change `run.name` (training refuses to overwrite existing outputs of that name).
 `train` writes `results/<name>/training.json` (with the exact YAML config), `checkpoints/<name>_step<N>/`, and, with
-`training.full_val`, `results/<name>/validation.json` and `results/benchmarks/<name>.{json,md}`. `validate`/`test` check that the
+`training.full_val`, `results/<name>/validation.json` and `results/benchmarks/<name>.{json,md}`. The training log also
+records an `environment` block: git commit and dirty flag, Python and package versions, dataset name, split seed and
+SHA-256 of `data/sentiment.json`, device and GPU. `validate`/`test` check that the
 adapter's saved config matches the YAML, evaluate it on the full split with the baseline's prompt, decoding and parser, and
 write `results/eval/<checkpoint>/<split>.json` with a paired comparison against the saved baseline predictions.
+
+### Resuming a run
+
+Every checkpoint `checkpoints/<name>_step<N>/` written by `train` (steps that are multiples of `training.eval_every`, and
+the last step) holds the adapter plus `training_state.pt`: AdamW state, step and attempt counters, the training log so
+far and the CPU/CUDA/Python RNG states. `train --resume checkpoints/<name>_step<N>` with the same YAML reloads all of it,
+replays the prompt stream to the saved attempt, and continues; the result equals the uninterrupted run bitwise (checked on
+CPU by `tests/test_trainer.py` and on the GPU for the default config). Resume refuses a different config (the
+`verification` section may differ) and refuses to overwrite checkpoints later than `<N>`. Checkpoints from before this
+feature (all those committed so far) hold the adapter only and cannot resume; they evaluate as before.
 
 ### Verifying a checkpoint
 

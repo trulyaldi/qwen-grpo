@@ -1,7 +1,9 @@
-# GRPO + LoRA on Qwen3-0.6B. All keys are required; see qwen_grpo/config.py for meanings and allowed values.
+# GRPO + LoRA on Qwen3-0.6B. See qwen_grpo/config.py for meanings and allowed values; keys marked (optional) may be
+# omitted and then take the value shown, which is what runs before they existed used.
 # Values reproduce the historical "last2 B=2 balanced" run except run.name (new outputs, nothing overwritten).
 run:
   name: default
+  gpu_budget_gib: 4.0        # (optional) peak reserved GPU memory the run is checked against; reported, not enforced
 
 model:
   name: Qwen/Qwen3-0.6B
@@ -12,7 +14,8 @@ lora:
   rank: 8
   alpha: 16
   dropout: 0.0
-  targets: last2-attention   # q/v/o projections of layers 26-27; last-o-proj = layer 27 o_proj only
+  targets: last2-attention   # preset: q/v/o of the last 2 decoder layers (26-27 here); last-o-proj: o_proj of the last
+  # targets: {modules: [q_proj, v_proj, o_proj], num_layers: 2}   # the same, written out; any Linear names in a layer
 
 data:
   train_samples: 32
@@ -32,6 +35,13 @@ training:
   seed: 42
   eval_every: 10
   full_val: true
+
+evaluation:                  # (optional section) greedy evaluation in train, validate and test; defaults = saved baseline
+  max_new_tokens: 4          # each label is 2 tokens + EOS
+  batch_size: 32             # bf16 outputs depend on batch shape: keep equal to the baseline's to compare with it
+  score_batch_size: 8        # complete-label scoring (ROC AUC)
+  bootstrap_samples: 10000   # paired bootstrap of train's full validation and of validate/test; multiple of 1000
+  bootstrap_seed: 42
 
 verification:                # python scripts/run.py verify --config ... --checkpoint ...
   split: validation          # validation for model selection; test only for the final report

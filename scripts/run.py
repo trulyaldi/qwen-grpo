@@ -1,13 +1,15 @@
 """Config-driven entry point.
 
-python scripts/run.py train    --config configs/default.yaml
+python scripts/run.py train    --config configs/default.yaml [--resume checkpoints/<run>_step<N>]
 python scripts/run.py validate --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py test     --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py verify   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py report   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 
-validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser, compare it
-with the saved baseline predictions of that split (paired), and write results/eval/<checkpoint>/<split>.json.
+train --resume continues a run from one of its checkpoints (same YAML; see qwen_grpo/checkpointing.py).
+validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
+evaluation section), compare it with the base model (paired: the saved baseline predictions if they match model and
+decoding, else the base evaluated in-process), and write results/eval/<checkpoint>/<split>.json.
 verify compares base, adapter-attached, merged and (if configured) an LR=0 control on verification.split and writes
 results/verification/<checkpoint>/ (evidence JSON, plots, report.md); report rebuilds plots and report.md from those files
 without loading a model. Neither retrains the checkpoint; only verification.negative_control.train runs a (control) training.
@@ -18,7 +20,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))  # run as a script from anywhere: make qwen_grpo/ and research/ importable
+sys.path.insert(0, str(ROOT))  # run as a script from anywhere: make qwen_grpo/ importable
 
 SPLITS = {"validate": "validation", "test": "test"}
 
@@ -26,39 +28,48 @@ SPLITS = {"validate": "validation", "test": "test"}
 def evaluate_checkpoint(cfg, checkpoint, split):
     from transformers import AutoTokenizer
 
+    from qwen_grpo.checkpointing import check_adapter_matches, load_adapter
     from qwen_grpo.config import DTYPES, as_dict
-    from qwen_grpo.evaluation import (MAX_NEW, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare, summary,
-                                      win_matrix)
-    from qwen_grpo.model import TARGETS, lora_model
+    from qwen_grpo.evaluation import (RESULTS, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare,
+                                      predictions_path, settings, summary, win_matrix)
+    from qwen_grpo.model import lora_model
     from qwen_grpo.sentiment import load_splits
-    from qwen_grpo.verification import check_adapter_matches, load_adapter
-    from research.baseline import RESULTS, predictions_path
+    from qwen_grpo.trainer import environment
 
     checkpoint = Path(checkpoint).resolve()
     check_adapter_matches(cfg, checkpoint)
-    base = json.loads(predictions_path(split).read_text())
-    if base["decoding"] != {"do_sample": False, "max_new_tokens": MAX_NEW}:
-        raise SystemExit(f"baseline decoding {base['decoding']} differs from evaluation decoding (max_new_tokens={MAX_NEW})")
+    decoding = {"do_sample": False, "max_new_tokens": cfg.evaluation.max_new_tokens}
+    path = predictions_path(split)
+    base = json.loads(path.read_text()) if path.exists() else None
+    if base is not None and (base["model"], base["decoding"]) != (cfg.model.name, decoding):
+        print(f"saved baseline {path.name} ({base['model']}, {base['decoding']}) does not match; evaluating the base in-process")
+        base = None
 
-    lo = cfg.lora
+    lo, (gen_kw, score_kw) = cfg.lora, settings(cfg.evaluation)
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
-    model = lora_model(DTYPES[cfg.model.dtype], "cuda", TARGETS[lo.targets], lo.rank, lo.alpha, lo.dropout, cfg.model.name)
+    model = lora_model(DTYPES[cfg.model.dtype], "cuda", lo.spec(), lo.rank, lo.alpha, lo.dropout, cfg.model.name)
     load_adapter(model, checkpoint)
 
-    examples = [{"id": i, **e} for i, e in enumerate(load_splits()[split])]
-    preds = evaluate(model, tok, examples)
-    scores = {"trained": label_scores(model, tok, examples)}
+    splits = load_splits()
+    examples = [{"id": i, **e} for i, e in enumerate(splits[split])]
+    preds = evaluate(model, tok, examples, **gen_kw)
+    scores = {"trained": label_scores(model, tok, examples, **score_kw)}
     with model.disable_adapter():
-        scores["base"] = label_scores(model, tok, examples)
+        scores["base"] = label_scores(model, tok, examples, **score_kw)
+        base_preds = base["predictions"] if base else evaluate(model, tok, examples, **gen_kw)
     labels = [e["label"] for e in examples]
     W = {k: win_matrix(v, labels) for k, v in scores.items()}
     m = metrics(preds)
+    boot = {"n": cfg.evaluation.bootstrap_samples, "seed": cfg.evaluation.bootstrap_seed}
     out = {
         "checkpoint": str(checkpoint.relative_to(ROOT)) if checkpoint.is_relative_to(ROOT) else str(checkpoint),
-        "split": split, "config": as_dict(cfg), "decoding": base["decoding"],
+        "split": split, "config": as_dict(cfg), "decoding": decoding,
         "metrics": m, "auc": {k: w.mean().item() for k, w in W.items()},
-        "vs_baseline": {**paired_compare(base["predictions"], preds), "auc": paired_auc_bootstrap(W["trained"], W["base"])},
-        "base_scores_max_abs_diff_vs_saved": max(abs(a - b) for a, b in zip(scores["base"], base["label_scores"]["scores"])),
+        "vs_baseline": {**paired_compare(base_preds, preds, **boot), "auc": paired_auc_bootstrap(W["trained"], W["base"], **boot)},
+        "baseline_source": str(path.relative_to(ROOT)) if base else "in-process (adapter disabled)",
+        "base_scores_max_abs_diff_vs_saved": (max(abs(a - b) for a, b in zip(scores["base"], base["label_scores"]["scores"]))
+                                              if base else None),
+        "environment": environment(splits, "cuda"),
         "label_scores": {"ids": [e["id"] for e in examples], **scores}, "predictions": preds,
     }
     path = RESULTS / "eval" / checkpoint.name / f"{split}.json"
@@ -71,7 +82,8 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     print(f"  accuracy diff {v['accuracy_diff']:+.4f}  95% CI [{v['ci95'][0]:+.4f}, {v['ci95'][1]:+.4f}]")
     print(f"  AUC trained {out['auc']['trained']:.4f}  base {out['auc']['base']:.4f}  diff {v['auc']['auc_diff']:+.4f}  "
           f"95% CI [{v['auc']['ci95'][0]:+.4f}, {v['auc']['ci95'][1]:+.4f}]")
-    print(f"  base label scores vs saved baseline: max |diff| {out['base_scores_max_abs_diff_vs_saved']:.2e}")
+    if base:
+        print(f"  base label scores vs saved baseline: max |diff| {out['base_scores_max_abs_diff_vs_saved']:.2e}")
     print(f"  wrote {path.relative_to(ROOT)}")
     return out
 
@@ -85,7 +97,7 @@ def control_checkpoint(cfg):
 
     nc = cfg.verification.negative_control
     if nc.train:
-        from research.train_multistep import train
+        from qwen_grpo.trainer import train
 
         name = f"{cfg.run.name}_lr0"
         train(dataclasses.replace(cfg, run=dataclasses.replace(cfg.run, name=name),
@@ -134,7 +146,9 @@ def parse(argv=None):
     for name in ("train", *SPLITS, "verify", "report"):
         p = sub.add_parser(name)
         p.add_argument("--config", required=True, type=Path)
-        if name != "train":
+        if name == "train":
+            p.add_argument("--resume", type=Path, help="continue the run from this checkpoint of it")
+        else:
             p.add_argument("--checkpoint", required=True, type=Path)
     return ap.parse_args(argv)
 
@@ -145,9 +159,9 @@ def main(argv=None):
     args = parse(argv)
     cfg = load(args.config)
     if args.command == "train":
-        from research.train_multistep import train
+        from qwen_grpo.trainer import train
 
-        return train(cfg)
+        return train(cfg, resume=args.resume)
     if not (args.checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {args.checkpoint}")
     if args.command == "verify":

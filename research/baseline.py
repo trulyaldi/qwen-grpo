@@ -7,23 +7,16 @@ Writes raw predictions to results/baseline/<split>.json and metrics to results/b
 import argparse
 import json
 import statistics
-from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
-from qwen_grpo.evaluation import (MAX_NEW, confusion_table, label_scores, metrics, metrics_table, predict, summary,
-                                  win_matrix)
+from qwen_grpo.evaluation import (BENCHMARKS, MAX_NEW, RESULTS, confusion_table, label_scores, metrics, metrics_table,
+                                  predict, predictions_path, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, MODEL
 from qwen_grpo.sentiment import load_splits
 
-RESULTS = Path(__file__).parents[1] / "results"
-BENCHMARKS = RESULTS / "benchmarks"
 DECODING = {"do_sample": False, "max_new_tokens": MAX_NEW}
-
-
-def predictions_path(split):
-    return RESULTS / "baseline" / f"{split}.json"
 
 
 def write_report(bench):

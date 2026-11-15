@@ -7,17 +7,18 @@ plain JSON-serializable data; reporting.py renders it. Statuses: PASS, FAIL, INC
 import dataclasses
 import gc
 import json
-import re
 import resource
 from collections import Counter
 from pathlib import Path
 
 import torch
-from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
+from peft import load_peft_weights
 
-from qwen_grpo.evaluation import (MAX_NEW, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap,
-                                  paired_changes, paired_f1_bootstrap, win_matrix)
-from qwen_grpo.model import EOS_IDS, TARGETS, lora_model, lora_modules
+from qwen_grpo.checkpointing import adapter_state, check_adapter_matches, load_adapter, rel, run_of  # noqa: F401 (re-exported)
+from qwen_grpo.config import normalized
+from qwen_grpo.evaluation import (evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap, paired_changes,
+                                  paired_f1_bootstrap, settings, win_matrix)
+from qwen_grpo.model import EOS_IDS, lora_model, lora_modules
 from qwen_grpo.sentiment import LABELS, build_prompts, parse_label, reward
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,11 +29,6 @@ PROBES = ["POSITIVE", "NEGATIVE", "positive", " POSITIVE ", "POSITIVE\n\n", "POS
           "POSITIVE because the movie was good", "The answer is POSITIVE", "**POSITIVE**", "POS", "NEGATIVE POSITIVE"]
 
 
-def rel(path):
-    path = Path(path).resolve()
-    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
-
-
 def strict_correct(response: str, label: str) -> bool:
     """Independent correctness check: the response is exactly the canonical label (no case or whitespace folding)."""
     return response == label
@@ -40,40 +36,21 @@ def strict_correct(response: str, label: str) -> bool:
 
 # --- checkpoints -------------------------------------------------------------------------------------------------
 
-def check_adapter_matches(cfg, checkpoint):
-    """The adapter's saved config must be the one the YAML describes; otherwise loading would silently mismatch."""
-    saved = json.loads((Path(checkpoint) / "adapter_config.json").read_text())
-    expected = {"r": cfg.lora.rank, "lora_alpha": cfg.lora.alpha, "lora_dropout": cfg.lora.dropout,
-                "target_modules": TARGETS[cfg.lora.targets], "base_model_name_or_path": cfg.model.name}
-    got = {k: saved.get(k) for k in expected}
-    if got != expected:
-        raise SystemExit(f"{checkpoint} does not match the config:\n  checkpoint {got}\n  config     {expected}")
 
 
-def adapter_state(model):
-    return {k: v.detach().float().cpu().clone() for k, v in get_peft_model_state_dict(model).items()}
 
 
-def load_adapter(model, checkpoint):
-    """Load adapter weights into an existing PEFT model; refuses missing/extra tensors and checks they took effect."""
-    loaded = load_peft_weights(str(checkpoint))
-    live = get_peft_model_state_dict(model)
-    if live.keys() != loaded.keys():
-        raise SystemExit(f"adapter tensors differ: missing {sorted(live.keys() - loaded.keys())}, extra {sorted(loaded.keys() - live.keys())}")
-    set_peft_model_state_dict(model, loaded)
-    assert all(torch.equal(p, loaded[k].to(p.device)) for k, p in get_peft_model_state_dict(model).items()), "adapter not loaded"
-    return {k: v.float().cpu() for k, v in loaded.items()}
 
 
-def run_of(checkpoint):
-    """checkpoints/<run>_step<N> -> (<run>, N)."""
-    m = re.fullmatch(r"(.+)_step(\d+)", Path(checkpoint).name)
-    return (m.group(1), int(m.group(2))) if m else (None, None)
 
 
 def comparable(cfg_a: dict, cfg_b: dict, ignore):
-    """Training configs equal except for the dotted keys in `ignore` (the verification section never matters)."""
-    strip = lambda c: {s: {k: v for k, v in sec.items() if f"{s}.{k}" not in ignore} for s, sec in c.items() if s != "verification"}
+    """Training configs equal except for the dotted keys in `ignore`. Both are normalized to the current schema first, so
+    logs written before a key existed compare by its default. Settings that cannot change the trained adapter never
+    matter: the verification and evaluation sections and run.gpu_budget_gib."""
+    ignore = {*ignore, "run.gpu_budget_gib"}
+    strip = lambda c: {s: {k: v for k, v in sec.items() if f"{s}.{k}" not in ignore}
+                       for s, sec in normalized(c).items() if s not in ("verification", "evaluation")}
     return strip(cfg_a) == strip(cfg_b)
 
 
@@ -115,10 +92,11 @@ def control_provenance(cfg, checkpoint, results=ROOT / "results"):
 
 # --- evidence ----------------------------------------------------------------------------------------------------
 
-def evaluate_model(model, tok, examples):
-    """Greedy predictions (baseline decoding) and complete-label scores; the model is used exactly as given."""
-    preds = evaluate(model, tok, examples)
-    scores = label_scores(model, tok, examples)
+def evaluate_model(model, tok, examples, ev):
+    """Greedy predictions and complete-label scores under config.Evaluation `ev`; the model is used exactly as given."""
+    gen, score = settings(ev)
+    preds = evaluate(model, tok, examples, **gen)
+    scores = label_scores(model, tok, examples, **score)
     return {"predictions": preds, "scores": scores, "metrics": metrics(preds),
             "auc": win_matrix(scores, [e["label"] for e in examples]).mean().item()}
 
@@ -133,7 +111,7 @@ def saved_baseline(cfg, examples, split, results=ROOT / "results"):
         "model": b.get("model") == cfg.model.name,
         "dtype": cfg.model.dtype == "bfloat16",  # research/baseline.py evaluates in bf16
         "split": b.get("split") == split,
-        "decoding": b.get("decoding") == {"do_sample": False, "max_new_tokens": MAX_NEW},
+        "decoding": b.get("decoding") == {"do_sample": False, "max_new_tokens": cfg.evaluation.max_new_tokens},
         "examples": [(p["id"], p["text"], p["label"]) for p in b["predictions"]] == [(e["id"], e["text"], e["label"]) for e in examples],
         "score_ids": b.get("label_scores", {}).get("ids") == [e["id"] for e in examples],
     }
@@ -280,7 +258,7 @@ def fp32_merge_check(cfg, checkpoint, subset, tok):
     FP32_MERGE_RTOL = 1e-4, while a wrong merge (missing scale, wrong module, dropped adapter) shifts logits by about
     the adapter's own effect."""
     lo = cfg.lora
-    model = lora_model(torch.float32, "cpu", TARGETS[lo.targets], lo.rank, lo.alpha, lo.dropout, cfg.model.name)
+    model = lora_model(torch.float32, "cpu", lo.spec(), lo.rank, lo.alpha, lo.dropout, cfg.model.name)
     load_adapter(model, checkpoint)
     merged, ev = merge_check(model, tok, subset, lo.alpha / lo.rank)
     del merged, model
@@ -384,7 +362,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
     torch.cuda.reset_peak_memory_stats()
 
     torch.manual_seed(cfg.training.seed)  # the same seeded construction as train(): a fresh adapter equals the run's init
-    model = lora_model(DTYPES[cfg.model.dtype], "cuda", TARGETS[lo.targets], lo.rank, lo.alpha, lo.dropout, cfg.model.name)
+    model = lora_model(DTYPES[cfg.model.dtype], "cuda", lo.spec(), lo.rank, lo.alpha, lo.dropout, cfg.model.name)
     reconstructed = adapter_state(model)
     assert all(t.abs().max() == 0 for k, t in reconstructed.items() if "lora_B" in k)
     evals, notes = {}, {}
@@ -392,7 +370,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
     base, why = saved_baseline(cfg, examples, v.split, results)
     if base is not None:  # drift guard: the saved file must match the current prompt/tokenization/model code exactly
         with model.disable_adapter():
-            head = evaluate_model(model, tok, examples[:DRIFT_GUARD])
+            head = evaluate_model(model, tok, examples[:DRIFT_GUARD], cfg.evaluation)
         same = ([p["response"] for p in head["predictions"]] == [p["response"] for p in base["predictions"][:DRIFT_GUARD]]
                 and head["scores"] == base["scores"][:DRIFT_GUARD])
         if not same:
@@ -401,7 +379,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
             notes["base"] = f"reused {why}; first {DRIFT_GUARD} examples re-scored in-process: identical"
     if base is None:
         with model.disable_adapter():
-            base = evaluate_model(model, tok, examples)
+            base = evaluate_model(model, tok, examples, cfg.evaluation)
         notes["base"] = f"evaluated in-process with the adapter disabled ({why})"
     evals["base"] = base
 
@@ -409,7 +387,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
     control_ev = None
     if control is not None:
         ctrl_state = load_adapter(model, control)
-        evals["lr_zero"] = evaluate_model(model, tok, examples)
+        evals["lr_zero"] = evaluate_model(model, tok, examples, cfg.evaluation)
         control_ev = {"checkpoint": rel(control),
                       "equals_reconstructed_init": all(torch.equal(ctrl_state[k], reconstructed[k]) for k in reconstructed),
                       "lora_B_all_zero": all(t.abs().max() == 0 for k, t in ctrl_state.items() if "lora_B" in k),
@@ -427,11 +405,11 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
                    status="PASS" if updates["total_delta"] > 0 and init_validated is not False else "FAIL")
     if init_validated is None:
         updates["status"] = "INCONCLUSIVE"  # deltas measured against an initialization nothing has confirmed
-    evals["adapter"] = evaluate_model(model, tok, examples)
+    evals["adapter"] = evaluate_model(model, tok, examples, cfg.evaluation)
     notes["adapter"] = f"{rel(checkpoint)} attached to {cfg.model.name} ({cfg.model.dtype})"
 
     merged, bf16 = merge_check(model, tok, subset, scale)  # in place on the GPU: no second model instance
-    evals["merged"] = evaluate_model(merged, tok, examples)
+    evals["merged"] = evaluate_model(merged, tok, examples, cfg.evaluation)
     notes["merged"] = f"PEFT merge_and_unload in {bf16['dtype']} (W0 + (a/r)BA rounded to the base dtype), in place"
     bf16["full_split"] = policy_change(evals["merged"], evals["adapter"])
     # behavior preservation at deployment precision; whether a failure is precision or a bug is decided by the fp32 check

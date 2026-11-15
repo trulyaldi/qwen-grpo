@@ -15,7 +15,7 @@ from qwen_grpo.evaluation import (BOOTSTRAP, evaluate, label_scores, metrics, pa
                                   paired_changes, summary, win_matrix)
 from qwen_grpo.model import DTYPE, MODEL, TARGETS, lora_model
 from qwen_grpo.sentiment import load_splits
-from research.train_multistep import BASE_FILE, SEED
+from qwen_grpo.trainer import BASE_FILE, SEED
 
 from research.trl_reference.train import CONFIG, HERE, MANUAL_PREDICTIONS, NAME, ROOT
 

@@ -1,5 +1,6 @@
 """Evaluation: greedy predictions, metrics, complete-label scores, ROC AUC and paired bootstraps."""
 from collections import Counter
+from pathlib import Path
 
 import torch
 
@@ -8,16 +9,24 @@ from qwen_grpo.model import EOS_IDS
 from qwen_grpo.policy import compute_logprobs
 from qwen_grpo.sentiment import LABELS, build_prompts, parse_label, reward
 
+# Defaults of the saved baseline (research/baseline.py); runs override them through the YAML evaluation section.
 MAX_NEW, BATCH = 4, 32  # each label is 2 tokens + EOS
 SCORE_BATCH = 8  # label scoring keeps full [N, T, V] logits; 8 rows keeps that well inside the GPU budget
 BOOTSTRAP = 10_000
+RESULTS = Path(__file__).resolve().parents[1] / "results"
+BENCHMARKS = RESULTS / "benchmarks"
+
+
+def predictions_path(split):
+    """Saved greedy predictions and label scores of the untuned base model on `split` (research/baseline.py)."""
+    return RESULTS / "baseline" / f"{split}.json"
 
 
 @torch.no_grad()
-def generate(model, tok, sentences):
+def generate(model, tok, sentences, max_new=MAX_NEW):
     """Greedy responses -> (text without EOS, token length incl. EOS, truncated) per sentence."""
     batch = tok(build_prompts(tok, sentences), return_tensors="pt", padding=True).to(model.device)
-    ids = model.generate(**batch, do_sample=False, max_new_tokens=MAX_NEW)[:, batch["input_ids"].shape[1]:]
+    ids = model.generate(**batch, do_sample=False, max_new_tokens=max_new)[:, batch["input_ids"].shape[1]:]
     mask = response_mask(ids, EOS_IDS)
     out = []
     for row, m in zip(ids.tolist(), mask):
@@ -28,12 +37,12 @@ def generate(model, tok, sentences):
 
 
 
-def predict(model, tok, examples, ids):
-    """Greedy prediction records in BATCH-sized chunks (order matters: bf16 outputs depend on batch shape)."""
+def predict(model, tok, examples, ids, batch=BATCH, max_new=MAX_NEW):
+    """Greedy prediction records in `batch`-sized chunks (order matters: bf16 outputs depend on batch shape)."""
     predictions, lengths, truncated = [], [], []
-    for i in range(0, len(examples), BATCH):
-        chunk = examples[i : i + BATCH]
-        for k, ex, (response, n, trunc) in zip(ids[i : i + BATCH], chunk, generate(model, tok, [ex["text"] for ex in chunk])):
+    for i in range(0, len(examples), batch):
+        chunk = examples[i : i + batch]
+        for k, ex, (response, n, trunc) in zip(ids[i : i + batch], chunk, generate(model, tok, [ex["text"] for ex in chunk], max_new)):
             predictions.append({
                 "id": k,
                 "text": ex["text"],
@@ -120,10 +129,10 @@ def paired_changes(base, new):
 
 
 
-def paired_compare(ref, new):
+def paired_compare(ref, new, n=BOOTSTRAP, seed=42):
     """new vs ref on the same examples (asserted aligned): accuracy difference, paired bootstrap CI, flips."""
     changes = paired_changes(ref, new)
-    diff, lo, hi = paired_bootstrap([p["correct"] for p in ref], [p["correct"] for p in new])
+    diff, lo, hi = paired_bootstrap([p["correct"] for p in ref], [p["correct"] for p in new], n=n, seed=seed)
     return {"ref_metrics": metrics(ref), "accuracy_diff": diff, "ci95": [lo, hi], "paired_changes": changes}
 
 
@@ -177,8 +186,13 @@ def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=42, chunk=500, level=0.
 
 
 
-def evaluate(model, tok, examples):
-    return predict(model, tok, examples, [e["id"] for e in examples])[0]
+def evaluate(model, tok, examples, batch=BATCH, max_new=MAX_NEW):
+    return predict(model, tok, examples, [e["id"] for e in examples], batch, max_new)[0]
+
+
+def settings(ev):
+    """Keyword arguments of evaluate() / label_scores() from a config.Evaluation."""
+    return {"batch": ev.batch_size, "max_new": ev.max_new_tokens}, {"batch": ev.score_batch_size}
 
 
 

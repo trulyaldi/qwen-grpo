@@ -9,7 +9,7 @@ from peft import get_peft_model
 from transformers import GenerationConfig, Qwen3Config, Qwen3ForCausalLM
 
 from qwen_grpo import config, verification
-from qwen_grpo.model import EOS_IDS, TARGETS, expected_lora_params, lora_config, lora_modules
+from qwen_grpo.model import EOS_IDS, expected_lora_params, lora_config, lora_modules, target_modules
 from qwen_grpo.policy import generate_rollouts
 from scripts import run
 
@@ -47,6 +47,10 @@ def test_default_config_loads_with_the_historical_run_values():
     (lambda r: r["verification"].update(models=["base"]), "unknown keys ['models']"),
     (lambda r: r["verification"]["negative_control"].update(checkpoint=3), "got int"),
     (lambda r: r["verification"]["statistics"].pop("seed"), "missing keys ['seed']"),
+    (lambda r: r["lora"].update(targets={"modules": ["q_proj"]}), "missing keys ['num_layers']"),
+    (lambda r: r["lora"].update(targets={"modules": "q_proj", "num_layers": 1}), "expected list, got str"),
+    (lambda r: r["lora"].update(targets=3), "lora.targets: expected"),
+    (lambda r: r.update(evaluation={"max_new": 4}), "unknown keys ['max_new']"),
 ])
 def test_unknown_missing_and_ill_typed_keys_are_rejected(tmp_path, edit, message):
     with pytest.raises(ValueError, match=message.replace("[", r"\[").replace("]", r"\]")):
@@ -54,10 +58,17 @@ def test_unknown_missing_and_ill_typed_keys_are_rejected(tmp_path, edit, message
 
 
 @pytest.mark.parametrize("edit, message", [
-    (lambda r: r["model"].update(name="Qwen/Qwen3-4B"), "model.name"),
+    (lambda r: r["model"].update(name="meta-llama/Llama-3.1-8B"), "model.name"),
+    (lambda r: r["model"].update(name="Qwen/Qwen3-30B-A3B"), "model.name"),
     (lambda r: r["model"].update(dtype="float16"), "model.dtype"),
     (lambda r: r["model"].update(thinking=True), "model.thinking"),
     (lambda r: r["lora"].update(targets="all"), "lora.targets"),
+    (lambda r: r["lora"].update(targets={"modules": [], "num_layers": 2}), "lora.targets.modules"),
+    (lambda r: r["lora"].update(targets={"modules": ["q_proj", "q_proj"], "num_layers": 2}), "lora.targets.modules"),
+    (lambda r: r["lora"].update(targets={"modules": ["q_proj"], "num_layers": 0}), "lora.targets.num_layers"),
+    (lambda r: r.update(evaluation={"bootstrap_samples": 1500}), "evaluation.bootstrap_samples"),
+    (lambda r: r.update(evaluation={"batch_size": 0}), "evaluation: token and batch sizes"),
+    (lambda r: r["run"].update(gpu_budget_gib=0.0), "run.gpu_budget_gib"),
     (lambda r: r["lora"].update(dropout=0.1), "lora.dropout"),
     (lambda r: r["training"].update(temperature=0.7), "training.temperature"),
     (lambda r: r["training"].update(batch_mode="cycle"), "cycle <=> batch_size 1"),
@@ -90,7 +101,7 @@ def test_lora_settings_reach_the_adapter(tmp_path):
     tiny = Qwen3ForCausalLM(Qwen3Config(vocab_size=64, hidden_size=16, intermediate_size=32, num_hidden_layers=28,
                                         num_attention_heads=2, num_key_value_heads=1, head_dim=8))
     lo = cfg.lora
-    model = get_peft_model(tiny, lora_config(TARGETS[lo.targets], lo.rank, lo.alpha, lo.dropout))
+    model = get_peft_model(tiny, lora_config(target_modules(tiny, *lo.spec()), lo.rank, lo.alpha, lo.dropout))
     modules = lora_modules(model)
     assert [n for n, _ in modules] == ["model.layers.27.self_attn.o_proj"]
     _, m = modules[0]
@@ -118,10 +129,11 @@ def test_sampling_settings_reach_generate():
 
 def test_cli_parsing_and_dispatch(monkeypatch):
     calls = []
-    monkeypatch.setattr("research.train_multistep.train", lambda cfg: calls.append(("train", cfg.run.name)))
+    monkeypatch.setattr("qwen_grpo.trainer.train", lambda cfg, resume=None: calls.append(("train", cfg.run.name)))
     monkeypatch.setattr(run, "evaluate_checkpoint", lambda cfg, ckpt, split: calls.append((split, Path(ckpt).name)))
     ckpt = ROOT / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"
     run.main(["train", "--config", str(DEFAULT)])
+    assert run.parse(["train", "--config", str(DEFAULT), "--resume", "checkpoints/x_step10"]).resume == Path("checkpoints/x_step10")
     run.main(["validate", "--config", str(DEFAULT), "--checkpoint", str(ckpt)])
     run.main(["test", "--config", str(DEFAULT), "--checkpoint", str(ckpt)])
     assert calls == [("train", "default"), ("validation", ckpt.name), ("test", ckpt.name)]
@@ -168,8 +180,69 @@ def test_checkpoint_must_match_config(tmp_path):
 
 
 def test_train_refuses_to_overwrite_existing_outputs(tmp_path):
-    from research.train_multistep import train
+    from qwen_grpo.trainer import train
 
     cfg = config.load(write(tmp_path, lambda r: r["run"].update(name="grpo_lora_last2_b2_balanced")))
     with pytest.raises(SystemExit, match="refusing to overwrite"):
         train(cfg)  # raises before loading data or the model
+
+
+# --- LoRA targeting and evaluation settings ----------------------------------------------------------------------
+
+def tiny(layers):
+    torch.manual_seed(0)
+    return Qwen3ForCausalLM(Qwen3Config(vocab_size=16, hidden_size=16, intermediate_size=32, num_hidden_layers=layers,
+                                        num_attention_heads=2, num_key_value_heads=1, head_dim=8))
+
+
+@pytest.mark.parametrize("layers", [2, 5, 36])
+def test_targets_follow_the_model_depth(layers):
+    from qwen_grpo.model import PRESETS
+    last = [f"model.layers.{layers - 1}.self_attn.o_proj"]
+    assert target_modules(tiny(layers), *PRESETS["last-o-proj"]) == last
+    names = target_modules(tiny(layers), ["down_proj", "q_proj"], 2)
+    assert names == [f"model.layers.{i}.{m}" for i in (layers - 2, layers - 1) for m in ("self_attn.q_proj", "mlp.down_proj")]
+
+
+@pytest.mark.parametrize("modules, layers, message", [(["qq_proj"], 1, "no Linear module"), (["q_proj"], 6, "decoder layers"),
+                                                       (["q_norm"], 1, "no Linear module")])
+def test_bad_targets_are_rejected(modules, layers, message):
+    with pytest.raises(ValueError, match=message):
+        target_modules(tiny(5), modules, layers)
+
+
+@pytest.mark.parametrize("preset", ["last-o-proj", "last2-attention"])
+def test_preset_lists_give_the_same_adapter_as_the_historical_regexes(preset):
+    from qwen_grpo.model import PRESETS, TARGETS, matched_modules
+    names = target_modules(tiny(28), *PRESETS[preset])
+    assert matched_modules(tiny(28), TARGETS[preset]) == matched_modules(tiny(28), names) == names
+    states = []
+    for target in (TARGETS[preset], names):
+        base = tiny(28)
+        torch.manual_seed(42)  # as train() before lora_model: LoRA A init must not depend on how targets are written
+        states.append(dict(get_peft_model(base, lora_config(target)).named_parameters()))
+    assert states[0].keys() == states[1].keys() and all(torch.equal(states[0][k], states[1][k]) for k in states[0])
+
+
+def test_custom_targets_load_and_old_yaml_without_new_keys_gets_historical_defaults(tmp_path):
+    cfg = config.load(write(tmp_path, lambda r: r["lora"].update(targets={"modules": ["q_proj", "o_proj"], "num_layers": 3})))
+    assert cfg.lora.spec() == (("q_proj", "o_proj"), 3)
+    assert config.as_dict(cfg)["lora"]["targets"] == {"modules": ["q_proj", "o_proj"], "num_layers": 3}
+    old = config.load(write(tmp_path, lambda r: (r.pop("evaluation", None), r["run"].pop("gpu_budget_gib", None))))
+    assert (old.evaluation.max_new_tokens, old.evaluation.batch_size, old.evaluation.score_batch_size) == (4, 32, 8)
+    assert (old.evaluation.bootstrap_samples, old.evaluation.bootstrap_seed, old.run.gpu_budget_gib) == (10_000, 42, 4.0)
+
+
+def test_evaluation_settings_reach_generation(tmp_path, monkeypatch):
+    from qwen_grpo import evaluation
+    seen = []
+    monkeypatch.setattr(evaluation, "generate", lambda model, tok, s, max_new: seen.append((len(s), max_new)) or [("X", 1, False)] * len(s))
+    cfg = config.load(write(tmp_path, lambda r: r.update(evaluation={"batch_size": 3, "max_new_tokens": 7})))
+    gen, score = evaluation.settings(cfg.evaluation)
+    evaluation.evaluate(None, None, [{"id": i, "text": "t", "label": "POSITIVE"} for i in range(7)], **gen)
+    assert seen == [(3, 7), (3, 7), (1, 7)] and score == {"batch": 8}
+
+
+def test_example_configs_load():
+    for path in sorted((ROOT / "configs").glob("*.yaml")):
+        config.load(path)

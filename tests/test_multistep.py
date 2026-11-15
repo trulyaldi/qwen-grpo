@@ -81,7 +81,7 @@ def test_step_updates_and_logs_plain_scalars():
 
 
 def test_predictions_keep_baseline_schema(monkeypatch):
-    monkeypatch.setattr(evaluation, "generate", lambda model, tok, s: [("POSITIVE", 2, False), ("meh", 2, False)][: len(s)])
+    monkeypatch.setattr(evaluation, "generate", lambda model, tok, s, max_new: [("POSITIVE", 2, False), ("meh", 2, False)][: len(s)])
     ex = [{"id": 7, "text": "good", "label": "POSITIVE"}, {"id": 9, "text": "bad", "label": "NEGATIVE"}]
     preds = evaluation.predict(None, None, ex, [7, 9])[0]
     saved = json.loads((ROOT / "results" / "baseline" / "validation.json").read_text())["predictions"][0]
@@ -109,7 +109,7 @@ from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from qwen_grpo.evaluation import paired_compare
 from qwen_grpo.model import EXPECTED_MODULES, TARGET, TARGETS, digest, expected_lora_params, lora_config, lora_modules
-from research.train_multistep import output_name
+from qwen_grpo.trainer import output_name
 
 
 def tiny_qwen3():
@@ -203,7 +203,7 @@ from qwen_grpo.grpo import group_advantages
 from qwen_grpo.model import EOS_IDS, MODEL
 from qwen_grpo.sentiment import build_prompts
 from qwen_grpo.training import batches, check_grouping
-from research.train_multistep import REFERENCES
+from qwen_grpo.trainer import REFERENCES
 
 TRAIN = balanced_subset(load_splits()["train"], 32, 42)
 
