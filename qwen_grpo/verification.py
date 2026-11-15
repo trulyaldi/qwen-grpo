@@ -144,6 +144,15 @@ def saved_baseline(cfg, examples, split, results=ROOT / "results"):
             "auc": win_matrix(scores, [e["label"] for e in examples]).mean().item()}, rel(path)
 
 
+def initial_adapter(init_ckpt, reconstructed, seed, control_ev):
+    """(state on CPU, source, validated): the run's saved <run>_step0 adapter if present, else the seeded reconstruction,
+    which counts as validated only if an LR=0 control of the same config equals it bitwise."""
+    if Path(init_ckpt).exists():
+        return {k: t.float().cpu() for k, t in load_peft_weights(str(init_ckpt)).items()}, f"saved {rel(init_ckpt)}", True
+    return (reconstructed, f"reconstructed: torch.manual_seed({seed}) + lora_model(), as in train()",
+            control_ev["equals_reconstructed_init"] if control_ev else None)
+
+
 def parameter_updates(init, trained, modules, scale):
     """Raw tensor changes ||theta - theta0|| and effective changes ||(a/r)(BA - B0A0)||_F relative to ||W0||_F.
 
@@ -410,12 +419,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
                                  and c["policy_change_vs_base"]["max_abs_score_change"] == 0) else "FAIL"
         notes["lr_zero"] = f"LR=0 control {rel(control)} evaluated with the adapter attached"
 
-    if init_ckpt.exists():
-        init, init_source = {k: t.float() for k, t in load_peft_weights(str(init_ckpt)).items()}, f"saved {rel(init_ckpt)}"
-        init_validated = True
-    else:
-        init, init_source = reconstructed, f"reconstructed: torch.manual_seed({cfg.training.seed}) + lora_model(), as in train()"
-        init_validated = control_ev["equals_reconstructed_init"] if control_ev else None
+    init, init_source, init_validated = initial_adapter(init_ckpt, reconstructed, cfg.training.seed, control_ev)
     trained = load_adapter(model, checkpoint)
     updates = parameter_updates(init, trained, lora_modules(model), scale)
     updates.update(init_source=init_source, init_validated_by_control=init_validated,

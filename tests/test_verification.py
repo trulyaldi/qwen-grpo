@@ -117,6 +117,19 @@ def test_parameter_updates_raw_and_effective_by_hand(tok):
     assert u["tensors_changed"] == u["tensors_total"] == 2
 
 
+def test_initial_adapter_prefers_saved_step0_on_cpu_and_reports_validation(tok, tmp_path):
+    model = tiny_lora(tok, "last-o-proj")
+    model.save_pretrained(tmp_path / "run_step0")
+    reconstructed = verification.adapter_state(model)
+    init, source, validated = verification.initial_adapter(tmp_path / "run_step0", {}, 42, None)
+    assert validated is True and source.startswith("saved")
+    assert all(t.device.type == "cpu" and torch.equal(t, reconstructed[k]) for k, t in init.items())  # load_peft_weights may pick CUDA
+    verification.parameter_updates(init, reconstructed, lora_modules(model), 2.0)  # mixed devices would raise here
+    _, source, validated = verification.initial_adapter(tmp_path / "missing_step0", reconstructed, 42, None)
+    assert source.startswith("reconstructed") and validated is None
+    assert verification.initial_adapter(tmp_path / "missing", reconstructed, 42, {"equals_reconstructed_init": False})[2] is False
+
+
 def test_merge_equivalence_fp32_passes_with_power(tok):
     model = tiny_lora(tok)
     subset = [{"text": "A gorgeous, witty film."}, {"text": "Stale and tedious."}]
