@@ -31,6 +31,8 @@ def save(evidence, out):
     (out / "config.yaml").write_text(yaml.safe_dump(evidence["config"], sort_keys=False))
     manifest = {k: evidence[k] for k in ("checkpoint", "split", "n", "label_balance", "notes", "training_log", "gpu_memory")}
     manifest["models"] = list(evidence["evaluations"])
+    if "config_sha256" in evidence:
+        manifest["config_sha256"] = evidence["config_sha256"]
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
 
 

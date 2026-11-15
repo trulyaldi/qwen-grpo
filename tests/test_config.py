@@ -1,5 +1,7 @@
-"""YAML config: strict loading, validation, wiring of values into the implementation, and CLI dispatch (no GPU)."""
+"""YAML config: strict loading, defaults, inheritance, hashing, validation, wiring of values into the implementation,
+and CLI dispatch (no GPU)."""
 import copy
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -15,7 +17,8 @@ from scripts import run
 
 ROOT = Path(__file__).parents[1]
 DEFAULT = ROOT / "configs" / "default.yaml"
-RAW = yaml.safe_load(DEFAULT.read_text())
+EXPERIMENTS = ROOT / "configs" / "experiments"
+RAW = config.as_dict(config.load(DEFAULT))  # every key written out
 
 
 def write(tmp_path, edit):
@@ -46,7 +49,7 @@ def test_default_config_loads_with_the_historical_run_values():
     (lambda r: r.update(lora=[8, 16]), "expected a mapping"),
     (lambda r: r["verification"].update(models=["base"]), "unknown keys ['models']"),
     (lambda r: r["verification"]["negative_control"].update(checkpoint=3), "got int"),
-    (lambda r: r["verification"]["statistics"].pop("seed"), "missing keys ['seed']"),
+    (lambda r: r["training"].pop("seed"), "missing keys ['seed']"),
     (lambda r: r["lora"].update(targets={"modules": ["q_proj"]}), "missing keys ['num_layers']"),
     (lambda r: r["lora"].update(targets={"modules": "q_proj", "num_layers": 1}), "expected list, got str"),
     (lambda r: r["lora"].update(targets=3), "lora.targets: expected"),
@@ -243,6 +246,107 @@ def test_evaluation_settings_reach_generation(tmp_path, monkeypatch):
     assert seen == [(3, 7), (3, 7), (1, 7)] and score == {"batch": 8}
 
 
-def test_example_configs_load():
-    for path in sorted((ROOT / "configs").glob("*.yaml")):
-        config.load(path)
+def test_example_configs_load_with_distinct_run_names():
+    paths = sorted((ROOT / "configs").rglob("*.yaml"))
+    names = [config.load(p).run.name for p in paths]
+    assert len(paths) >= 5 and len(set(names)) == len(names), names
+
+
+# --- defaults, inheritance, hashing ------------------------------------------------------------------------------
+
+REQUIRED = {"run": {"name": "x"}, "model": {"name": "Qwen/Qwen3-0.6B"},
+            "lora": {"rank": 8, "alpha": 16, "targets": "last2-attention"},
+            "data": {"train_samples": 32, "val_subset": 160},
+            "training": {k: RAW["training"][k] for k in ("batch_size", "batch_mode", "group_size", "learning_rate", "max_steps",
+                                                         "max_attempts", "max_new_tokens", "seed", "eval_every", "full_val")}}
+
+
+def put(path, raw):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(raw if isinstance(raw, str) else yaml.safe_dump(raw))
+    return path
+
+
+def test_only_the_required_keys_give_the_default_config(tmp_path):
+    cfg = config.load(put(tmp_path / "c.yaml", REQUIRED))
+    assert config.as_dict(cfg) == {**RAW, "run": {**RAW["run"], "name": "x"}}
+    assert (cfg.model.dtype, cfg.lora.dropout, cfg.data.subset_seed, cfg.training.clip_eps) == ("bfloat16", 0.0, 42, 0.2)
+    assert cfg.verification == config.Verification() and cfg.evaluation == config.Evaluation()
+
+
+def test_the_full_and_the_minimal_default_yaml_resolve_identically(tmp_path):
+    full = config.load(put(tmp_path / "full.yaml", RAW))
+    assert full == config.load(DEFAULT) and config.sha256(full) == config.sha256(config.load(DEFAULT))
+    assert "verification" not in yaml.safe_load(DEFAULT.read_text())  # the file really relies on defaults
+
+
+@pytest.mark.parametrize("name, changed", [
+    ("grpo_32", {"run.name"}),
+    ("grpo_low_lr", {"run.name", "training.learning_rate", "training.max_steps"}),
+    ("grpo_1000", {"run.name", "data.train_samples", "data.val_subset", "training.learning_rate", "training.max_steps",
+                   "training.max_attempts", "training.eval_every"}),
+    ("qwen3_4b", {"run.name", "run.gpu_budget_gib", "model.name", "lora.targets"}),
+])
+def test_experiments_change_only_the_keys_they_write(name, changed):
+    cfg = config.load(EXPERIMENTS / f"{name}.yaml")
+    assert set(config.differences(RAW, config.as_dict(cfg))) == changed and cfg.run.name == name
+
+
+def test_extends_merges_recursively_and_overrides_replace(tmp_path):
+    put(tmp_path / "base.yaml", {**RAW, "lora": {**RAW["lora"], "targets": {"modules": ["q_proj", "o_proj"], "num_layers": 2}},
+                                 "verification": {**RAW["verification"], "negative_control": {"checkpoint": "c", "train": False}}})
+    put(tmp_path / "mid" / "mid.yaml", {"extends": "../base.yaml", "run": {"name": "mid"},
+                                        "lora": {"targets": {"num_layers": 3}}, "training": {"learning_rate": 0}})
+    put(tmp_path / "exp" / "leaf.yaml", {"extends": "../mid/mid.yaml", "run": {"name": "leaf"},
+                                         "verification": {"negative_control": {"checkpoint": None}}})
+    cfg = config.load(tmp_path / "exp" / "leaf.yaml")
+    assert cfg.lora.spec() == (("q_proj", "o_proj"), 3)  # nested mapping merged key by key
+    assert cfg.training.learning_rate == 0.0 and cfg.training.batch_size == RAW["training"]["batch_size"]
+    assert cfg.verification.negative_control.checkpoint is None  # an explicit null overrides
+    put(tmp_path / "exp" / "preset.yaml", {"extends": "../mid/mid.yaml", "run": {"name": "p"}, "lora": {"targets": "last-o-proj"}})
+    assert config.load(tmp_path / "exp" / "preset.yaml").lora.targets == "last-o-proj"  # a mapping replaced by a string
+    assert config.merge({"a": {"b": [1, 2], "c": 1}}, {"a": {"b": [3]}}) == {"a": {"b": [3], "c": 1}}  # lists replace
+
+
+@pytest.mark.parametrize("files, message", [
+    ({"c.yaml": {"extends": "missing.yaml", "run": {"name": "c"}}}, "is not a YAML file"),
+    ({"c.yaml": {"extends": ["d.yaml"], "run": {"name": "c"}}}, "is not a YAML file"),
+    ({"c.yaml": {"extends": ".", "run": {"name": "c"}}}, "is not a YAML file"),
+    ({"c.yaml": {"extends": "d.yaml", "run": {"name": "c"}}, "d.yaml": {"extends": "c.yaml", "run": {"name": "d"}}},
+     "circular extends: c.yaml -> d.yaml -> c.yaml"),
+    ({"c.yaml": {"extends": "c.yaml", "run": {"name": "c"}}}, "circular extends"),
+    ({"c.yaml": {"extends": "d.yaml", "training": {"max_steps": 3}}, "d.yaml": RAW}, "must set its own run.name"),
+    ({"c.yaml": {"extends": "d.yaml", "run": {"name": "default"}}, "d.yaml": RAW}, "must set its own run.name"),
+    ({"c.yaml": {"extends": "d.yaml", "run": {"name": "c"}, "training": {"lr": 1.0}}, "d.yaml": RAW}, "unknown keys ['lr']"),
+    ({"c.yaml": {"extends": "d.yaml", "run": {"name": "c"}, "training": {"batch_size": 3}}, "d.yaml": RAW}, "balanced needs"),
+    ({"c.yaml": "[1, 2]"}, "expected a mapping"),
+])
+def test_bad_inheritance_is_rejected(tmp_path, files, message):
+    for name, raw in files.items():
+        put(tmp_path / name, raw)
+    with pytest.raises(ValueError, match=message.replace("[", r"\[").replace("]", r"\]")):
+        config.load(tmp_path / "c.yaml")
+
+
+def test_config_hash_is_order_independent_and_matches_saved_configs(tmp_path):
+    cfg = config.load(DEFAULT)
+    reordered = put(tmp_path / "r.yaml", {k: dict(reversed(list(v.items()))) for k, v in reversed(list(RAW.items()))})
+    assert config.sha256(config.load(reordered)) == config.sha256(cfg)
+    assert config.sha256(dataclasses.replace(cfg, training=dataclasses.replace(cfg.training, seed=43))) != config.sha256(cfg)
+    old = copy.deepcopy(RAW)  # a training log's yaml_config from before evaluation/gpu_budget_gib existed
+    old.pop("evaluation"), old["run"].pop("gpu_budget_gib")
+    assert config._build(config.Config, old, "saved") == cfg and config.normalized(old) == RAW
+
+
+def test_differences_lists_dotted_keys():
+    other = copy.deepcopy(RAW)
+    other["training"]["seed"], other["lora"]["targets"] = 1, {"modules": ["q_proj"], "num_layers": 1}
+    assert config.differences(RAW, other) == ["lora.targets", "training.seed"]
+    assert config.differences(RAW, copy.deepcopy(RAW)) == []
+
+
+def test_cli_loads_experiment_configs(monkeypatch):
+    calls = []
+    monkeypatch.setattr("qwen_grpo.trainer.train", lambda cfg, resume=None: calls.append(cfg))
+    run.main(["train", "--config", str(EXPERIMENTS / "grpo_low_lr.yaml")])
+    assert (calls[0].run.name, calls[0].training.learning_rate, calls[0].training.max_steps) == ("grpo_low_lr", 1e-5, 200)

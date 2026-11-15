@@ -30,10 +30,14 @@ def test_saved_validation_baseline_numbers():
 
 
 def test_default_yaml_is_the_historical_default_rerun_config():
-    saved = config.normalized(json.loads((ROOT / "results" / "default_rerun" / "training.json").read_text())["yaml_config"])
-    now = config.as_dict(named(DEFAULT, "default_rerun"))
-    assert {k: v for k, v in saved.items() if k != "verification"} == {k: v for k, v in now.items() if k != "verification"}
-    assert saved["evaluation"] == now["evaluation"] == dataclasses.asdict(config.Evaluation())
+    """The minimal default.yaml (defaults omitted) equals the full YAML default_rerun was trained with, key for key,
+    except the run name and the LR=0 control that run's verify used."""
+    saved = json.loads((ROOT / "results" / "default_rerun" / "training.json").read_text())["yaml_config"]
+    now = config.as_dict(DEFAULT)
+    assert config.differences(config.normalized(saved), now) == ["run.name", "verification.negative_control.checkpoint"]
+    assert config.normalized(saved)["evaluation"] == now["evaluation"] == dataclasses.asdict(config.Evaluation())
+    saved["run"]["name"], saved["verification"]["negative_control"]["checkpoint"] = "default", None
+    assert config.sha256(config._build(config.Config, saved, "saved")) == config.sha256(DEFAULT)
 
 
 def test_saved_logs_still_pass_provenance_checks():

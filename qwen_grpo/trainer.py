@@ -5,7 +5,8 @@ Run through scripts/run.py train --config <yaml> [--resume checkpoints/<run>_ste
 with the YAML evaluation settings (defaults: those of the saved baseline, so runs stay comparable with it).
 Checkpoints hold the adapter and the training state (optimizer, progress, log so far, RNG), so a run resumes from any
 checkpoint it saved and continues as the uninterrupted run would have (tests/test_trainer.py checks this bitwise on CPU).
-Outputs: results/<run>/training.json (config, environment, per-step log, subset evaluations, memory), results/<run>/validation.json
+Outputs: results/<run>/config.yaml (the fully resolved config, written when training starts; train --config accepts it),
+results/<run>/training.json (config and its sha256, environment, per-step log, subset evaluations, memory), results/<run>/validation.json
 (raw full-validation predictions and label scores of the final checkpoint), results/<run>/plots/ (training diagnostics:
 reward, validation-subset accuracy, mixed-reward fraction, gradient norm, loss), results/benchmarks/<run>.{json,md} (metrics).
 """
@@ -22,12 +23,13 @@ from collections import Counter
 from pathlib import Path
 
 import torch
+import yaml
 from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
 from transformers import AutoTokenizer
 
 from qwen_grpo.checkpointing import (load_adapter, load_training_state, lock_path, rel, run_of, save_checkpoint, set_rng_state,
                                      training_lock)
-from qwen_grpo.config import DTYPES, Config, as_dict, normalized
+from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, sha256
 from qwen_grpo.evaluation import (BENCHMARKS, RESULTS, confusion_table, evaluate, label_scores, metrics, metrics_table,
                                   paired_auc_bootstrap, paired_bootstrap, paired_changes, paired_compare, predictions_path,
                                   settings, summary, win_matrix)
@@ -146,8 +148,9 @@ def check_resume(cfg, checkpoint, state):
     if name != cfg.run.name or step != state["step"]:
         raise SystemExit(f"{checkpoint} is not a checkpoint of run {cfg.run.name!r}")
     strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items() if k != "verification"}
-    if strip(normalized(state["config"])) != strip(as_dict(cfg)):
-        raise SystemExit(f"{checkpoint} was trained with a different config; resume needs the same YAML settings")
+    if diff := differences(strip(normalized(state["config"])), strip(as_dict(cfg))):
+        raise SystemExit(f"{checkpoint} was trained with a different config ({', '.join(diff)}); resume needs the same "
+                         f"settings, e.g. --config {rel(RESULTS / name / 'config.yaml')}")
     if later := sorted(rel(p) for p in CHECKPOINTS.glob(f"{name}_step*") if (run_of(p)[1] or 0) > step):
         raise SystemExit(f"resuming from step {step} would overwrite later checkpoints {later}")
 
@@ -228,8 +231,12 @@ def _train(cfg: Config, resume=None, device="cuda"):
 
     if resume is None:
         model.save_pretrained(CHECKPOINTS / f"{name}_step0")  # initial adapter: reference for parameter deltas
+        (RESULTS / name).mkdir(parents=True, exist_ok=True)
+        (RESULTS / name / "config.yaml").write_text(f"# resolved config of run {name}, sha256 {sha256(cfg)}\n"
+                                                    + yaml.safe_dump(as_dict(cfg), sort_keys=False))
         result = {
             "model": cfg.model.name, "method": "GRPO+LoRA", "seed": t.seed, "yaml_config": as_dict(cfg),
+            "config_sha256": sha256(cfg),
             "environment": environment(splits, device),
             "config": {"lr": t.learning_rate, "steps": t.max_steps, "max_attempts": t.max_attempts, "train_samples": d.train_samples,
                        "train_ids": [e["id"] for e in train_set], "val_subset_ids": [e["id"] for e in val_sub],

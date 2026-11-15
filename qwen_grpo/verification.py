@@ -15,7 +15,7 @@ import torch
 from peft import load_peft_weights
 
 from qwen_grpo.checkpointing import adapter_state, check_adapter_matches, load_adapter, rel, run_of  # noqa: F401 (re-exported)
-from qwen_grpo.config import normalized
+from qwen_grpo.config import normalized, sha256
 from qwen_grpo.evaluation import (evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap, paired_changes,
                                   paired_f1_bootstrap, settings, win_matrix)
 from qwen_grpo.model import EOS_IDS, lora_model, lora_modules
@@ -423,7 +423,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
     train_examples = [{"id": i, **e} for i, e in enumerate(splits["train"])]
     return {
         "checkpoint": rel(checkpoint), "split": v.split, "n": len(examples), "label_balance": label_balance(examples),
-        "config": dataclasses.asdict(cfg), "notes": notes, "evaluations": evals,
+        "config": dataclasses.asdict(cfg), "config_sha256": sha256(cfg), "notes": notes, "evaluations": evals,
         "training_log": {"source": log_source if log else None, "missing_reason": None if log else log_source},
         "training_diagnostics": training_diagnostics(log),
         "parameter_updates": updates,

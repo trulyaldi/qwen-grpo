@@ -122,7 +122,7 @@ def test_resume_refuses_other_configs_later_checkpoints_and_adapter_only_checkpo
     root = sandbox("run")
     trainer.train(cfg, device="cpu")
     ckpts = root / "checkpoints"
-    with pytest.raises(SystemExit, match="different config"):
+    with pytest.raises(SystemExit, match=r"different config \(training.learning_rate\)"):
         trainer.train(make_cfg(tmp_path, learning_rate=1e-3), resume=ckpts / "tiny_step4", device="cpu")
     with pytest.raises(SystemExit, match="overwrite later checkpoints"):
         trainer.train(cfg, resume=ckpts / "tiny_step2", device="cpu")
@@ -136,7 +136,9 @@ def test_resume_from_the_final_checkpoint_only_reruns_the_closing_steps(sandbox,
     cfg = make_cfg(tmp_path)
     sandbox("run")
     ref = trainer.train(cfg, device="cpu")
-    out = trainer.train(cfg, resume=trainer.CHECKPOINTS / "tiny_step4", device="cpu")
+    saved = config.load(trainer.RESULTS / "tiny" / "config.yaml")  # the resolved config train wrote: a valid --config
+    assert saved == cfg and ref["config_sha256"] == config.sha256(cfg)
+    out = trainer.train(saved, resume=trainer.CHECKPOINTS / "tiny_step4", device="cpu")
     assert out["successful_steps"] == ref["successful_steps"] and out["training"] == ref["training"]
     assert out["final_checkpoint"] == ref["final_checkpoint"]
 

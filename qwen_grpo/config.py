@@ -1,11 +1,16 @@
 """YAML run configuration, the single source of truth for scripts/run.py.
 
-Every key without a default is required; unknown, missing or ill-typed keys are errors. Keys with a default were added
-after the first YAML runs; their defaults are the values those runs used, so older configs and saved training logs load
-unchanged (normalized() fills them in). Some keys accept one value only: they record a choice the code does not yet
-support changing, and validate() says why instead of silently ignoring a different value.
+Every key without a default is required; unknown, missing or ill-typed keys are errors. Defaults are the values every
+run so far used, so a YAML may omit those keys and older configs and saved training logs load unchanged (normalized()
+fills them in). Some keys accept one value only: they record a choice the code does not yet support changing, and
+validate() says why instead of silently ignoring a different value.
+
+A YAML file may start with `extends: <path of another YAML, relative to this file>`: the parent is loaded first (itself
+possibly extending another) and this file's keys are merged onto it by merge(). The resolved config has no `extends`.
 """
 import dataclasses
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,11 +32,11 @@ class Run:
     overwrite: bool = False  # true: train deletes this run's earlier results/checkpoints first (never on --resume)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Model:
     name: str  # a Qwen3 causal LM (the prompt asserts Qwen3's non-thinking chat template)
-    dtype: str  # frozen base weights; LoRA adapters are always fp32
-    thinking: bool
+    dtype: str = "bfloat16"  # frozen base weights; LoRA adapters are always fp32
+    thinking: bool = False
 
 
 @dataclass(frozen=True)
@@ -40,11 +45,11 @@ class LoraTargets:
     num_layers: int  # adapt the last num_layers decoder layers
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Lora:
     rank: int
     alpha: int
-    dropout: float
+    dropout: float = 0.0
     targets: str | LoraTargets  # a key of model.PRESETS, or {modules: [...], num_layers: N}
 
     def spec(self):
@@ -54,14 +59,14 @@ class Lora:
         return tuple(self.targets.modules), self.targets.num_layers
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Data:
     train_samples: int  # balanced subset of the training split
     val_subset: int  # balanced subset of validation, evaluated every eval_every steps
-    subset_seed: int  # selects both subsets; kept apart from training.seed so seed studies see the same data
+    subset_seed: int = 42  # selects both subsets; kept apart from training.seed so seed studies see the same data
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Training:
     batch_size: int  # B prompts per optimizer step
     batch_mode: str
@@ -69,8 +74,8 @@ class Training:
     learning_rate: float
     max_steps: int  # optimizer updates
     max_attempts: int  # rollout batches, including zero-signal batches that are skipped
-    clip_eps: float
-    temperature: float
+    clip_eps: float = 0.2
+    temperature: float = 1.0
     max_new_tokens: int  # rollout length; evaluation length is evaluation.max_new_tokens
     seed: int  # LoRA init, rollout sampling, batch order
     eval_every: int
@@ -79,23 +84,23 @@ class Training:
 
 @dataclass(frozen=True)
 class NegativeControl:
-    checkpoint: str | None  # an LR=0 checkpoint of this config (provenance checked), or null
-    train: bool  # true: run the LR=0 control with train() before verifying (run.name + "_lr0"); never implicit
+    checkpoint: str | None = None  # an LR=0 checkpoint of this config (provenance checked), or null
+    train: bool = False  # true: run the LR=0 control with train() before verifying (run.name + "_lr0"); never implicit
 
 
 @dataclass(frozen=True)
 class Statistics:
-    confidence_level: float
-    bootstrap_samples: int
-    seed: int
+    confidence_level: float = 0.95
+    bootstrap_samples: int = 2000
+    seed: int = 42
 
 
 @dataclass(frozen=True)
 class Verification:
-    split: str  # held-out split: validation (model selection) or test (final report only)
-    merge_subset: int  # examples for the full-logit adapter-vs-merged comparison
-    negative_control: NegativeControl
-    statistics: Statistics
+    split: str = "validation"  # held-out split: validation (model selection) or test (final report only)
+    merge_subset: int = 8  # examples for the full-logit adapter-vs-merged comparison
+    negative_control: NegativeControl = field(default_factory=NegativeControl)
+    statistics: Statistics = field(default_factory=Statistics)
 
 
 @dataclass(frozen=True)
@@ -109,14 +114,14 @@ class Evaluation:
     bootstrap_seed: int = 42
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Config:
     run: Run
     model: Model
     lora: Lora
     data: Data
     training: Training
-    verification: Verification
+    verification: Verification = field(default_factory=Verification)
     evaluation: Evaluation = field(default_factory=Evaluation)
 
 
@@ -200,12 +205,54 @@ def validate(cfg: Config) -> Config:
     return cfg
 
 
+def merge(base: dict, override: dict) -> dict:
+    """override's keys onto base: mappings merge key by key, any other value (list, scalar, null) replaces."""
+    out = dict(base)
+    for k, v in override.items():
+        out[k] = merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def read(path, chain=()) -> dict:
+    """The raw YAML mapping of `path` with its `extends` chain merged in (parents first)."""
+    path = Path(path).resolve()
+    if path in chain:
+        raise ValueError("circular extends: " + " -> ".join(p.name for p in (*chain, path)))
+    raw = yaml.safe_load(path.read_text())
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path.name}: expected a mapping, got {type(raw).__name__}")
+    if "extends" not in raw:
+        return raw
+    parent = raw.pop("extends")
+    if type(parent) is not str or not (path.parent / parent).is_file():
+        raise ValueError(f"{path.name}: extends {parent!r} is not a YAML file (paths are relative to {path.parent})")
+    base = read(path.parent / parent, (*chain, path))
+    name = raw.get("run", {}).get("name") if isinstance(raw.get("run"), dict) else None
+    if name is None or name == base.get("run", {}).get("name"):
+        raise ValueError(f"{path.name}: a config that extends another must set its own run.name (outputs are named by it)")
+    return merge(base, raw)
+
+
 def load(path) -> Config:
-    return validate(_build(Config, yaml.safe_load(Path(path).read_text()), Path(path).name))
+    return validate(_build(Config, read(path), Path(path).name))
 
 
 def as_dict(cfg: Config) -> dict:
     return dataclasses.asdict(cfg)
+
+
+def sha256(cfg: Config) -> str:
+    """Hash of the fully resolved config (defaults included), independent of key order and of how the YAML was split
+    across files: a config and an equivalent one written differently hash equally."""
+    return hashlib.sha256(json.dumps(as_dict(cfg), sort_keys=True).encode()).hexdigest()
+
+
+def differences(a: dict, b: dict, prefix="") -> list:
+    """Dotted keys whose values differ between two config dicts."""
+    keys = sorted(set(a) | set(b))
+    return [d for k in keys for d in (differences(a[k], b[k], f"{prefix}{k}.")
+                                       if isinstance(a.get(k), dict) and isinstance(b.get(k), dict)
+                                       else [f"{prefix}{k}"] if a.get(k, ...) != b.get(k, ...) else [])]
 
 
 def normalized(raw: dict) -> dict:

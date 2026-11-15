@@ -7,7 +7,9 @@ python scripts/run.py verify   --config configs/default.yaml --checkpoint checkp
 python scripts/run.py report   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py remove   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N> [--confirm]
 
-train --resume continues a run from one of its checkpoints (same YAML; see qwen_grpo/checkpointing.py).
+--config is configs/default.yaml, an experiment in configs/experiments/ (which `extends` it), or a run's saved
+results/<run>/config.yaml. train --resume continues a run from one of its checkpoints (same resolved config; see
+qwen_grpo/checkpointing.py).
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
 evaluation section), compare it with the base model (paired: the saved baseline predictions if they match model and
 decoding, else the base evaluated in-process), and write results/eval/<checkpoint>/<split>.json.
@@ -32,7 +34,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     from transformers import AutoTokenizer
 
     from qwen_grpo.checkpointing import check_adapter_matches, load_adapter
-    from qwen_grpo.config import DTYPES, as_dict
+    from qwen_grpo.config import DTYPES, as_dict, sha256
     from qwen_grpo.evaluation import (RESULTS, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare,
                                       predictions_path, settings, summary, win_matrix)
     from qwen_grpo.model import lora_model
@@ -66,7 +68,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     boot = {"n": cfg.evaluation.bootstrap_samples, "seed": cfg.evaluation.bootstrap_seed}
     out = {
         "checkpoint": str(checkpoint.relative_to(ROOT)) if checkpoint.is_relative_to(ROOT) else str(checkpoint),
-        "split": split, "config": as_dict(cfg), "decoding": decoding,
+        "split": split, "config": as_dict(cfg), "config_sha256": sha256(cfg), "decoding": decoding,
         "metrics": m, "auc": {k: w.mean().item() for k, w in W.items()},
         "vs_baseline": {**paired_compare(base_preds, preds, **boot), "auc": paired_auc_bootstrap(W["trained"], W["base"], **boot)},
         "baseline_source": str(path.relative_to(ROOT)) if base else "in-process (adapter disabled)",

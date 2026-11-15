@@ -1,26 +1,20 @@
-# GRPO + LoRA on Qwen3-0.6B. See qwen_grpo/config.py for meanings and allowed values; keys marked (optional) may be
-# omitted and then take the value shown, which is what runs before they existed used.
-# Values reproduce the historical "last2 B=2 balanced" run except run.name (new outputs, nothing overwritten).
+# GRPO + LoRA on Qwen3-0.6B: the historical "last2 B=2 balanced" run (as default_rerun), and the parent of every
+# configs/experiments/*.yaml. Omitted keys take the defaults in qwen_grpo/config.py (listed in README.md).
 run:
   name: default
-  gpu_budget_gib: 4.0        # (optional) peak reserved GPU memory the run is checked against; reported, not enforced
 
 model:
   name: Qwen/Qwen3-0.6B
-  dtype: bfloat16
-  thinking: false
 
 lora:
   rank: 8
   alpha: 16
-  dropout: 0.0
   targets: last2-attention   # preset: q/v/o of the last 2 decoder layers (26-27 here); last-o-proj: o_proj of the last
   # targets: {modules: [q_proj, v_proj, o_proj], num_layers: 2}   # the same, written out; any Linear names in a layer
 
 data:
   train_samples: 32
   val_subset: 160
-  subset_seed: 42
 
 training:
   batch_size: 2
@@ -29,27 +23,7 @@ training:
   learning_rate: 1.0e-4      # write floats with a decimal point: PyYAML reads 1e-4 as a string
   max_steps: 30
   max_attempts: 300
-  clip_eps: 0.2
-  temperature: 1.0
   max_new_tokens: 8
   seed: 42
   eval_every: 10
   full_val: true
-
-evaluation:                  # (optional section) greedy evaluation in train, validate and test; defaults = saved baseline
-  max_new_tokens: 4          # each label is 2 tokens + EOS
-  batch_size: 32             # bf16 outputs depend on batch shape: keep equal to the baseline's to compare with it
-  score_batch_size: 8        # complete-label scoring (ROC AUC)
-  bootstrap_samples: 10000   # paired bootstrap of train's full validation and of validate/test; multiple of 1000
-  bootstrap_seed: 42
-
-verification:                # python scripts/run.py verify --config ... --checkpoint ...
-  split: validation          # validation for model selection; test only for the final report
-  merge_subset: 8            # examples whose full logits are compared between adapter-attached and merged models
-  negative_control:
-    checkpoint: null         # an existing LR=0 checkpoint of this config (provenance is checked), or null
-    train: false             # true: run the LR=0 control (same config, learning_rate 0) before verifying
-  statistics:
-    confidence_level: 0.95
-    bootstrap_samples: 2000
-    seed: 42

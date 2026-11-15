@@ -235,3 +235,20 @@ def test_training_holds_the_lock_and_refuses_a_second_trainer(tmp_path, monkeypa
     lock_path(tmp_path, "qwen").write_text(str(os.getpid()))
     with pytest.raises(SystemExit, match="already being trained"):
         trainer.train(dataclasses.replace(cfg))
+
+
+def test_ownership_follows_the_resolved_config_not_how_the_yaml_is_written(repo, tmp_path):
+    """A run trained from a full YAML is owned by an equivalent `extends` config; a parent that changes a training key
+    makes the same child config a different one."""
+    root, cfg, ckpt = repo
+    parent = tmp_path / "configs" / "default.yaml"
+    parent.parent.mkdir()
+    parent.write_text(yaml.safe_dump({**RAW, "run": {"name": "default"}}))
+    child = tmp_path / "configs" / "experiments" / "qwen.yaml"
+    child.parent.mkdir()
+    child.write_text("extends: ../default.yaml\nrun: {name: qwen}\n")
+    assert config.load(child) == cfg
+    assert [p.name for p, _ in cleanup.plan(config.load(child), root, ckpt)] == [p.name for p, _ in cleanup.plan(cfg, root, ckpt)]
+    parent.write_text(yaml.safe_dump({**RAW, "run": {"name": "default"}, "training": {**RAW["training"], "seed": 7}}))
+    with pytest.raises(SystemExit, match="different config"):
+        cleanup.plan(config.load(child), root, ckpt)
