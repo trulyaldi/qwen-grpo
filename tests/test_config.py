@@ -8,7 +8,7 @@ import yaml
 from peft import get_peft_model
 from transformers import GenerationConfig, Qwen3Config, Qwen3ForCausalLM
 
-from qwen_grpo import checkpointing, config
+from qwen_grpo import config, verification
 from qwen_grpo.model import EOS_IDS, expected_lora_params, lora_config, lora_modules, target_modules
 from qwen_grpo.policy import generate_rollouts
 from scripts import run
@@ -44,6 +44,9 @@ def test_default_config_loads_with_the_historical_run_values():
     (lambda r: r["training"].update(group_size=6.0), "expected int, got float"),
     (lambda r: r["model"].update(thinking=0), "expected bool, got int"),
     (lambda r: r.update(lora=[8, 16]), "expected a mapping"),
+    (lambda r: r["verification"].update(models=["base"]), "unknown keys ['models']"),
+    (lambda r: r["verification"]["negative_control"].update(checkpoint=3), "got int"),
+    (lambda r: r["verification"]["statistics"].pop("seed"), "missing keys ['seed']"),
     (lambda r: r["lora"].update(targets={"modules": ["q_proj"]}), "missing keys ['num_layers']"),
     (lambda r: r["lora"].update(targets={"modules": "q_proj", "num_layers": 1}), "expected list, got str"),
     (lambda r: r["lora"].update(targets=3), "lora.targets: expected"),
@@ -75,6 +78,10 @@ def test_unknown_missing_and_ill_typed_keys_are_rejected(tmp_path, edit, message
     (lambda r: r["training"].update(learning_rate=-1.0), "training.learning_rate"),
     (lambda r: r["data"].update(train_samples=31), "data.train_samples"),
     (lambda r: r["run"].update(name="../escape"), "run.name"),
+    (lambda r: r["verification"].update(split="train"), "verification.split"),
+    (lambda r: r["verification"]["negative_control"].update(checkpoint="c", train=True), "checkpoint or train, not both"),
+    (lambda r: r["verification"]["statistics"].update(bootstrap_samples=150), "bootstrap_samples"),
+    (lambda r: r["verification"]["statistics"].update(confidence_level=1.5), "confidence_level"),
 ])
 def test_unsupported_values_are_rejected(tmp_path, edit, message):
     with pytest.raises(ValueError, match="invalid config") as e:
@@ -136,20 +143,40 @@ def test_cli_parsing_and_dispatch(monkeypatch):
         run.main(["test", "--config", str(DEFAULT), "--checkpoint", str(ROOT / "checkpoints")])
 
 
-def test_verify_and_report_commands_and_the_verification_section_are_gone(tmp_path):
-    for cmd in ("verify", "report"):
-        with pytest.raises(SystemExit):
-            run.parse([cmd, "--config", str(DEFAULT), "--checkpoint", "checkpoints/x_step1"])
-    with pytest.raises(ValueError, match=r"unknown keys \['verification'\]"):
-        config.load(write(tmp_path, lambda r: r.update(verification={"split": "validation"})))
+def test_verification_settings_load(tmp_path):
+    v = config.load(DEFAULT).verification
+    assert (v.split, v.merge_subset, v.negative_control.checkpoint, v.negative_control.train) == ("validation", 8, None, False)
+    assert (v.statistics.confidence_level, v.statistics.bootstrap_samples, v.statistics.seed) == (0.95, 2000, 42)
+    c = config.load(write(tmp_path, lambda r: r["verification"]["negative_control"].update(checkpoint="checkpoints/x_lr0_step30")))
+    assert c.verification.negative_control.checkpoint == "checkpoints/x_lr0_step30"
+
+
+def test_verify_and_report_dispatch(monkeypatch):
+    calls = []
+    monkeypatch.setattr(run, "verify", lambda cfg, ckpt: calls.append(("verify", Path(ckpt).name)))
+    monkeypatch.setattr(run, "report", lambda ckpt: calls.append(("report", Path(ckpt).name)))
+    ckpt = ROOT / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"
+    run.main(["verify", "--config", str(DEFAULT), "--checkpoint", str(ckpt)])
+    run.main(["report", "--config", str(DEFAULT), "--checkpoint", str(ckpt)])
+    assert calls == [("verify", ckpt.name), ("report", ckpt.name)]
+    with pytest.raises(SystemExit):
+        run.parse(["verify", "--config", str(DEFAULT)])
+
+
+def test_control_checkpoint_is_none_unless_configured_and_rejects_bad_provenance(tmp_path):
+    assert run.control_checkpoint(config.load(DEFAULT)) is None
+    cfg = config.load(write(tmp_path, lambda r: r["verification"]["negative_control"].update(
+        checkpoint="checkpoints/grpo_lora_lr0_step10")))  # a pre-YAML run: its settings cannot be compared
+    with pytest.raises(SystemExit, match="LR=0 control rejected"):
+        run.control_checkpoint(cfg)
 
 
 def test_checkpoint_must_match_config(tmp_path):
     ckpt = ROOT / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"
-    checkpointing.check_adapter_matches(config.load(DEFAULT), ckpt)
+    verification.check_adapter_matches(config.load(DEFAULT), ckpt)
     other = config.load(write(tmp_path, lambda r: r["lora"].update(targets="last-o-proj")))
     with pytest.raises(SystemExit, match="does not match the config"):
-        checkpointing.check_adapter_matches(other, ckpt)
+        verification.check_adapter_matches(other, ckpt)
 
 
 def test_train_refuses_to_overwrite_existing_outputs(tmp_path):

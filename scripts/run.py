@@ -3,11 +3,16 @@
 python scripts/run.py train    --config configs/default.yaml [--resume checkpoints/<run>_step<N>]
 python scripts/run.py validate --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py test     --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
+python scripts/run.py verify   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
+python scripts/run.py report   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 
 train --resume continues a run from one of its checkpoints (same YAML; see qwen_grpo/checkpointing.py).
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
 evaluation section), compare it with the base model (paired: the saved baseline predictions if they match model and
 decoding, else the base evaluated in-process), and write results/eval/<checkpoint>/<split>.json.
+verify compares base, adapter-attached, merged and (if configured) an LR=0 control on verification.split and writes
+results/verification/<checkpoint>/ (evidence JSON, plots, report.md); report rebuilds plots and report.md from those files
+without loading a model. Neither retrains the checkpoint; only verification.negative_control.train runs a (control) training.
 """
 import argparse
 import json
@@ -83,10 +88,62 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     return out
 
 
+def control_checkpoint(cfg):
+    """The LR=0 control for verify: an existing checkpoint, or a fresh run of train() with learning_rate 0 if (and only if)
+    verification.negative_control.train is set. Either way its provenance is checked against this config."""
+    import dataclasses
+
+    from qwen_grpo.verification import control_provenance
+
+    nc = cfg.verification.negative_control
+    if nc.train:
+        from qwen_grpo.trainer import train
+
+        name = f"{cfg.run.name}_lr0"
+        train(dataclasses.replace(cfg, run=dataclasses.replace(cfg.run, name=name),
+                                  training=dataclasses.replace(cfg.training, learning_rate=0.0, full_val=False)))
+        ckpt = ROOT / json.loads((ROOT / "results" / name / "training.json").read_text())["final_checkpoint"]["path"]
+        import gc
+
+        import torch
+
+        gc.collect()  # train() returns with its model and optimizer unreferenced; release them before verify loads a model
+        torch.cuda.empty_cache()
+    elif nc.checkpoint:
+        ckpt = ROOT / nc.checkpoint
+    else:
+        return None
+    ok, why, _ = control_provenance(cfg, ckpt)
+    if not ok:
+        raise SystemExit(f"LR=0 control rejected: {why}")
+    return ckpt
+
+
+def verify(cfg, checkpoint):
+    from qwen_grpo import reporting
+    from qwen_grpo.verification import verify as collect
+
+    out = ROOT / "results" / "verification" / Path(checkpoint).resolve().name
+    evidence = collect(cfg, checkpoint, control_checkpoint(cfg))
+    reporting.save(evidence, out)
+    path = reporting.render(out)
+    print(f"wrote {out.relative_to(ROOT)}/ ; report: {path.relative_to(ROOT)}")
+    return evidence
+
+
+def report(checkpoint):
+    from qwen_grpo import reporting
+
+    out = ROOT / "results" / "verification" / Path(checkpoint).resolve().name
+    if not (out / "manifest.json").exists():
+        raise SystemExit(f"no saved verification for {checkpoint}: run verify first ({out.relative_to(ROOT)} missing)")
+    print(f"wrote {reporting.render(out).relative_to(ROOT)}")
+
+
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="command", required=True)
-    for name in ("train", *SPLITS):
+    for name in ("train", *SPLITS, "verify", "report"):
         p = sub.add_parser(name)
         p.add_argument("--config", required=True, type=Path)
         if name == "train":
@@ -107,6 +164,10 @@ def main(argv=None):
         return train(cfg, resume=args.resume)
     if not (args.checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {args.checkpoint}")
+    if args.command == "verify":
+        return verify(cfg, args.checkpoint)
+    if args.command == "report":
+        return report(args.checkpoint)
     return evaluate_checkpoint(cfg, args.checkpoint, SPLITS[args.command])
 
 

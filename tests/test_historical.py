@@ -1,5 +1,5 @@
 """Saved artifacts (results/, checkpoints/) stay valid evidence under the current code: historical baseline numbers,
-default.yaml = the historical run, and every committed checkpoint still matches its config and loads by tensor name.
+default.yaml = the historical run, and every committed checkpoint and log still passes the checks verify relies on.
 Needs the Qwen3-0.6B tokenizer/config files only, no weights."""
 import dataclasses
 import json
@@ -10,7 +10,7 @@ import torch
 from peft import get_peft_model, get_peft_model_state_dict
 from safetensors import safe_open
 
-from qwen_grpo import checkpointing, config
+from qwen_grpo import config, verification
 from qwen_grpo.evaluation import metrics
 from qwen_grpo.model import EXPECTED_MODULES, PRESETS, lora_config, skeleton, target_modules
 
@@ -32,8 +32,15 @@ def test_saved_validation_baseline_numbers():
 def test_default_yaml_is_the_historical_default_rerun_config():
     saved = config.normalized(json.loads((ROOT / "results" / "default_rerun" / "training.json").read_text())["yaml_config"])
     now = config.as_dict(named(DEFAULT, "default_rerun"))
-    assert saved == now  # normalized() drops the verification section that logs of that time carried
+    assert {k: v for k, v in saved.items() if k != "verification"} == {k: v for k, v in now.items() if k != "verification"}
     assert saved["evaluation"] == now["evaluation"] == dataclasses.asdict(config.Evaluation())
+
+
+def test_saved_logs_still_pass_provenance_checks():
+    log, source = verification.training_log(named(DEFAULT, "default_rerun"), ROOT / "checkpoints" / "default_rerun_step30")
+    assert log is not None, source
+    ok, why, _ = verification.control_provenance(named(DEFAULT, "default_rerun"), ROOT / "checkpoints" / "default_lr0_step30")
+    assert ok, why
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +55,7 @@ def test_presets_resolve_to_the_historical_0_6b_modules(qwen06, preset):
 
 @pytest.mark.parametrize("ckpt", CHECKPOINTS, ids=lambda p: p.name)
 def test_committed_checkpoints_match_the_default_config_and_its_tensor_names(qwen06, ckpt):
-    checkpointing.check_adapter_matches(DEFAULT, ckpt)  # resolved module names, not the saved regex string
+    verification.check_adapter_matches(DEFAULT, ckpt)  # resolved module names, not the saved regex string
     with torch.device("meta"):
         live = get_peft_model(skeleton(DEFAULT.model.name), lora_config(target_modules(qwen06, *DEFAULT.lora.spec())))
     with safe_open(str(ckpt / "adapter_model.safetensors"), "pt") as f:
@@ -59,4 +66,4 @@ def test_committed_checkpoints_match_the_default_config_and_its_tensor_names(qwe
 def test_other_targets_are_rejected_for_committed_checkpoints():
     other = dataclasses.replace(DEFAULT, lora=dataclasses.replace(DEFAULT.lora, targets="last-o-proj"))
     with pytest.raises(SystemExit, match="does not match the config"):
-        checkpointing.check_adapter_matches(other, CHECKPOINTS[0])
+        verification.check_adapter_matches(other, CHECKPOINTS[0])

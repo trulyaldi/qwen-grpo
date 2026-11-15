@@ -144,7 +144,7 @@ def check_resume(cfg, checkpoint, state):
     name, step = run_of(checkpoint)
     if name != cfg.run.name or step != state["step"]:
         raise SystemExit(f"{checkpoint} is not a checkpoint of run {cfg.run.name!r}")
-    strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items()}
+    strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items() if k != "verification"}
     if strip(normalized(state["config"])) != strip(as_dict(cfg)):
         raise SystemExit(f"{checkpoint} was trained with a different config; resume needs the same YAML settings")
     if later := sorted(rel(p) for p in CHECKPOINTS.glob(f"{name}_step*") if (run_of(p)[1] or 0) > step):

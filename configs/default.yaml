@@ -42,3 +42,14 @@ evaluation:                  # (optional section) greedy evaluation in train, va
   score_batch_size: 8        # complete-label scoring (ROC AUC)
   bootstrap_samples: 10000   # paired bootstrap of train's full validation and of validate/test; multiple of 1000
   bootstrap_seed: 42
+
+verification:                # python scripts/run.py verify --config ... --checkpoint ...
+  split: validation          # validation for model selection; test only for the final report
+  merge_subset: 8            # examples whose full logits are compared between adapter-attached and merged models
+  negative_control:
+    checkpoint: null         # an existing LR=0 checkpoint of this config (provenance is checked), or null
+    train: false             # true: run the LR=0 control (same config, learning_rate 0) before verifying
+  statistics:
+    confidence_level: 0.95
+    bootstrap_samples: 2000
+    seed: 42

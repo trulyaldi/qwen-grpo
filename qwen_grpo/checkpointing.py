@@ -46,6 +46,10 @@ def check_adapter_matches(cfg, checkpoint):
         raise SystemExit(f"{checkpoint} does not match the config:\n  checkpoint {got}\n  config     {expected}")
 
 
+def adapter_state(model):
+    return {k: v.detach().float().cpu().clone() for k, v in get_peft_model_state_dict(model).items()}
+
+
 def load_adapter(model, checkpoint):
     """Load adapter weights into an existing PEFT model; refuses missing/extra tensors and checks they took effect."""
     loaded = load_peft_weights(str(checkpoint))

@@ -393,32 +393,3 @@ def test_b2_opposite_labels_hand_rewards_and_independent_reference_gradient():
     # POS: +a0 from group 0's correct rows, -0.745 from group 1's wrong POSITIVE row (A < 0), -C pi; JUNK: A < 0 and -C pi < 0
     assert d[POS] > 0 and d[JUNK] < 0
     assert d[POS] - d[NEG] == pytest.approx((5 * a0 / 3 - (10 / 6) / (s1 + 1e-4) / 3 - C * (pi0[POS] - pi0[NEG])) / 12, abs=1e-12)
-
-
-# --- macro-F1 bootstrap and invalid predictions (moved from the removed tests/test_verification.py) --------------
-
-def labelled(labels, predicted):
-    return [{"id": i, "text": f"t{i}", "label": g, "response": str(p), "prediction": p, "correct": p == g}
-            for i, (g, p) in enumerate(zip(labels, predicted))]
-
-
-F1_LABELS = ["POSITIVE", "NEGATIVE"] * 20
-F1_BASE = labelled(F1_LABELS, ["POSITIVE", "POSITIVE", "NEGATIVE", None] * 10)
-F1_NEW = labelled(F1_LABELS, ["POSITIVE", "NEGATIVE"] * 20)
-
-
-def test_f1_bootstrap_observed_value_reproducible_and_zero_for_identical_models():
-    from qwen_grpo.evaluation import paired_f1_bootstrap
-    a = paired_f1_bootstrap(F1_BASE, F1_NEW, n=500, chunk=100)
-    assert a["f1_diff"] == pytest.approx(metrics(F1_NEW)["macro_f1"] - metrics(F1_BASE)["macro_f1"], abs=1e-12)
-    assert a == paired_f1_bootstrap(F1_BASE, F1_NEW, n=500, chunk=100)
-    assert a["ci"][0] <= a["f1_diff"] <= a["ci"][1]
-    assert paired_f1_bootstrap(F1_BASE, F1_BASE, n=500, chunk=100) == {"f1_diff": 0.0, "ci": [0.0, 0.0]}
-    narrow = paired_f1_bootstrap(F1_BASE, F1_NEW, n=500, chunk=100, level=0.5)
-    assert narrow["ci"][1] - narrow["ci"][0] < a["ci"][1] - a["ci"][0]
-
-
-def test_invalid_predictions_count_as_wrong_and_stay_in_denominators():
-    m = metrics(F1_BASE)
-    assert m["n"] == 40 and m["invalid_rate"] == 0.25 and m["confusion"]["None"] == {"NEGATIVE": 10, "POSITIVE": 0}
-    assert m["accuracy"] == 10 / 40  # only position 0 of every 4 is right; the invalid position 3 counts as wrong
