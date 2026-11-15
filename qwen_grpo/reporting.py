@@ -114,6 +114,17 @@ def _ci(c):
     return f"{c['diff']:+.4f} [{c['ci'][0]:+.4f}, {c['ci'][1]:+.4f}]" + (" *" if c["ci_excludes_zero"] else "")
 
 
+def _bf16_cause(b16):
+    """Measured cause of bf16 merge differences: the share of the LoRA update lost when W0 + dW is stored in bf16."""
+    r = [w.get("error_relative_to_delta") for w in b16.get("weights", {}).values()]
+    if not r or None in r:
+        return " (weight-level error relative to the update not recorded; rerun verify)."
+    return (f" Storing W₀ + (α/r)BA in bf16 distorts the update itself: ‖(W_merged − W₀) − (α/r)BA‖_F / ‖(α/r)BA‖_F = "
+            f"{min(r):.2f}–{max(r):.2f} across modules: ‖ΔW‖ is a small fraction of ‖W₀‖ (section 1), not far above bf16's "
+            "relative precision (2⁻⁸). The attached adapter keeps the update in fp32. So the merge is algebraically correct (fp32 check), "
+            "but a bf16 merge does not exactly preserve this adapter's behavior: deploy with the adapter attached or merge in fp32.")
+
+
 def report(ev, plots_made, missing_plots):
     c, evals = ev["config"], ev["evaluations"]
     t, lo = c["training"], c["lora"]
@@ -177,7 +188,8 @@ def report(ev, plots_made, missing_plots):
            "- A nonzero change shows the adapter is active, not that it helps; a mean Δs far from 0 indicates a label-prior shift."]
     me = ev["merge_equivalence"]
     f32, b16 = me["fp32_cpu"], me["bf16_gpu"]
-    md += ["", f"### 3. Merge equivalence — fp32 {f32['status']}, bf16 {b16['status']}", "",
+    md += ["", f"### 3. Merge equivalence — fp32 (merge correctness) {f32['status']}, bf16 (behavior preserved at deployment "
+           f"precision) {b16['status']}", "",
            f"- fp32 on CPU, {f32['n_examples']} examples, all positions of prompt + POSITIVE⟨im_end⟩: max |Z_adapter − Z_merged| "
            f"{f32['adapter_vs_merged']['max_abs']:.3e} = {f32['adapter_vs_merged']['relative']:.2e} of max |Z| "
            f"(tolerance {f32['tolerance_relative']:.0e}); the adapter itself moves logits by {f32['adapter_vs_base']['max_abs']:.3e} "
@@ -186,9 +198,7 @@ def report(ev, plots_made, missing_plots):
            f"- bf16 on GPU (deployment precision): max |ΔZ| {b16['adapter_vs_merged']['max_abs']:.3e} "
            f"({b16['adapter_vs_merged']['relative']:.2e} relative) vs adapter effect {b16['adapter_vs_base']['max_abs']:.3e}; on the full "
            f"split, greedy predictions differ on {b16['full_split']['prediction_disagreement_rate']:.2%} of examples, max |Δs| "
-           f"{b16['full_split']['max_abs_score_change']:.4f}. Merged weights are rounded to bf16 (W₀ + (α/r)BA), while the attached "
-           "adapter adds an fp32 LoRA output to the bf16 base output, so small bf16 differences are expected; the fp32 check is the "
-           "test of merge correctness."]
+           f"{b16['full_split']['max_abs_score_change']:.4f}." + _bf16_cause(b16)]
     nc = ev["negative_control"]
     md += ["", f"### 4. LR=0 negative control — {nc['status']}", ""]
     if nc["status"] == "NOT_RUN":

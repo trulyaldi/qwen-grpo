@@ -125,6 +125,7 @@ def test_merge_equivalence_fp32_passes_with_power(tok):
     assert e["adapter_vs_merged"]["relative"] < verification.FP32_MERGE_RTOL
     assert e["power_ratio"] > verification.POWER_RATIO and verification.merge_status(e) == "PASS"
     assert all(w["max_abs_error"] <= 4 * w["dtype_eps_times_max_weight"] for w in e["weights"].values())
+    assert all(w["error_relative_to_delta"] < 1e-5 for w in e["weights"].values())  # fp32 keeps the update intact
 
 
 def test_wrong_merge_fails_and_dropped_adapter_is_not_a_pass(tok):
@@ -257,6 +258,7 @@ def synthetic_evidence(log_source):
         "merge_equivalence": {"fp32_cpu": {"status": "PASS", "n_examples": 8, "adapter_vs_merged": diff, "adapter_vs_base": big,
                                            "power_ratio": 1e6, "tolerance_relative": 1e-4, "weights": {"m": {"max_abs_error": 1e-8}}},
                               "bf16_gpu": {"status": "PASS", "adapter_vs_merged": diff, "adapter_vs_base": big,
+                                           "weights": {"m": {"max_abs_error": 1e-3, "error_relative_to_delta": 0.3}},
                                            "full_split": verification.policy_change(NEW, NEW)}},
         "negative_control": {"status": "NOT_RUN", "reason": "verification.negative_control is not configured"},
         "confidence_intervals": {"adapter_vs_base": verification.compare(BASE, NEW, STATS)},
@@ -271,6 +273,7 @@ def test_report_without_training_log_marks_missing_plots_and_models(tmp_path):
     assert sorted(p.name for p in (tmp_path / "plots").iterdir()) == ["model_comparison.png"]
     assert "not generated: training plots" in report and "not run" in report  # LR=0 column
     assert "Training log: not available" in report and "NOT_RUN" in report
+    assert "0.30–0.30 across modules" in report  # the measured bf16 cause, not an assumption
     assert json.loads((tmp_path / "evaluation" / "adapter.json").read_text())["predictions"][0]["response"] == "POSITIVE"
 
 

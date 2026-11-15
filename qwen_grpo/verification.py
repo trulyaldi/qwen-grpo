@@ -230,8 +230,11 @@ def weight_merge_error(model, expected_deltas, W0):
     named = dict(model.named_modules())
     for name, dW in expected_deltas.items():
         Wm = named[name].weight.detach()
-        err = ((Wm.float().cpu() - W0[name].float()) - dW).abs().max().item()
-        out[name] = {"max_abs_error": err, "dtype_eps_times_max_weight": torch.finfo(Wm.dtype).eps * Wm.abs().max().item()}
+        residual = (Wm.float().cpu() - W0[name].float()) - dW
+        out[name] = {"max_abs_error": residual.abs().max().item(),
+                     "dtype_eps_times_max_weight": torch.finfo(Wm.dtype).eps * Wm.abs().max().item(),
+                     # how much of the intended update is lost or distorted by storing W0 + dW in the base dtype
+                     "error_relative_to_delta": (residual.norm() / dW.norm()).item()}
     return out
 
 
@@ -427,7 +430,8 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
     evals["merged"] = evaluate_model(merged, tok, examples)
     notes["merged"] = f"PEFT merge_and_unload in {bf16['dtype']} (W0 + (a/r)BA rounded to the base dtype), in place"
     bf16["full_split"] = policy_change(evals["merged"], evals["adapter"])
-    bf16["status"] = "PASS" if bf16["full_split"]["prediction_disagreement_rate"] == 0 else "INCONCLUSIVE"
+    # behavior preservation at deployment precision; whether a failure is precision or a bug is decided by the fp32 check
+    bf16["status"] = "PASS" if bf16["full_split"]["prediction_disagreement_rate"] == 0 else "FAIL"
     peak = {"peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30, "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30}
     del merged, model
     torch.cuda.empty_cache()
