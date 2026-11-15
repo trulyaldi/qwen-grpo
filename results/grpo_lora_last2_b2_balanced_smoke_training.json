@@ -1,0 +1,702 @@
+{
+ "model": "Qwen/Qwen3-0.6B",
+ "method": "GRPO+LoRA",
+ "seed": 42,
+ "config": {
+  "lr": 0.0001,
+  "steps": 2,
+  "max_attempts": 20,
+  "train_samples": 4,
+  "train_ids": [
+   625,
+   43,
+   1266,
+   210
+  ],
+  "val_subset_ids": [
+   41,
+   64,
+   68,
+   73,
+   183,
+   191,
+   213,
+   232,
+   282,
+   438,
+   465,
+   468,
+   517,
+   576,
+   855,
+   1030
+  ],
+  "B": 2,
+  "G": 6,
+  "batch_mode": "balanced",
+  "batch_policy": "balanced (see batches()); a zero-signal batch is consumed, not retried",
+  "rollout_max_new_tokens": 8,
+  "eval_max_new_tokens": 16,
+  "eval_batch": 32,
+  "sampling": {
+   "do_sample": true,
+   "temperature": 1.0,
+   "top_p": 1.0,
+   "top_k": 0
+  },
+  "clip_eps": 0.2,
+  "kl_beta": 0.0,
+  "optimizer": "AdamW(weight_decay=0)",
+  "grad_clipping": null,
+  "lora": {
+   "targets": "last2-attention",
+   "target_regex": "model\\.layers\\.(26|27)\\.self_attn\\.(q|v|o)_proj",
+   "modules": [
+    "model.layers.26.self_attn.q_proj",
+    "model.layers.26.self_attn.v_proj",
+    "model.layers.26.self_attn.o_proj",
+    "model.layers.27.self_attn.q_proj",
+    "model.layers.27.self_attn.v_proj",
+    "model.layers.27.self_attn.o_proj"
+   ],
+   "trainable_params": 131072,
+   "r": 8,
+   "alpha": 16,
+   "dropout": 0.0
+  },
+  "dtypes": {
+   "base": "torch.bfloat16",
+   "lora": "torch.float32"
+  },
+  "gpu_budget_gib": 4.0,
+  "checkpoint_contents": "adapter weights + adapter_config only (no optimizer/RNG state)"
+ },
+ "training": [
+  {
+   "step": 1,
+   "attempt": 1,
+   "prompt_ids": [
+    43,
+    210
+   ],
+   "labels": [
+    "POSITIVE",
+    "NEGATIVE"
+   ],
+   "mixed_groups": 2,
+   "responses": [
+    "POSITIVE",
+    "NEGATIVE",
+    "POSITIVE",
+    "POSITIVE",
+    "NEGATIVE",
+    "POSITIVE",
+    "POSITIVE",
+    "POSITIVE",
+    "NEGATIVE",
+    "NEGATIVE",
+    "NEGATIVE",
+    "POSITIVE"
+   ],
+   "rewards": [
+    [
+     1.0,
+     0.0,
+     1.0,
+     1.0,
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     1.0,
+     1.0,
+     0.0
+    ]
+   ],
+   "mean_reward": 0.5833333134651184,
+   "invalid_responses": 0,
+   "rollout_sha256": "0403a295f646a76e",
+   "loss": 2.4835269840650653e-08,
+   "init_diff": 0.0,
+   "grad_norm": 0.17453855654212813,
+   "grad_norm_A": 0.0,
+   "grad_norm_B": 0.17453855654212813,
+   "update_norm": 0.025580911464612423,
+   "lora_A_norm": 4.006315329036283,
+   "lora_B_norm": 0.0255809113799893,
+   "effective_adapter_norm": 0.029674479460057347,
+   "change_from_init": 0.025580911464612423,
+   "cuda_allocated_gib": 1.128065586090088,
+   "peak_allocated_gib": 1.4447317123413086,
+   "peak_reserved_gib": 1.6015625
+  },
+  {
+   "step": 2,
+   "attempt": 2,
+   "prompt_ids": [
+    625,
+    1266
+   ],
+   "labels": [
+    "POSITIVE",
+    "NEGATIVE"
+   ],
+   "mixed_groups": 2,
+   "responses": [
+    "POSITIVE",
+    "POSITIVE",
+    "NEGATIVE",
+    "POSITIVE",
+    "POSITIVE",
+    "NEGATIVE",
+    "NEGATIVE",
+    "POSITIVE",
+    "negative",
+    "POSITIVE",
+    "NEGATIVE",
+    "NEGATIVE"
+   ],
+   "rewards": [
+    [
+     1.0,
+     1.0,
+     0.0,
+     1.0,
+     1.0,
+     0.0
+    ],
+    [
+     1.0,
+     0.0,
+     1.0,
+     0.0,
+     1.0,
+     1.0
+    ]
+   ],
+   "mean_reward": 0.6666666865348816,
+   "invalid_responses": 0,
+   "rollout_sha256": "7740b57bbee488cc",
+   "loss": 3.973643103449831e-08,
+   "init_diff": 0.0,
+   "grad_norm": 0.32142701669003726,
+   "grad_norm_A": 0.014898665474188586,
+   "grad_norm_B": 0.32108154233052033,
+   "update_norm": 0.026808484793330374,
+   "lora_A_norm": 4.006559913969241,
+   "lora_B_norm": 0.038914059602852005,
+   "effective_adapter_norm": 0.045180109399457866,
+   "change_from_init": 0.04327571804487464,
+   "cuda_allocated_gib": 1.128065586090088,
+   "peak_allocated_gib": 1.5652236938476562,
+   "peak_reserved_gib": 1.87109375
+  }
+ ],
+ "zero_signal": [],
+ "evaluations": [
+  {
+   "step": 0,
+   "checkpoint": null,
+   "split": "validation",
+   "metrics": {
+    "n": 16,
+    "accuracy": 0.8125,
+    "invalid_rate": 0.0,
+    "predicted_positive_rate": 0.4375,
+    "predicted_negative_rate": 0.5625,
+    "recall_NEGATIVE": 0.875,
+    "recall_POSITIVE": 0.75,
+    "macro_f1": 0.8117647058823529,
+    "confusion": {
+     "NEGATIVE": {
+      "NEGATIVE": 7,
+      "POSITIVE": 2
+     },
+     "POSITIVE": {
+      "NEGATIVE": 1,
+      "POSITIVE": 6
+     },
+     "None": {
+      "NEGATIVE": 0,
+      "POSITIVE": 0
+     }
+    }
+   },
+   "predictions": [
+    {
+     "id": 41,
+     "text": "it's hard to believe that something so short could be so flabby .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 64,
+     "text": "one of the most splendid entertainments to emerge from the french film industry in years .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 68,
+     "text": "evokes the style and flash of the double-cross that made mamet's \" house of games \" and last fall's \" heist \" so much fun .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 73,
+     "text": "a mostly believable , refreshingly low-key and quietly inspirational little sports drama .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 183,
+     "text": "it arrives with an impeccable pedigree , mongrel pep , and almost indecipherable plot complications .",
+     "label": "POSITIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": false
+    },
+    {
+     "id": 191,
+     "text": "yes , spirited away is a triumph of imagination , but it's also a failure of storytelling .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 213,
+     "text": "this picture is murder by numbers , and as easy to be bored by as your abc's , despite a few whopping shootouts .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 232,
+     "text": "the secrets of time travel will have been discovered , indulged in and rejected as boring before i see this piece of crap again .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 282,
+     "text": "the idea is more interesting than the screenplay , which lags badly in the middle and lurches between not-very-funny comedy , unconvincing dramatics and some last-minute action strongly reminiscent of run lola run .",
+     "label": "NEGATIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": false
+    },
+    {
+     "id": 438,
+     "text": "a fascinating examination of the joyous , turbulent self-discovery made by a proper , middle-aged woman .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 465,
+     "text": "an ambitious , guilt-suffused melodrama crippled by poor casting .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 468,
+     "text": "the film is small in scope , yet perfectly formed .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 517,
+     "text": "no , i don't know why steven seagal is considered a star , nor why he keeps being cast in action films when none of them are ever any good or make any money .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 576,
+     "text": "the major problem with windtalkers is that the bulk of the movie centers on the wrong character .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 855,
+     "text": "though the film never veers from its comic course , its unintentional parallels might inadvertently evoke memories and emotions which are anything but humorous .",
+     "label": "POSITIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": false
+    },
+    {
+     "id": 1030,
+     "text": "the hypnotic imagery and fragmentary tale explore the connections between place and personal identity .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    }
+   ]
+  },
+  {
+   "step": 1,
+   "checkpoint": "checkpoints/grpo_lora_last2_b2_balanced_smoke_step1",
+   "split": "validation",
+   "metrics": {
+    "n": 16,
+    "accuracy": 0.8125,
+    "invalid_rate": 0.0,
+    "predicted_positive_rate": 0.4375,
+    "predicted_negative_rate": 0.5625,
+    "recall_NEGATIVE": 0.875,
+    "recall_POSITIVE": 0.75,
+    "macro_f1": 0.8117647058823529,
+    "confusion": {
+     "NEGATIVE": {
+      "NEGATIVE": 7,
+      "POSITIVE": 2
+     },
+     "POSITIVE": {
+      "NEGATIVE": 1,
+      "POSITIVE": 6
+     },
+     "None": {
+      "NEGATIVE": 0,
+      "POSITIVE": 0
+     }
+    }
+   },
+   "predictions": [
+    {
+     "id": 41,
+     "text": "it's hard to believe that something so short could be so flabby .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 64,
+     "text": "one of the most splendid entertainments to emerge from the french film industry in years .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 68,
+     "text": "evokes the style and flash of the double-cross that made mamet's \" house of games \" and last fall's \" heist \" so much fun .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 73,
+     "text": "a mostly believable , refreshingly low-key and quietly inspirational little sports drama .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 183,
+     "text": "it arrives with an impeccable pedigree , mongrel pep , and almost indecipherable plot complications .",
+     "label": "POSITIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": false
+    },
+    {
+     "id": 191,
+     "text": "yes , spirited away is a triumph of imagination , but it's also a failure of storytelling .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 213,
+     "text": "this picture is murder by numbers , and as easy to be bored by as your abc's , despite a few whopping shootouts .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 232,
+     "text": "the secrets of time travel will have been discovered , indulged in and rejected as boring before i see this piece of crap again .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 282,
+     "text": "the idea is more interesting than the screenplay , which lags badly in the middle and lurches between not-very-funny comedy , unconvincing dramatics and some last-minute action strongly reminiscent of run lola run .",
+     "label": "NEGATIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": false
+    },
+    {
+     "id": 438,
+     "text": "a fascinating examination of the joyous , turbulent self-discovery made by a proper , middle-aged woman .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 465,
+     "text": "an ambitious , guilt-suffused melodrama crippled by poor casting .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 468,
+     "text": "the film is small in scope , yet perfectly formed .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 517,
+     "text": "no , i don't know why steven seagal is considered a star , nor why he keeps being cast in action films when none of them are ever any good or make any money .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 576,
+     "text": "the major problem with windtalkers is that the bulk of the movie centers on the wrong character .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 855,
+     "text": "though the film never veers from its comic course , its unintentional parallels might inadvertently evoke memories and emotions which are anything but humorous .",
+     "label": "POSITIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": false
+    },
+    {
+     "id": 1030,
+     "text": "the hypnotic imagery and fragmentary tale explore the connections between place and personal identity .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    }
+   ]
+  },
+  {
+   "step": 2,
+   "checkpoint": "checkpoints/grpo_lora_last2_b2_balanced_smoke_step2",
+   "split": "validation",
+   "metrics": {
+    "n": 16,
+    "accuracy": 0.8125,
+    "invalid_rate": 0.0,
+    "predicted_positive_rate": 0.4375,
+    "predicted_negative_rate": 0.5625,
+    "recall_NEGATIVE": 0.875,
+    "recall_POSITIVE": 0.75,
+    "macro_f1": 0.8117647058823529,
+    "confusion": {
+     "NEGATIVE": {
+      "NEGATIVE": 7,
+      "POSITIVE": 2
+     },
+     "POSITIVE": {
+      "NEGATIVE": 1,
+      "POSITIVE": 6
+     },
+     "None": {
+      "NEGATIVE": 0,
+      "POSITIVE": 0
+     }
+    }
+   },
+   "predictions": [
+    {
+     "id": 41,
+     "text": "it's hard to believe that something so short could be so flabby .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 64,
+     "text": "one of the most splendid entertainments to emerge from the french film industry in years .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 68,
+     "text": "evokes the style and flash of the double-cross that made mamet's \" house of games \" and last fall's \" heist \" so much fun .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 73,
+     "text": "a mostly believable , refreshingly low-key and quietly inspirational little sports drama .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 183,
+     "text": "it arrives with an impeccable pedigree , mongrel pep , and almost indecipherable plot complications .",
+     "label": "POSITIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": false
+    },
+    {
+     "id": 191,
+     "text": "yes , spirited away is a triumph of imagination , but it's also a failure of storytelling .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 213,
+     "text": "this picture is murder by numbers , and as easy to be bored by as your abc's , despite a few whopping shootouts .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 232,
+     "text": "the secrets of time travel will have been discovered , indulged in and rejected as boring before i see this piece of crap again .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 282,
+     "text": "the idea is more interesting than the screenplay , which lags badly in the middle and lurches between not-very-funny comedy , unconvincing dramatics and some last-minute action strongly reminiscent of run lola run .",
+     "label": "NEGATIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": false
+    },
+    {
+     "id": 438,
+     "text": "a fascinating examination of the joyous , turbulent self-discovery made by a proper , middle-aged woman .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 465,
+     "text": "an ambitious , guilt-suffused melodrama crippled by poor casting .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 468,
+     "text": "the film is small in scope , yet perfectly formed .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    },
+    {
+     "id": 517,
+     "text": "no , i don't know why steven seagal is considered a star , nor why he keeps being cast in action films when none of them are ever any good or make any money .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 576,
+     "text": "the major problem with windtalkers is that the bulk of the movie centers on the wrong character .",
+     "label": "NEGATIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": true
+    },
+    {
+     "id": 855,
+     "text": "though the film never veers from its comic course , its unintentional parallels might inadvertently evoke memories and emotions which are anything but humorous .",
+     "label": "POSITIVE",
+     "response": "NEGATIVE",
+     "prediction": "NEGATIVE",
+     "correct": false
+    },
+    {
+     "id": 1030,
+     "text": "the hypnotic imagery and fragmentary tale explore the connections between place and personal identity .",
+     "label": "POSITIVE",
+     "response": "POSITIVE",
+     "prediction": "POSITIVE",
+     "correct": true
+    }
+   ]
+  }
+ ],
+ "train_seconds": 3.204275608062744,
+ "groups_generated": 2,
+ "successful_steps": 2,
+ "prompt_groups": 4,
+ "responses_generated": 24,
+ "batches_by_mixed_groups": {
+  "0": 0,
+  "1": 0,
+  "2": 2
+ },
+ "zero_signal_groups": 0,
+ "frozen_changed": [],
+ "params_equal_init": false,
+ "final_checkpoint": {
+  "path": "checkpoints/grpo_lora_last2_b2_balanced_smoke_step2",
+  "step": 2,
+  "reloaded_bitwise_equal": true
+ },
+ "memory": {
+  "peak_allocated_gib": 1.5652236938476562,
+  "peak_reserved_gib": 1.87109375,
+  "device_gib": 3.99957275390625,
+  "within_budget": true
+ }
+}
