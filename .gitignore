@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 CLAUDE.md
 results/.*.lock
+runs/.*.lock
 
 # TRL Trainer scratch output (optimizer state, RNG); the adapters that matter are saved separately
 research/trl_reference/checkpoints/trainer_output/

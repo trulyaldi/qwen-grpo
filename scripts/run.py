@@ -1,23 +1,23 @@
-"""Config-driven entry point.
+"""Entry point. Every run trained from now on lives in runs/<run>/ (layout: qwen_grpo/runs.py).
 
-python scripts/run.py train    --config configs/default.yaml [--resume checkpoints/<run>_step<N>]
-python scripts/run.py validate --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
-python scripts/run.py test     --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
-python scripts/run.py verify   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
-python scripts/run.py report   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
-python scripts/run.py remove   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N> [--confirm]
+python scripts/run.py train    --config configs/experiments/<exp>.yaml
+python scripts/run.py train    --config runs/<run>/config.yaml --resume runs/<run>/checkpoints/step<N>
+python scripts/run.py validate --run <run> [--step N]            held-out validation split -> runs/<run>/evaluation/step<N>/
+python scripts/run.py test     --run <run> [--step N]            test split (final report only)
+python scripts/run.py verify   --run <run> [--step N]            -> runs/<run>/verification/step<N>/
+python scripts/run.py report   --run <run>                       rebuild plots, summary.json, report.md (no model, no GPU)
+python scripts/run.py remove   --run <run> [--confirm]           dry run unless --confirm
 
---config is configs/default.yaml, an experiment in configs/experiments/ (which `extends` it), or a run's saved
-results/<run>/config.yaml. train --resume continues a run from one of its checkpoints (same resolved config; see
-qwen_grpo/checkpointing.py).
+--run takes runs/<run>/config.yaml and the checkpoint at --step (default: the latest). The older form
+--config <yaml> --checkpoint <dir> still works for every command except train, for checkpoints under runs/ and for runs
+from before runs/ existed (checkpoints/<run>_step<N>/), whose outputs stay in results/eval/ and results/verification/.
+
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
-evaluation section), compare it with the base model (paired: the saved baseline predictions if they match model and
-decoding, else the base evaluated in-process), and write results/eval/<checkpoint>/<split>.json.
-verify compares base, adapter-attached, merged and (if configured) an LR=0 control on verification.split and writes
-results/verification/<checkpoint>/ (evidence JSON, plots, report.md); report rebuilds plots and report.md from those files
-without loading a model. Neither retrains the checkpoint; only verification.negative_control.train runs a (control) training.
-remove lists the generated artifacts of the checkpoint's run (checkpoints, logs, plots, evaluations, verification) with
-their sizes and deletes them only with --confirm; it refuses when ownership is uncertain (see qwen_grpo/cleanup.py).
+evaluation section) and compare it with the base model (paired: the saved baseline predictions if they match model and
+decoding, else the base evaluated in-process). verify compares base, adapter-attached, merged and (if configured) an
+LR=0 control on verification.split. Neither retrains the checkpoint; only verification.negative_control.train runs a
+(control) training, as the separate run <run>_lr0. remove lists what it would delete with sizes and deletes only with
+--confirm; it refuses when ownership is uncertain (qwen_grpo/cleanup.py).
 """
 import argparse
 import json
@@ -35,7 +35,8 @@ def evaluate_checkpoint(cfg, checkpoint, split):
 
     from qwen_grpo.checkpointing import check_adapter_matches, load_adapter
     from qwen_grpo.config import DTYPES, as_dict, sha256
-    from qwen_grpo.evaluation import (RESULTS, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare,
+    from qwen_grpo import runs
+    from qwen_grpo.evaluation import (evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare,
                                       predictions_path, settings, summary, win_matrix)
     from qwen_grpo.model import lora_model
     from qwen_grpo.sentiment import load_splits
@@ -67,19 +68,17 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     m = metrics(preds)
     boot = {"n": cfg.evaluation.bootstrap_samples, "seed": cfg.evaluation.bootstrap_seed}
     out = {
-        "checkpoint": str(checkpoint.relative_to(ROOT)) if checkpoint.is_relative_to(ROOT) else str(checkpoint),
+        "checkpoint": runs.rel(checkpoint),
         "split": split, "config": as_dict(cfg), "config_sha256": sha256(cfg), "decoding": decoding,
         "metrics": m, "auc": {k: w.mean().item() for k, w in W.items()},
         "vs_baseline": {**paired_compare(base_preds, preds, **boot), "auc": paired_auc_bootstrap(W["trained"], W["base"], **boot)},
-        "baseline_source": str(path.relative_to(ROOT)) if base else "in-process (adapter disabled)",
+        "baseline_source": runs.rel(path) if base else "in-process (adapter disabled)",
         "base_scores_max_abs_diff_vs_saved": (max(abs(a - b) for a, b in zip(scores["base"], base["label_scores"]["scores"]))
                                               if base else None),
         "environment": environment(splits, "cuda"),
         "label_scores": {"ids": [e["id"] for e in examples], **scores}, "predictions": preds,
     }
-    path = RESULTS / "eval" / checkpoint.name / f"{split}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(out, indent=1))
+    path = runs.write_json(runs.evaluation_output(checkpoint, split), out)
 
     v = out["vs_baseline"]
     print(f"{split} ({out['checkpoint']}): {summary(m)}")
@@ -89,15 +88,27 @@ def evaluate_checkpoint(cfg, checkpoint, split):
           f"95% CI [{v['auc']['ci95'][0]:+.4f}, {v['auc']['ci95'][1]:+.4f}]")
     if base:
         print(f"  base label scores vs saved baseline: max |diff| {out['base_scores_max_abs_diff_vs_saved']:.2e}")
-    print(f"  wrote {path.relative_to(ROOT)}")
+    print(f"  wrote {runs.rel(path)}")
+    updated(checkpoint)
     return out
 
 
+def updated(checkpoint):
+    """Rebuild the run's summary and report after new results for one of its checkpoints (runs/ layout only)."""
+    from qwen_grpo import runs
+
+    name, _, layout = runs.parse_checkpoint(checkpoint)
+    if layout == "run":
+        from qwen_grpo.reporting import update_run
+        print(f"updated {runs.rel(update_run(name))}")
+
+
 def control_checkpoint(cfg):
-    """The LR=0 control for verify: an existing checkpoint, or a fresh run of train() with learning_rate 0 if (and only if)
-    verification.negative_control.train is set. Either way its provenance is checked against this config."""
+    """The LR=0 control for verify: an existing checkpoint, or a fresh run of train() with learning_rate 0 (as the run
+    <run>_lr0) if (and only if) verification.negative_control.train is set. Its provenance is checked either way."""
     import dataclasses
 
+    from qwen_grpo import runs
     from qwen_grpo.verification import control_provenance
 
     nc = cfg.verification.negative_control
@@ -107,7 +118,7 @@ def control_checkpoint(cfg):
         name = f"{cfg.run.name}_lr0"
         train(dataclasses.replace(cfg, run=dataclasses.replace(cfg.run, name=name),
                                   training=dataclasses.replace(cfg.training, learning_rate=0.0, full_val=False)))
-        ckpt = ROOT / json.loads((ROOT / "results" / name / "training.json").read_text())["final_checkpoint"]["path"]
+        ckpt = runs.ROOT / runs.read_json(runs.training_dir(name) / "training.json")["final_checkpoint"]["path"]
         import gc
 
         import torch
@@ -115,7 +126,7 @@ def control_checkpoint(cfg):
         gc.collect()  # train() returns with its model and optimizer unreferenced; release them before verify loads a model
         torch.cuda.empty_cache()
     elif nc.checkpoint:
-        ckpt = ROOT / nc.checkpoint
+        ckpt = runs.ROOT / nc.checkpoint
     else:
         return None
     ok, why, _ = control_provenance(cfg, ckpt)
@@ -125,24 +136,37 @@ def control_checkpoint(cfg):
 
 
 def verify(cfg, checkpoint):
-    from qwen_grpo import reporting
+    from qwen_grpo import reporting, runs
     from qwen_grpo.verification import verify as collect
 
-    out = ROOT / "results" / "verification" / Path(checkpoint).resolve().name
+    out, data = runs.verification_output(checkpoint)
     evidence = collect(cfg, checkpoint, control_checkpoint(cfg))
-    reporting.save(evidence, out)
-    path = reporting.render(out)
-    print(f"wrote {out.relative_to(ROOT)}/ ; report: {path.relative_to(ROOT)}")
+    reporting.save(evidence, data)
+    path = reporting.render(out, data)
+    print(f"wrote {runs.rel(out)}/ ; report: {runs.rel(path)}")
+    updated(checkpoint)
     return evidence
 
 
 def report(checkpoint):
-    from qwen_grpo import reporting
+    """Rebuild one verification report (plots and report.md) from its saved evidence."""
+    from qwen_grpo import reporting, runs
 
-    out = ROOT / "results" / "verification" / Path(checkpoint).resolve().name
-    if not (out / "manifest.json").exists():
-        raise SystemExit(f"no saved verification for {checkpoint}: run verify first ({out.relative_to(ROOT)} missing)")
-    print(f"wrote {reporting.render(out).relative_to(ROOT)}")
+    out, data = runs.verification_output(checkpoint)
+    if not (data / "manifest.json").exists():
+        raise SystemExit(f"no saved verification for {checkpoint}: run verify first ({runs.rel(data)} missing)")
+    print(f"wrote {runs.rel(reporting.render(out, data))}")
+    updated(checkpoint)
+
+
+def report_run(name):
+    from qwen_grpo import runs
+    from qwen_grpo.reporting import update_run
+
+    runs.resolve(name)  # refuses a missing run with a hint
+    path = update_run(name)
+    print(f"wrote {runs.rel(runs.run_dir(name) / 'summary.json')} and {runs.rel(path)}")
+    return path
 
 
 def parse(argv=None):
@@ -150,36 +174,58 @@ def parse(argv=None):
     sub = ap.add_subparsers(dest="command", required=True)
     for name in ("train", *SPLITS, "verify", "report", "remove"):
         p = sub.add_parser(name)
-        p.add_argument("--config", required=True, type=Path)
+        p.add_argument("--config", type=Path, required=name == "train")
         if name == "train":
             p.add_argument("--resume", type=Path, help="continue the run from this checkpoint of it")
-        else:
-            p.add_argument("--checkpoint", required=True, type=Path)
+            continue
+        p.add_argument("--checkpoint", type=Path)
+        p.add_argument("--run", help="a run under runs/ (instead of --config and --checkpoint)")
+        if name not in ("report", "remove"):
+            p.add_argument("--step", type=int, help="checkpoint step of --run (default: the latest)")
         if name == "remove":
             p.add_argument("--confirm", action="store_true", help="delete the listed paths (default: dry run)")
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    if args.command != "train":
+        by_run = args.run is not None and args.config is None and args.checkpoint is None
+        by_paths = args.run is None and args.config is not None and args.checkpoint is not None
+        if not (by_run or by_paths):
+            ap.error(f"{args.command}: give --run <name>, or both --config and --checkpoint")
+        if getattr(args, "step", None) is not None and not by_run:
+            ap.error("--step selects a checkpoint of --run")
+    return args
 
 
 def main(argv=None):
+    from qwen_grpo import runs
     from qwen_grpo.config import load
 
     args = parse(argv)
-    cfg = load(args.config)
     if args.command == "train":
         from qwen_grpo.trainer import train
 
-        return train(cfg, resume=args.resume)
+        return train(load(args.config), resume=args.resume)
+    if args.run is not None:
+        if args.command == "report":
+            return report_run(args.run)
+        if args.command == "remove":
+            from qwen_grpo.cleanup import remove_run
+
+            return remove_run(args.run, confirm=args.confirm)
+        config_path, checkpoint = runs.resolve(args.run, args.step)
+        cfg = load(config_path)
+    else:
+        cfg, checkpoint = load(args.config), args.checkpoint
     if args.command == "remove":
         from qwen_grpo.cleanup import remove
 
-        return remove(cfg, ROOT, args.checkpoint, confirm=args.confirm)
-    if not (args.checkpoint / "adapter_config.json").exists():
-        raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {args.checkpoint}")
+        return remove(cfg, runs.ROOT, checkpoint, confirm=args.confirm)
+    if not (checkpoint / "adapter_config.json").exists():
+        raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {checkpoint}")
     if args.command == "verify":
-        return verify(cfg, args.checkpoint)
+        return verify(cfg, checkpoint)
     if args.command == "report":
-        return report(args.checkpoint)
-    return evaluate_checkpoint(cfg, args.checkpoint, SPLITS[args.command])
+        return report(checkpoint)
+    return evaluate_checkpoint(cfg, checkpoint, SPLITS[args.command])
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import copy
 import dataclasses
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -174,7 +175,7 @@ def test_symlinks_are_refused_and_never_followed(repo, tmp_path):
 
 def test_live_lock_refuses_and_stale_lock_is_removed(repo):
     root, cfg, ckpt = repo
-    lock = lock_path(root / "results", "qwen")
+    lock = lock_path("qwen", root / "results")
     lock.write_text(str(os.getpid()))  # this process is alive: the run counts as training
     with pytest.raises(SystemExit, match="being trained by process"):
         cleanup.plan(cfg, root, ckpt)
@@ -225,14 +226,14 @@ def test_run_names_that_could_escape_or_hide_are_rejected(tmp_path, name):
 
 
 def test_training_holds_the_lock_and_refuses_a_second_trainer(tmp_path, monkeypatch):
-    from qwen_grpo import trainer
-    monkeypatch.setattr(trainer, "RESULTS", tmp_path)
+    from qwen_grpo import runs, trainer
+    monkeypatch.setattr(runs, "ROOT", tmp_path)
     seen = []
-    monkeypatch.setattr(trainer, "_train", lambda cfg, resume, device: seen.append(lock_path(tmp_path, cfg.run.name).read_text()))
+    monkeypatch.setattr(trainer, "_train", lambda cfg, resume, state, device: seen.append(runs.lock_path(cfg.run.name).read_text()))
     cfg = make_cfg(tmp_path)
     trainer.train(cfg)
-    assert seen == [str(os.getpid())] and not lock_path(tmp_path, "qwen").exists()
-    lock_path(tmp_path, "qwen").write_text(str(os.getpid()))
+    assert seen == [str(os.getpid())] and not runs.lock_path("qwen").exists()
+    runs.lock_path("qwen").write_text(str(os.getpid()))
     with pytest.raises(SystemExit, match="already being trained"):
         trainer.train(dataclasses.replace(cfg))
 
@@ -252,3 +253,86 @@ def test_ownership_follows_the_resolved_config_not_how_the_yaml_is_written(repo,
     parent.write_text(yaml.safe_dump({**RAW, "run": {"name": "default"}, "training": {**RAW["training"], "seed": 7}}))
     with pytest.raises(SystemExit, match="different config"):
         cleanup.plan(config.load(child), root, ckpt)
+
+
+# --- remove --run: runs/<name>/ ----------------------------------------------------------------------------------
+
+@pytest.fixture
+def run_repo(tmp_path, monkeypatch):
+    """A synthetic runs/ with run 'qwen', look-alike neighbours and shared files."""
+    from qwen_grpo import runs
+    monkeypatch.setattr(runs, "ROOT", tmp_path)
+    for name in ("qwen", "qwen_lr0", "qwen.v2"):
+        runs.create(name, "0" * 64, {"git_commit": None, "git_dirty": None})
+        write(runs.checkpoint_path(name, 10) / "adapter_model.safetensors", "x" * 1000)
+        write(runs.run_dir(name) / "report.md", "# report")
+    write(tmp_path / "configs" / "qwen.yaml", "run: {name: qwen}\n")
+    write(tmp_path / "results" / "baseline" / "validation.json", "{}")
+    return tmp_path, runs
+
+
+def test_remove_run_dry_run_then_confirm_deletes_only_that_run(run_repo, capsys):
+    root, runs = run_repo
+    runs.lock_path("qwen").write_text("999999999")  # stale: no such process
+    items = cleanup.remove_run("qwen")
+    assert [p for p, _ in items] == [runs.run_dir("qwen"), runs.lock_path("qwen")] and runs.run_dir("qwen").exists()
+    out = capsys.readouterr().out
+    assert "dry run" in out and "runs/qwen/" in out and "total, 2 paths" in out and "KiB" in out
+    cleanup.remove_run("qwen", confirm=True)
+    assert not runs.run_dir("qwen").exists() and not runs.lock_path("qwen").exists()
+    assert runs.run_dir("qwen_lr0").exists() and runs.run_dir("qwen.v2").exists()
+    assert (root / "configs" / "qwen.yaml").exists() and (root / "results" / "baseline" / "validation.json").exists()
+
+
+@pytest.mark.parametrize("break_it, message", [
+    (lambda root, runs: (runs.run_dir("qwen") / "manifest.json").unlink(), "ownership cannot be confirmed"),
+    (lambda root, runs: runs.write_json(runs.run_dir("qwen") / "manifest.json", {"run": "other"}), "ownership cannot be confirmed"),
+    (lambda root, runs: runs.lock_path("qwen").write_text(str(os.getpid())), "being trained by process"),
+    (lambda root, runs: os.symlink(root / "configs", runs.run_dir("qwen") / "link"), "symbolic link runs/qwen/link"),
+    (lambda root, runs: write(runs.run_dir("qwen_lr0") / "config.yaml", "checkpoint: runs/qwen/checkpoints/step10\n"),
+     "runs/qwen_lr0/config.yaml references runs/qwen"),
+])
+def test_remove_run_refuses_uncertain_ownership_and_unsafe_paths(run_repo, break_it, message):
+    root, runs = run_repo
+    break_it(root, runs)
+    with pytest.raises(SystemExit, match=re.escape(message)):
+        cleanup.remove_run("qwen", confirm=True)
+    assert (runs.checkpoint_path("qwen", 10) / "adapter_model.safetensors").exists()
+
+
+def test_remove_run_refuses_symlinked_run_and_runs_directories(run_repo, tmp_path):
+    root, runs = run_repo
+    elsewhere = tmp_path / "elsewhere"
+    runs.run_dir("qwen").rename(elsewhere)
+    os.symlink(elsewhere, runs.run_dir("qwen"))
+    with pytest.raises(SystemExit, match="is a symbolic link"):
+        cleanup.remove_run("qwen", confirm=True)
+    os.unlink(runs.run_dir("qwen"))
+    runs.runs_dir().rename(tmp_path / "real_runs")
+    os.symlink(tmp_path / "real_runs", runs.runs_dir())
+    with pytest.raises(SystemExit, match="passes through a symbolic link"):
+        cleanup.remove_run("qwen_lr0", confirm=True)
+    assert elsewhere.exists() and (tmp_path / "real_runs" / "qwen_lr0").exists()
+
+
+@pytest.mark.parametrize("name", ["..", "../qwen", ".qwen", "qwen/../qwen_lr0", ""])
+def test_remove_run_rejects_names_that_are_not_run_names(run_repo, name):
+    with pytest.raises(SystemExit, match="not a run name"):
+        cleanup.remove_run(name, confirm=True)
+
+
+def test_remove_run_of_a_missing_or_legacy_run(run_repo):
+    root, runs = run_repo
+    with pytest.raises(SystemExit, match="no run 'gone'"):
+        cleanup.remove_run("gone")
+    (root / "checkpoints" / "old_step10").mkdir(parents=True)
+    with pytest.raises(SystemExit, match="use --config and --checkpoint"):
+        cleanup.remove_run("old")
+
+
+def test_remove_run_refuses_git_tracked_runs(run_repo):
+    root, runs = run_repo
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "runs/qwen/report.md"], cwd=root, check=True)
+    with pytest.raises(SystemExit, match="committed to git"):
+        cleanup.remove_run("qwen", confirm=True)

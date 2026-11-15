@@ -1,5 +1,10 @@
-"""`scripts/run.py remove`: find and delete the generated artifacts of one training run, refusing whenever ownership is
-not certain. A run <N> owns exactly (names matched in full, never by prefix):
+"""`scripts/run.py remove`: delete the generated artifacts of one training run, refusing whenever ownership is not
+certain. Dry run unless confirmed.
+
+remove --run <N> (remove_run): a run under runs/ owns exactly runs/<N>/ and a stale runs/.<N>.lock.
+
+remove --config --checkpoint (remove), for runs from before runs/ existed: a run <N> owns exactly (names matched in
+full, never by prefix):
 
     checkpoints/<N>_step<k>/                 adapters + training state           (trainer)
     results/<N>/                             training.json, validation.json, plots/ (trainer)
@@ -17,8 +22,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from qwen_grpo import runs
 from qwen_grpo.checkpointing import check_adapter_matches, lock_owner, lock_path
-from qwen_grpo.config import as_dict
+from qwen_grpo.config import RUN_NAME, as_dict
 from qwen_grpo.verification import comparable
 
 SCANNED = ("*.json", "*.md", "*.yaml", "*.py")  # files searched for references to the run's artifacts
@@ -40,7 +46,7 @@ def artifacts(root, name):
     found = [*children(d["checkpoints"], rf"{n}_step\d+"), *children(d["results"], n),
              *children(d["benchmarks"], rf"{n}\.(json|md)"), *children(d["eval"], rf"{n}_step\d+"),
              *children(d["verification"], rf"{n}_step\d+")]
-    lock = lock_path(d["results"], name)
+    lock = lock_path(name, d["results"])
     if lock.exists() and lock_owner(lock) is None:
         found.append(lock)
     return found
@@ -77,7 +83,7 @@ def references(root, paths):
     root = Path(root)
     rels = [p.relative_to(root).as_posix() for p in paths]
     pattern = re.compile("|".join(rf"(?<![\w.-]){re.escape(r)}(?![\w.-])" for r in rels))
-    roots = [root / "results", root / "configs", root / "docs", root / "research", root / "README.md"]
+    roots = [root / "runs", root / "results", root / "configs", root / "docs", root / "research", root / "README.md"]
     hits = {}
     for base in roots:
         files = [base] if base.is_file() else [f for g in SCANNED for f in base.rglob(g)] if base.is_dir() else []
@@ -137,7 +143,7 @@ def plan(cfg, root, checkpoint):
         raise SystemExit(f"refusing: output directories {bad} are or pass through symbolic links")
     found = artifacts(root, cfg.run.name)
     problems = ownership_problems(cfg, root, checkpoint, found)
-    if (pid := lock_owner(lock_path(d["results"], cfg.run.name))) is not None:
+    if (pid := lock_owner(lock_path(cfg.run.name, d["results"]))) is not None:
         problems.append(f"run {cfg.run.name!r} is being trained by process {pid}")
     allowed = {p.resolve() for p in d.values()}
     problems += [f"{p} is outside the experiment output directories" for p in found if p.parent.resolve() not in allowed]
@@ -156,20 +162,58 @@ def human(n):
         n /= 1024
 
 
-def remove(cfg, root, checkpoint, confirm=False):
-    """Print what belongs to the run; delete it only with confirm=True. Returns the planned [(path, bytes)]."""
-    root = Path(os.path.abspath(root))
-    items = plan(cfg, root, checkpoint)
-    print(f"run {cfg.run.name!r} ({'deleting' if confirm else 'dry run'}):")
+def execute(name, root, items, lock, confirm):
+    """Print the plan; delete it only with confirm=True (re-checking that no training started meanwhile)."""
+    print(f"run {name!r} ({'deleting' if confirm else 'dry run'}):")
     for p, n in items:
         print(f"  {human(n):>10}  {p.relative_to(root)}{'/' if p.is_dir() else ''}")
     print(f"  {human(sum(n for _, n in items)):>10}  total, {len(items)} paths" if items else "  nothing to remove")
     if not confirm:
         print("dry run: nothing deleted; add --confirm to delete these paths")
         return items
-    if (pid := lock_owner(lock_path(output_dirs(root)["results"], cfg.run.name))) is not None:
-        raise SystemExit(f"refusing: run {cfg.run.name!r} started training (process {pid})")
+    if (pid := lock_owner(lock)) is not None:
+        raise SystemExit(f"refusing: run {name!r} started training (process {pid})")
     for p, _ in items:
         shutil.rmtree(p) if p.is_dir() and not p.is_symlink() else p.unlink()
     print(f"deleted {len(items)} paths")
     return items
+
+
+def remove(cfg, root, checkpoint, confirm=False):
+    """A run from before runs/ existed. Returns the planned [(path, bytes)]."""
+    root = Path(os.path.abspath(root))
+    items = plan(cfg, root, checkpoint)
+    return execute(cfg.run.name, root, items, lock_path(cfg.run.name, output_dirs(root)["results"]), confirm)
+
+
+def plan_run(name):
+    """[(path, bytes)] to delete for runs/<name>/; raises SystemExit listing every reason to refuse."""
+    root = Path(os.path.abspath(runs.ROOT))
+    if not re.fullmatch(RUN_NAME, name):
+        raise SystemExit(f"refusing: {name!r} is not a run name")
+    top, d, lock = runs.runs_dir(), runs.run_dir(name), runs.lock_path(name)
+    if top.exists() and top.resolve() != Path(os.path.realpath(root)) / "runs":
+        raise SystemExit(f"refusing: {top} is or passes through a symbolic link")
+    if d.is_symlink():
+        raise SystemExit(f"refusing: {d.relative_to(root)} is a symbolic link")
+    if not d.is_dir():
+        hint = (" (a run from before runs/ existed: use --config and --checkpoint)" if runs.legacy_outputs(name) else "")
+        raise SystemExit(f"no run {name!r}: {d.relative_to(root)} does not exist{hint}")
+    problems = []
+    m = runs.read_json(d / "manifest.json") if (d / "manifest.json").is_file() and not (d / "manifest.json").is_symlink() else None
+    if m is None or m.get("run") != name:
+        problems.append(f"{d.relative_to(root)}/manifest.json is missing or names another run: ownership cannot be confirmed")
+    if (pid := lock_owner(lock)) is not None:
+        problems.append(f"run {name!r} is being trained by process {pid}")
+    found = [d] + ([lock] if lock.exists() and not lock.is_symlink() else [])
+    problems += [f"symbolic link {s.relative_to(root)}" for p in found for s in symlinks(p)]
+    problems += [f"{p.relative_to(root)} is committed to git (deleting it frees no space; use git rm)" for p in git_tracked(root, found)]
+    problems += [f"{f} references {', '.join(r)}" for f, r in references(root, found).items()]
+    if problems:
+        raise SystemExit(f"refusing to remove run {name!r}:\n  " + "\n  ".join(problems))
+    return [(p, size(p)) for p in found]
+
+
+def remove_run(name, confirm=False):
+    """runs/<name>/: dry run unless confirm. Returns the planned [(path, bytes)]."""
+    return execute(name, Path(os.path.abspath(runs.ROOT)), plan_run(name), runs.lock_path(name), confirm)

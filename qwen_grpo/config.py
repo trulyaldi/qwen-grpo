@@ -21,6 +21,7 @@ import yaml
 from qwen_grpo.evaluation import BATCH, BOOTSTRAP, MAX_NEW, SCORE_BATCH
 from qwen_grpo.model import PRESETS
 
+RUN_NAME = r"[A-Za-z0-9][A-Za-z0-9_.-]*"  # no path separators, cannot start with "." (hidden, "..") or "-"
 DTYPES = {"bfloat16": torch.bfloat16, "float32": torch.float32}
 BATCH_MODES = ("cycle", "balanced", "unconstrained")
 
@@ -161,7 +162,7 @@ def validate(cfg: Config) -> Config:
     nc, st = v.negative_control, v.statistics
     custom = lo.targets if isinstance(lo.targets, LoraTargets) else None
     checks = [
-        (re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", cfg.run.name) is not None,
+        (re.fullmatch(RUN_NAME, cfg.run.name) is not None,
          "run.name: letters, digits, '_', '.', '-', starting with a letter or digit (\"..\" would name the parent directory)"),
         (cfg.run.gpu_budget_gib > 0, "run.gpu_budget_gib: > 0"),
         (re.fullmatch(r"Qwen/Qwen3-[0-9.]+B", m.name) is not None,

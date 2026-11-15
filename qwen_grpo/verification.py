@@ -14,14 +14,14 @@ from pathlib import Path
 import torch
 from peft import load_peft_weights
 
-from qwen_grpo.checkpointing import adapter_state, check_adapter_matches, load_adapter, rel, run_of  # noqa: F401 (re-exported)
+from qwen_grpo import runs
+from qwen_grpo.checkpointing import adapter_state, check_adapter_matches, load_adapter, rel  # noqa: F401 (re-exported)
 from qwen_grpo.config import normalized, sha256
 from qwen_grpo.evaluation import (evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap, paired_changes,
                                   paired_f1_bootstrap, settings, win_matrix)
 from qwen_grpo.model import EOS_IDS, lora_model, lora_modules
 from qwen_grpo.sentiment import LABELS, build_prompts, parse_label, reward
 
-ROOT = Path(__file__).resolve().parents[1]
 FP32_MERGE_RTOL = 1e-4  # see merge_check(): fp32 rounding of two algebraically equal computations, with margin
 POWER_RATIO = 100  # the adapter must move logits >= 100x more than merging does, or the merge check has no power
 DRIFT_GUARD = 32  # examples re-scored in-process to confirm a saved baseline still matches the current code
@@ -54,11 +54,11 @@ def comparable(cfg_a: dict, cfg_b: dict, ignore):
     return strip(cfg_a) == strip(cfg_b)
 
 
-def training_log(cfg, checkpoint, results=ROOT / "results"):
+def training_log(cfg, checkpoint):
     """The training log of this checkpoint, if it exists, was produced by this config, and lists this checkpoint."""
-    path = results / cfg.run.name / "training.json"
-    if not path.exists():
-        return None, f"no training log at {rel(path)}"
+    path = runs.training_log_for(checkpoint)
+    if path is None or not path.exists():
+        return None, f"no training log at {rel(path) if path else f'for {checkpoint}'}"
     log = json.loads(path.read_text())
     if "yaml_config" not in log or not comparable(log["yaml_config"], dataclasses.asdict(cfg), set()):
         return None, f"{path.name} was not produced by this config"
@@ -68,12 +68,11 @@ def training_log(cfg, checkpoint, results=ROOT / "results"):
     return log, rel(path)
 
 
-def control_provenance(cfg, checkpoint, results=ROOT / "results"):
+def control_provenance(cfg, checkpoint):
     """A reusable LR=0 control: same config except run name, learning rate 0 and full_val, its own log lists the
     checkpoint, and that run's in-training control checks passed. Returns (ok, reason, log)."""
-    name, _ = run_of(checkpoint)
-    path = results / str(name) / "training.json"
-    if name is None or not path.exists():
+    path = runs.training_log_for(checkpoint)
+    if path is None or not path.exists():
         return False, f"no training log for {checkpoint}", None
     log = json.loads(path.read_text())
     y = log.get("yaml_config")
@@ -101,9 +100,9 @@ def evaluate_model(model, tok, examples, ev):
             "auc": win_matrix(scores, [e["label"] for e in examples]).mean().item()}
 
 
-def saved_baseline(cfg, examples, split, results=ROOT / "results"):
+def saved_baseline(cfg, examples, split):
     """The saved base predictions if they were produced under the current evaluation settings for these examples."""
-    path = results / "baseline" / f"{split}.json"
+    path = runs.baseline_path(split)
     if not path.exists():
         return None, f"{path} not found"
     b = json.loads(path.read_text())
@@ -338,7 +337,7 @@ def label_balance(examples):
 
 # --- orchestration -----------------------------------------------------------------------------------------------
 
-def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
+def verify(cfg, checkpoint, control=None):
     """All evidence for one checkpoint, one model instance on the GPU at a time. `control` is an LR=0 checkpoint whose
     provenance the caller has checked (control_provenance), or None. Returns the evidence dict (also what is saved)."""
     from transformers import AutoTokenizer
@@ -353,7 +352,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
     splits = load_splits()
     examples = [{"id": i, **e} for i, e in enumerate(splits[v.split])]
     subset = examples[: v.merge_subset]
-    log, log_source = training_log(cfg, checkpoint, results)
+    log, log_source = training_log(cfg, checkpoint)
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
 
     fp32 = fp32_merge_check(cfg, checkpoint, subset, tok)  # first: its ~4 GiB host peak never overlaps the CUDA process state
@@ -367,7 +366,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
     assert all(t.abs().max() == 0 for k, t in reconstructed.items() if "lora_B" in k)
     evals, notes = {}, {}
 
-    base, why = saved_baseline(cfg, examples, v.split, results)
+    base, why = saved_baseline(cfg, examples, v.split)
     if base is not None:  # drift guard: the saved file must match the current prompt/tokenization/model code exactly
         with model.disable_adapter():
             head = evaluate_model(model, tok, examples[:DRIFT_GUARD], cfg.evaluation)
@@ -383,7 +382,7 @@ def verify(cfg, checkpoint, control=None, results=ROOT / "results"):
         notes["base"] = f"evaluated in-process with the adapter disabled ({why})"
     evals["base"] = base
 
-    init_ckpt = ROOT / "checkpoints" / f"{run_of(checkpoint)[0]}_step0"
+    init_ckpt = runs.sibling(checkpoint, 0)
     control_ev = None
     if control is not None:
         ctrl_state = load_adapter(model, control)

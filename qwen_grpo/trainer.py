@@ -5,10 +5,10 @@ Run through scripts/run.py train --config <yaml> [--resume checkpoints/<run>_ste
 with the YAML evaluation settings (defaults: those of the saved baseline, so runs stay comparable with it).
 Checkpoints hold the adapter and the training state (optimizer, progress, log so far, RNG), so a run resumes from any
 checkpoint it saved and continues as the uninterrupted run would have (tests/test_trainer.py checks this bitwise on CPU).
-Outputs: results/<run>/config.yaml (the fully resolved config, written when training starts; train --config accepts it),
-results/<run>/training.json (config and its sha256, environment, per-step log, subset evaluations, memory), results/<run>/validation.json
-(raw full-validation predictions and label scores of the final checkpoint), results/<run>/plots/ (training diagnostics:
-reward, validation-subset accuracy, mixed-reward fraction, gradient norm, loss), results/benchmarks/<run>.{json,md} (metrics).
+Outputs (paths: qwen_grpo/runs.py): runs/<run>/config.yaml (resolved config), manifest.json (identity, status),
+training/training.json (config and its sha256, environment, per-step log, subset evaluations, final full-validation
+comparison, memory), training/training.log (console output), training/validation.json (raw full-validation predictions
+and label scores of the final checkpoint), checkpoints/step<N>/; then summary.json, plots/ and report.md (reporting.py).
 """
 import hashlib
 import importlib.metadata
@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from contextlib import contextmanager
 from pathlib import Path
 
 import torch
@@ -27,20 +28,20 @@ import yaml
 from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
 from transformers import AutoTokenizer
 
-from qwen_grpo.checkpointing import (load_adapter, load_training_state, lock_path, rel, run_of, save_checkpoint, set_rng_state,
+from qwen_grpo import runs
+from qwen_grpo.checkpointing import (load_adapter, load_training_state, rel, save_checkpoint, set_rng_state,
                                      training_lock)
 from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, sha256
-from qwen_grpo.evaluation import (BENCHMARKS, RESULTS, confusion_table, evaluate, label_scores, metrics, metrics_table,
+from qwen_grpo.evaluation import (evaluate, label_scores, metrics,
                                   paired_auc_bootstrap, paired_bootstrap, paired_changes, paired_compare, predictions_path,
                                   settings, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, lora_modules
 from qwen_grpo.policy import generate_rollouts
-from qwen_grpo.reporting import training_plots
+from qwen_grpo.reporting import update_run
 from qwen_grpo.sentiment import SPLITS_PATH, build_prompts, load_splits, parse_label
 from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_step
 
-ROOT = Path(__file__).resolve().parents[1]
-CHECKPOINTS = ROOT / "checkpoints"
+ROOT = Path(__file__).resolve().parents[1]  # the git repository (provenance); outputs: runs.ROOT
 BASE_FILE = predictions_path("validation")
 SUFFIX = {"last-o-proj": "", "last2-attention": "_last2"}
 REFERENCE_STEPS = 30  # final step of the saved historical runs in REFERENCES
@@ -55,7 +56,7 @@ def output_name(targets, tag="", B=1, mode="cycle"):
 
 def _ref(targets, B=1, mode="cycle"):
     name = output_name(targets, B=B, mode=mode)
-    return RESULTS / name / "validation.json", CHECKPOINTS / f"{name}_step{REFERENCE_STEPS}", targets
+    return runs.legacy_results(name) / "validation.json", runs.legacy_checkpoint(name, REFERENCE_STEPS), targets
 
 
 # Saved final (step-30) predictions (and adapters, for label scoring) of earlier Qwen3-0.6B runs:
@@ -74,8 +75,7 @@ def l2(norms):
     return math.sqrt(sum(x * x for x in norms))
 
 
-def environment(splits, device):
-    """Provenance of a training session: code version, library versions, dataset identity and hardware."""
+def git_state():
     def git(*args):
         try:
             return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
@@ -83,7 +83,12 @@ def environment(splits, device):
             return None
 
     status = git("status", "--porcelain", "--untracked-files=no")
-    env = {"git_commit": git("rev-parse", "HEAD"), "git_dirty": None if status is None else bool(status),
+    return {"git_commit": git("rev-parse", "HEAD"), "git_dirty": None if status is None else bool(status)}
+
+
+def environment(splits, device):
+    """Provenance of a training session: code version, library versions, dataset identity and hardware."""
+    env = {**git_state(),
            "python": sys.version.split()[0], "platform": platform.platform(),
            "packages": {p: importlib.metadata.version(p) for p in PACKAGES},
            "dataset": {"name": splits["dataset"], "split_seed": splits["seed"], "file": rel(SPLITS_PATH),
@@ -97,87 +102,98 @@ def environment(splits, device):
     return env
 
 
-def write_benchmark(name, result, budget):
-    """results/benchmarks/<run>.json (final full-validation metrics vs base) and a Markdown rendering of it."""
-    f, cfg = result["final"], result["config"]
-    bench = {"run": name, "model": result["model"], "seed": result["seed"], "split": "validation",
-             "checkpoint": result["final_checkpoint"]["path"], "step": result["final_checkpoint"]["step"],
-             "predictions": rel(RESULTS / name / "validation.json"),
-             "training_log": rel(RESULTS / name / "training.json"),
-             "baseline_predictions": rel(BASE_FILE),
-             "config": {k: v for k, v in cfg.items() if k not in ("train_ids", "val_subset_ids")},
-             **f, "memory": result["memory"]}
-    BENCHMARKS.mkdir(parents=True, exist_ok=True)
-    (BENCHMARKS / f"{name}.json").write_text(json.dumps(bench, indent=1))
-
-    ci = lambda c: f"[{c[0]:+.4f}, {c[1]:+.4f}]"
-    lora = cfg["lora"]
-    md = [f"# {name}: GRPO + LoRA vs baseline", "",
-          f"{result['model']}, LoRA r={lora['r']} α={lora['alpha']} on {lora.get('targets', lora.get('target'))}, lr {cfg['lr']}, "
-          f"{bench['step']} steps, B={cfg['B']} ({cfg['batch_mode']}), G={cfg['G']}, seed {result['seed']}. "
-          f"Full validation (n={f['trained']['n']}), greedy, max_new_tokens = {cfg['eval_max_new_tokens']}. One training seed: CIs cover "
-          "evaluation sampling only.", "",
-          metrics_table({"base": {**f["base"], "auc": f["auc"]["base"]}, "trained": {**f["trained"], "auc": f["auc"]["trained"]}}),
-          "", f"Accuracy trained − base: {f['accuracy_diff']:+.4f}, paired bootstrap 95% CI {ci(f['bootstrap_ci95'])}.",
-          f"AUC trained − base: {f['auc_vs']['base']['auc_diff']:+.4f}, class-stratified paired bootstrap 95% CI "
-          f"{ci(f['auc_vs']['base']['ci95'])}.", "",
-          "## Paired changes vs base", "", "```", json.dumps(f["paired_changes"]), "```", "",
-          "## Trained confusion", "", confusion_table(f["trained"])]
-    others = [k for k in f["auc_vs"] if k != "base"]
-    if others or f["vs_saved"]:
-        md += ["", "## Trained vs saved runs", "", "| reference | Δ accuracy | 95% CI | Δ AUC | 95% CI |", "|---|---|---|---|---|"]
-        for ref in dict.fromkeys([*f["vs_saved"], *others]):
-            a, u = f["vs_saved"].get(ref), f["auc_vs"].get(ref)
-            md.append(f"| {ref} | " + (f"{a['accuracy_diff']:+.4f} | {ci(a['ci95'])}" if a else "— | —") + " | "
-                      + (f"{u['auc_diff']:+.4f} | {ci(u['ci95'])}" if u else "— | —") + " |")
-    m = result["memory"]
-    peak = "n/a (CPU run)" if m["peak_reserved_gib"] is None else f"{m['peak_reserved_gib']:.2f} GiB"
-    md += ["", f"Peak reserved {peak} of {budget} GiB budget. "
-           f"Frozen weights changed: {len(result['frozen_changed'])}. Raw predictions: `{bench['predictions']}`; "
-           f"training log: `{bench['training_log']}`."]
-    (BENCHMARKS / f"{name}.md").write_text("\n".join(md) + "\n")
-
-
-def existing_outputs(name):
-    return sorted([*RESULTS.glob(name), *(BENCHMARKS.glob(f"{name}.*")), *CHECKPOINTS.glob(f"{name}_step*")])
-
-
 def check_resume(cfg, checkpoint, state):
     """Resume only the run this checkpoint belongs to, with the same settings, without overwriting later checkpoints."""
-    name, step = run_of(checkpoint)
+    name, step, layout = runs.parse_checkpoint(checkpoint)
+    if layout != "run":
+        raise SystemExit(f"{checkpoint} is not a checkpoint under runs/: runs from before runs/ existed cannot be resumed")
     if name != cfg.run.name or step != state["step"]:
         raise SystemExit(f"{checkpoint} is not a checkpoint of run {cfg.run.name!r}")
     strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items() if k != "verification"}
     if diff := differences(strip(normalized(state["config"])), strip(as_dict(cfg))):
         raise SystemExit(f"{checkpoint} was trained with a different config ({', '.join(diff)}); resume needs the same "
-                         f"settings, e.g. --config {rel(RESULTS / name / 'config.yaml')}")
-    if later := sorted(rel(p) for p in CHECKPOINTS.glob(f"{name}_step*") if (run_of(p)[1] or 0) > step):
+                         f"settings, e.g. --config {rel(runs.run_dir(name) / 'config.yaml')}")
+    if later := [rel(p) for s, p in runs.checkpoints(name) if s > step]:
         raise SystemExit(f"resuming from step {step} would overwrite later checkpoints {later}")
 
 
+def start(cfg, resume):
+    """A new run: refuse a name already in use, then create runs/<name>/ with config.yaml and manifest.json. A resumed
+    run: check the checkpoint belongs to it and to this config. Returns the checkpoint's training state, or None."""
+    name = cfg.run.name
+    if resume is not None:
+        state = load_training_state(resume)
+        check_resume(cfg, resume, state)
+        runs.set_status(name, "running", resumed_from=rel(resume))
+        return state
+    if legacy := runs.legacy_outputs(name):
+        raise SystemExit(f"run.name {name!r} belongs to a run from before runs/ existed: {[rel(p) for p in legacy]}\n"
+                         "  choose another run.name (those artifacts are kept; `remove --config --checkpoint` deletes them)")
+    if runs.run_dir(name).exists():
+        if not cfg.run.overwrite:
+            raise SystemExit(f"run {name!r} already exists ({rel(runs.run_dir(name))}/), refusing to overwrite it\n"
+                             "  choose another run.name, or set run.overwrite: true to delete it first")
+        shutil.rmtree(runs.run_dir(name))
+        print(f"run.overwrite: deleted {rel(runs.run_dir(name))}/")
+    runs.training_dir(name).mkdir(parents=True)
+    (runs.run_dir(name) / "config.yaml").write_text(f"# resolved config of run {name}, sha256 {sha256(cfg)}\n"
+                                                    + yaml.safe_dump(as_dict(cfg), sort_keys=False))
+    runs.create(name, sha256(cfg), git_state())
+    return None
+
+
+@contextmanager
+def tee(path):
+    """Copy everything printed to `path`, appended (a resumed run continues the same log)."""
+    with open(path, "a") as f:
+        out = sys.stdout
+
+        class Tee:
+            def write(self, s):
+                f.write(s)
+                return out.write(s)
+
+            def flush(self):
+                f.flush()
+                out.flush()
+
+            def __getattr__(self, attr):
+                return getattr(out, attr)
+        sys.stdout = Tee()
+        try:
+            yield
+        finally:
+            sys.stdout = out
+
+
 def train(cfg: Config, resume=None, device="cuda"):
-    """Train under results/.<run>.lock so that `scripts/run.py remove` cannot delete a run while it is training."""
-    with training_lock(lock_path(RESULTS, cfg.run.name)):
-        return _train(cfg, resume, device)
+    """Train run cfg.run.name in runs/<name>/ under runs/.<name>.lock (so `remove` cannot delete it meanwhile). The
+    manifest records how training ended; summary.json, plots/ and report.md are then rebuilt from the saved files."""
+    name = cfg.run.name
+    with training_lock(runs.lock_path(name)):
+        state = start(cfg, resume)
+        try:
+            with tee(runs.training_dir(name) / "training.log"):
+                result = _train(cfg, resume, state, device)
+        except BaseException as e:
+            runs.set_status(name, "interrupted" if isinstance(e, KeyboardInterrupt) else "failed", error=f"{type(e).__name__}: {e}")
+            try:
+                update_run(name)
+            except Exception as r:  # the original error matters more than a report that could not be built
+                print(f"report not rebuilt ({type(r).__name__}: {r}); run `scripts/run.py report --run {name}`")
+            raise
+        runs.set_status(name, "completed")
+    report = update_run(name)
+    print(f"\nrun {name}: {rel(runs.run_dir(name))}/  report: {rel(report)}")
+    return result
 
 
-def _train(cfg: Config, resume=None, device="cuda"):
+def _train(cfg: Config, resume, state, device):
     t, lo, d, ev = cfg.training, cfg.lora, cfg.data, cfg.evaluation
     B, mode, G, name = t.batch_size, t.batch_mode, t.group_size, cfg.run.name
     gen_kw, score_kw = settings(ev)
     on_cuda = torch.device(device).type == "cuda"
     gib = lambda f: f() / 2**30 if on_cuda else None
-    if resume is None:
-        if (clash := existing_outputs(name)) and not cfg.run.overwrite:
-            raise SystemExit(f"run.name {name!r} already has outputs, refusing to overwrite: {[rel(c) for c in clash]}\n"
-                             "  set run.overwrite: true to delete them first, or choose another run.name")
-        for c in clash:
-            shutil.rmtree(c) if c.is_dir() else c.unlink()
-        if clash:
-            print(f"run.overwrite: deleted earlier outputs of {name!r}: {[rel(c) for c in clash]}")
-    else:
-        state = load_training_state(resume)
-        check_resume(cfg, resume, state)
     dtype = DTYPES[cfg.model.dtype]
     decoding = {"do_sample": False, "max_new_tokens": ev.max_new_tokens}
 
@@ -224,19 +240,13 @@ def _train(cfg: Config, resume=None, device="cuda"):
     frozen_digest = {n: digest(p) for n, p in frozen.items()}
     optimizer = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
 
-    def save_config():
-        (RESULTS / name).mkdir(parents=True, exist_ok=True)
-        (RESULTS / name / "config.yaml").write_text(f"# resolved config of run {name}, sha256 {sha256(cfg)}\n"
-                                                    + yaml.safe_dump(as_dict(cfg), sort_keys=False))
-
     def eval_subset(step, ckpt=None):
         preds = evaluate(model, tok, val_sub, **gen_kw)
         result["evaluations"].append({"step": step, "checkpoint": ckpt, "split": "validation", "metrics": metrics(preds), "predictions": preds})
         print(f"  [val subset, step {step}] {summary(metrics(preds))}")
 
     if resume is None:
-        model.save_pretrained(CHECKPOINTS / f"{name}_step0")  # initial adapter: reference for parameter deltas
-        save_config()
+        model.save_pretrained(runs.checkpoint_path(name, 0))  # initial adapter: reference for parameter deltas
         result = {
             "model": cfg.model.name, "method": "GRPO+LoRA", "seed": t.seed, "yaml_config": as_dict(cfg),
             "config_sha256": sha256(cfg),
@@ -252,7 +262,7 @@ def _train(cfg: Config, resume=None, device="cuda"):
                                 "trainable_params": n_trainable, "r": lo.rank, "alpha": lo.alpha, "dropout": lo.dropout},
                        "dtypes": {"base": str(dtype), "lora": "torch.float32"}, "gpu_budget_gib": cfg.run.gpu_budget_gib,
                        "checkpoint_contents": "adapter weights + adapter_config + training_state.pt (optimizer, progress, log, RNG)",
-                       "initial_checkpoint": rel(CHECKPOINTS / f"{name}_step0")},
+                       "initial_checkpoint": rel(runs.checkpoint_path(name, 0))},
             "training": [], "zero_signal": [], "evaluations": [],
         }
         base_full = None
@@ -271,9 +281,6 @@ def _train(cfg: Config, resume=None, device="cuda"):
         load_adapter(model, resume)
         optimizer.load_state_dict(state["optimizer"])
         result, base_full = state["result"], state["base_full"]
-        result.setdefault("config_sha256", sha256(cfg))  # runs started before the hash was recorded
-        if not (RESULTS / name / "config.yaml").exists():
-            save_config()
         step, attempts, ckpt, elapsed = state["step"], state["attempts"], state["checkpoint"], state["train_seconds"]
         mixed_counts = Counter(state["mixed_counts"])
         result.setdefault("resumed", []).append({"from": rel(resume), "step": step, "attempts": attempts,
@@ -282,7 +289,7 @@ def _train(cfg: Config, resume=None, device="cuda"):
 
     def save(step):
         """Adapter + resumable state; the subset evaluation runs first so the saved log and RNG state include it."""
-        path = CHECKPOINTS / f"{name}_step{step}"
+        path = runs.checkpoint_path(name, step)
         eval_subset(step, rel(path))
         save_checkpoint(model, optimizer, path, {
             "config": as_dict(cfg), "step": step, "attempts": attempts, "checkpoint": rel(path),
@@ -337,7 +344,7 @@ def _train(cfg: Config, resume=None, device="cuda"):
               f"|dtheta| {row['update_norm']:.2e}  |(a/r)BA| {row['effective_adapter_norm']:.3e}  {mem}")
         if step % t.eval_every == 0 or step == t.max_steps:
             ckpt = save(step)
-    if step and ckpt != rel(CHECKPOINTS / f"{name}_step{step}"):  # attempt budget ran out between checkpoints
+    if step and ckpt != rel(runs.checkpoint_path(name, step)):  # attempt budget ran out between checkpoints
         ckpt = save(step)
 
     result["train_seconds"] = time.time() - t0
@@ -357,14 +364,14 @@ def _train(cfg: Config, resume=None, device="cuda"):
 
     if ckpt is not None:  # evaluate the saved artifact, not just the in-memory adapter
         live = {k: v.detach().clone() for k, v in get_peft_model_state_dict(model).items()}
-        loaded = load_peft_weights(str(ROOT / ckpt))
+        loaded = load_peft_weights(str(runs.ROOT / ckpt))
         assert live.keys() == loaded.keys() and all(torch.equal(live[k], loaded[k].to(live[k].device)) for k in live), ckpt
         set_peft_model_state_dict(model, loaded)
         assert all(torch.equal(p, live[k]) for k, p in get_peft_model_state_dict(model).items())
         result["final_checkpoint"] = {"path": ckpt, "step": step, "reloaded_bitwise_equal": True}
 
     def save_log(status):
-        """results/<run>/training.json; written when training ends and again after the final evaluation."""
+        """training/training.json; written when training ends and again after the final evaluation."""
         mem = {"peak_allocated_gib": None, "peak_reserved_gib": None, "device_gib": None, "within_budget": None}
         if on_cuda:
             torch.cuda.synchronize()
@@ -372,8 +379,7 @@ def _train(cfg: Config, resume=None, device="cuda"):
                        device_gib=torch.cuda.mem_get_info()[1] / 2**30)
             mem["within_budget"] = mem["peak_reserved_gib"] < cfg.run.gpu_budget_gib
         result["status"], result["memory"] = status, mem
-        (RESULTS / name).mkdir(parents=True, exist_ok=True)
-        (RESULTS / name / "training.json").write_text(json.dumps({k: v for k, v in result.items() if k != "final"}, indent=1))
+        runs.write_json(runs.training_dir(name) / "training.json", result)
         return mem
 
     save_log("training complete; final evaluation pending")  # survives a failure in the evaluation below
@@ -383,7 +389,7 @@ def _train(cfg: Config, resume=None, device="cuda"):
         trained_full = evaluate(model, tok, val_all, **gen_kw)
         tm, bm = metrics(trained_full), metrics(base_full)
         diff, ci_lo, ci_hi = paired_bootstrap([p["correct"] for p in base_full], [p["correct"] for p in trained_full], **boot)
-        out_path = RESULTS / name / "validation.json"
+        out_path = runs.training_dir(name) / "validation.json"
         refs = {ref: preds for ref, (p, _, _) in REFERENCES.items() if p != out_path and (preds := saved_predictions(p)) is not None}
         result["final"] = {"base": bm, "trained": tm, "accuracy_diff": diff, "bootstrap_ci95": [ci_lo, ci_hi],
                            "bootstrap": {"resamples": ev.bootstrap_samples, "seed": ev.bootstrap_seed, "paired_by": "id"},
@@ -393,7 +399,7 @@ def _train(cfg: Config, resume=None, device="cuda"):
         with model.disable_adapter():
             scores["base"] = label_scores(model, tok, val_all, **score_kw)
         for ref, (_, ref_ckpt, targets) in REFERENCES.items():  # same model and targets -> load into this model
-            if (ref_ckpt is not None and targets == lo.targets and ref_ckpt.exists() and ref_ckpt != ROOT / ckpt
+            if (ref_ckpt is not None and targets == lo.targets and ref_ckpt.exists() and ref_ckpt != runs.ROOT / ckpt
                     and json.loads((ref_ckpt / "adapter_config.json").read_text())["base_model_name_or_path"] == cfg.model.name):
                 set_peft_model_state_dict(model, load_peft_weights(str(ref_ckpt)))
                 scores[ref] = label_scores(model, tok, val_all, **score_kw)
@@ -408,10 +414,6 @@ def _train(cfg: Config, resume=None, device="cuda"):
         }, indent=1))
 
     mem = save_log("complete")  # memory peaks now include the final evaluation
-    (RESULTS / name / "plots").mkdir(exist_ok=True)
-    training_plots(result, RESULTS / name / "plots")
-    if "final" in result:
-        write_benchmark(name, result, cfg.run.gpu_budget_gib)
 
     rows = result["training"]
     print(f"\nbatches by number of mixed groups: {result['batches_by_mixed_groups']}, prompt groups {attempts * B}, "

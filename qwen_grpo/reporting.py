@@ -1,9 +1,11 @@
-"""Verification outputs: JSON evidence files, Matplotlib plots and a Markdown report, all rebuilt from saved files.
+"""Reports rebuilt from saved files, never by loading a model.
 
-save(evidence, out) writes the JSON files; render(out) reads them (and the training log they name) and writes plots/
-and report.md without loading any model.
+Verification of one checkpoint: save(evidence, data) writes the JSON evidence; render(out, data) reads it (and the
+training log it names) and writes out/plots/ and out/report.md. A run: update_run(name) writes runs/<name>/plots/,
+summary.json (machine-readable) and report.md (the one report to read) from everything saved under runs/<name>/.
 """
 import json
+import re
 from pathlib import Path
 
 import matplotlib
@@ -12,7 +14,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import yaml  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
+from qwen_grpo import runs  # noqa: E402
+from qwen_grpo.checkpointing import STATE, lock_owner  # noqa: E402
+
 MODELS = ("base", "adapter", "merged", "lr_zero")
 LABEL = {"base": "Base", "adapter": "Adapter", "merged": "Merged", "lr_zero": "LR=0"}
 SECTIONS = ("parameter_updates", "policy_change", "merge_equivalence", "negative_control", "confidence_intervals",
@@ -20,7 +24,8 @@ SECTIONS = ("parameter_updates", "policy_change", "merge_equivalence", "negative
 
 
 def save(evidence, out):
-    """evaluation/<model>.json (metrics, AUC, raw predictions, label scores), verification/<section>.json, manifest."""
+    """Into directory `out`: evaluation/<model>.json (metrics, AUC, raw predictions, label scores),
+    verification/<section>.json, config.yaml, manifest.json."""
     out = Path(out)
     (out / "evaluation").mkdir(parents=True, exist_ok=True)
     (out / "verification").mkdir(exist_ok=True)
@@ -86,6 +91,17 @@ def training_plots(log, plots):
                         lambda ax: ax.plot(steps, [r["grad_norm"] for r in rows], "o-", ms=3)))
     made.append(_figure(plots / "loss.png", "optimizer step", "GRPO loss", "GRPO loss: training diagnostic, not evidence of learning",
                         lambda ax: ax.plot(steps, [r["loss"] for r in rows], "o-", ms=3)))
+
+    if not all("predicted_positive_rate" in e["metrics"] and e.get("predictions") for e in evals):
+        return made  # not recorded by this log: no plot rather than an invented one
+
+    def bias(ax):
+        gold = evals[0]["predictions"]
+        ax.plot([e["step"] for e in evals], [e["metrics"]["predicted_positive_rate"] for e in evals], "o-", label="predicted POSITIVE")
+        ax.axhline(sum(p["label"] == "POSITIVE" for p in gold) / len(gold), color="gray", ls="--", label="gold POSITIVE rate")
+        ax.set_ylim(0.0, 1.0)
+    made.append(_figure(plots / "prediction_bias.png", "optimizer step", "fraction of the validation subset",
+                        "POSITIVE prediction rate (step 0 = base model)", bias))
     return made
 
 
@@ -247,18 +263,232 @@ def report(ev, plots_made, missing_plots):
     return "\n".join(md) + "\n"
 
 
-def render(out):
+def render(out, data=None):
+    """report.md and plots/ in `out` from the evidence in `data` (default: `out` itself, the layout before runs/)."""
     out = Path(out)
-    ev = load(out)
+    ev = load(data if data is not None else out)
     plots = out / "plots"
     plots.mkdir(exist_ok=True)
     made, missing = [], []
     src = ev["training_log"]["source"]
     if src:
-        made += training_plots(json.loads((ROOT / src).read_text()), plots)
+        made += training_plots(json.loads((runs.ROOT / src).read_text()), plots)
     else:
         missing.append(f"training plots (reward, validation accuracy, mixed-reward fraction, gradient norm, loss): "
                        f"{ev['training_log']['missing_reason']}")
     made.append(model_plot(ev["evaluations"], plots))
     (out / "report.md").write_text(report(ev, made, missing))
     return out / "report.md"
+
+
+# --- run summary and report ----------------------------------------------------------------------------------------
+
+KEYS = ("n", "accuracy", "macro_f1", "recall_NEGATIVE", "recall_POSITIVE", "predicted_positive_rate", "invalid_rate")
+
+
+def compact(m, auc=None):
+    return {**{k: m[k] for k in KEYS if k in m}, **({"auc": auc} if auc is not None else {})}
+
+
+def steps_in(directory):
+    found = [(int(m.group(1)), p) for p in (directory.iterdir() if directory.is_dir() else [])
+             if (m := re.fullmatch(r"step(\d+)", p.name))]
+    return sorted(found)
+
+
+def training_record(name):
+    """(log, source): training/training.json once training has ended; while it runs or after an interruption, the log
+    saved with the latest resumable checkpoint; else (None, reason)."""
+    import torch
+
+    path = runs.training_dir(name) / "training.json"
+    if path.is_file():
+        return json.loads(path.read_text()), runs.rel(path)
+    for step, ckpt in reversed(runs.checkpoints(name)):
+        if (ckpt / STATE).is_file():
+            return torch.load(ckpt / STATE, weights_only=True)["result"], f"{runs.rel(ckpt / STATE)} (training did not finish)"
+    return None, "no training log and no resumable checkpoint"
+
+
+def verification_summary(ev, report):
+    ci = ev["confidence_intervals"].get("adapter_vs_base", {})
+    me = ev["merge_equivalence"]
+    return {"split": ev["split"], "n": ev["n"], "report": report,
+            "models": {k: compact(e["metrics"], e["auc"]) for k, e in ev["evaluations"].items()},
+            "parameter_updates": ev["parameter_updates"]["status"], "total_lora_delta": ev["parameter_updates"]["total_delta"],
+            "merge_fp32": me["fp32_cpu"]["status"], "merge_bf16": me["bf16_gpu"]["status"],
+            "negative_control": ev["negative_control"]["status"],
+            "adapter_vs_base": {k: {"diff": ci[k]["diff"], "ci": ci[k]["ci"]} for k in ("accuracy", "macro_f1", "auc") if k in ci},
+            "prediction_disagreement_vs_base": ev["policy_change"]["adapter"]["prediction_disagreement_rate"]}
+
+
+def summarize(name):
+    """summary.json of runs/<name>: everything below is read from saved files; what was not measured is None."""
+    d = runs.run_dir(name)
+    local = lambda path: str(Path(path).relative_to(d))  # paths in the summary are relative to the run directory
+    m = runs.manifest(name)
+    if m is None:
+        raise SystemExit(f"{runs.rel(d)} is not a run directory (no manifest.json)")
+    import yaml
+
+    cfg = yaml.safe_load((d / "config.yaml").read_text())
+    log, log_source = training_record(name)
+    t, rows = cfg["training"], (log or {}).get("training", [])
+    ckpts = runs.checkpoints(name)
+    final = (log or {}).get("final")
+    evaluations = {f"step{s}": {f.stem: {**compact(r["metrics"], r["auc"]["trained"]), "base_auc": r["auc"]["base"],
+                                        "accuracy_diff_vs_base": r["vs_baseline"]["accuracy_diff"],
+                                        "ci95": r["vs_baseline"]["ci95"], "file": local(f)}
+                                for f in sorted(p.glob("*.json")) for r in [json.loads(f.read_text())]}
+                   for s, p in steps_in(d / "evaluation")}
+    verification = {f"step{s}": verification_summary(load(p / "evidence"), local(p / "report.md"))
+                    for s, p in steps_in(d / "verification") if (p / "evidence" / "manifest.json").is_file()}
+    return {
+        "run": name, "id": m["id"], "status": runs.status(name, lock_owner), "created": m["created"],
+        "config_sha256": m["config_sha256"], "git_commit": m["git_commit"], "git_dirty": m["git_dirty"],
+        "model": cfg["model"], "lora": cfg["lora"], "data": cfg["data"],
+        "grpo": {k: t[k] for k in ("batch_size", "batch_mode", "group_size", "learning_rate", "max_steps", "max_attempts",
+                                   "clip_eps", "temperature", "max_new_tokens", "seed")},
+        "training_log": log_source if log else None,  # repository-relative
+        "progress": {"optimizer_steps": rows[-1]["step"] if rows else 0, "max_steps": t["max_steps"],
+                     "rollout_attempts": max([g["attempt"] for g in rows + (log or {}).get("zero_signal", [])], default=0),
+                     "zero_signal_batches": len((log or {}).get("zero_signal", [])),
+                     "train_seconds": (log or {}).get("train_seconds")},
+        "memory": {**((log or {}).get("memory") or {}), "gpu_budget_gib": cfg["run"]["gpu_budget_gib"],
+                   "gpu": ((log or {}).get("environment") or {}).get("gpu")},
+        "checkpoints": [{"step": s, "path": local(p), "resumable": (p / STATE).is_file()} for s, p in ckpts],
+        "latest_checkpoint": local(ckpts[-1][1]) if ckpts else None,
+        "validation_subset": [{"step": e["step"], **compact(e["metrics"])} for e in (log or {}).get("evaluations", [])],
+        "full_validation": None if final is None else {
+            "base": compact(final["base"], final["auc"]["base"]), "trained": compact(final["trained"], final["auc"]["trained"]),
+            "accuracy_diff": final["accuracy_diff"], "ci95": final["bootstrap_ci95"],
+            "auc_diff": final["auc_vs"]["base"]["auc_diff"], "auc_ci95": final["auc_vs"]["base"]["ci95"]},
+        "checks": None if not log or "frozen_changed" not in log else {
+            "frozen_weights_changed": len(log["frozen_changed"]), "params_equal_init": log["params_equal_init"],
+            **({"lr_zero_control": log["control"]} if "control" in log else {})},
+        "evaluations": evaluations, "verification": verification,
+        "artifacts": {"config": "config.yaml", "manifest": "manifest.json", "report": "report.md",
+                      **{k: local(f) for k, f in [("training_log", d / "training" / "training.json"),
+                                                  ("console_log", d / "training" / "training.log"),
+                                                  ("final_validation_predictions", d / "training" / "validation.json")]
+                         if f.is_file()},
+                      "plots": sorted(local(f) for f in (d / "plots").glob("*.png"))},
+    }
+
+
+def _pct(x):
+    return "—" if x is None else f"{x:.4f}"
+
+
+def _table(columns):
+    """Markdown table of compact metrics, one column per {name: metrics}."""
+    keys = [k for k in (*KEYS, "auc") if any(k in c for c in columns.values())]
+    lines = ["| metric | " + " | ".join(columns) + " |", "|---|" + "---:|" * len(columns)]
+    return lines + [f"| {k} | " + " | ".join(str(c[k]) if k == "n" and k in c else _pct(c.get(k)) for c in columns.values()) + " |"
+                    for k in keys]
+
+
+def run_report(s, plots_made):
+    """report.md of a run from its summary: what was measured, and what was not."""
+    g, lo, p = s["grpo"], s["lora"], s["progress"]
+    ci = lambda c: f"[{c[0]:+.4f}, {c[1]:+.4f}]"
+    md = [f"# Run `{s['run']}` — {s['status']}", "",
+          f"id `{s['id']}`, created {s['created']}, config sha256 `{s['config_sha256'][:16]}…`, git "
+          f"`{(s['git_commit'] or 'unknown')[:12]}`{' (uncommitted changes)' if s['git_dirty'] else ''}.", "",
+          "## 1. Configuration", "",
+          f"- Model {s['model']['name']} ({s['model']['dtype']} base, fp32 LoRA), thinking {s['model']['thinking']}.",
+          f"- LoRA r={lo['rank']}, α={lo['alpha']}, dropout {lo['dropout']}, targets `{lo['targets']}`.",
+          f"- GRPO: B={g['batch_size']} ({g['batch_mode']}), G={g['group_size']}, lr {g['learning_rate']}, max {g['max_steps']} steps "
+          f"/ {g['max_attempts']} attempts, clip ε {g['clip_eps']}, temperature {g['temperature']}, rollout max_new_tokens "
+          f"{g['max_new_tokens']}, seed {g['seed']}.",
+          f"- Data: {s['data']['train_samples']} training prompts, validation subset {s['data']['val_subset']} (subset seed "
+          f"{s['data']['subset_seed']}). Full settings: `config.yaml`.", "",
+          "## 2. Training progress", ""]
+    if s["training_log"] is None:
+        md += ["- No training log is available (training never reached its first checkpoint)."]
+    else:
+        secs = p["train_seconds"]
+        md += [f"- {p['optimizer_steps']}/{p['max_steps']} optimizer steps from {p['rollout_attempts']} rollout attempts "
+               f"({p['zero_signal_batches']} zero-signal batches skipped); training time "
+               + ("not recorded (training did not finish)" if secs is None else f"{secs:.0f} s") + f". Source: `{s['training_log']}`.",
+               "- Checkpoints: " + ", ".join(f"step {c['step']}{' (resumable)' if c['resumable'] else ''}" for c in s["checkpoints"])
+               + (f"; latest `{s['latest_checkpoint']}/`." if s["latest_checkpoint"] else "none.")]
+    md += ["", "## 3. Reward and gradient diagnostics", ""]
+    if s["checks"]:
+        c = s["checks"]
+        md += [f"- Frozen base tensors changed: {c['frozen_weights_changed']}; adapter equal to its initialization: "
+               f"{c['params_equal_init']}."] + ([f"- LR=0 control (in training): {c['lr_zero_control']}."] if "lr_zero_control" in c else [])
+    else:
+        md += ["- End-of-training checks (frozen weights, parameter change) not available: training did not finish."]
+    md += ["- Rising rollout reward is measured on the policy's own samples of training prompts: it is not held-out evidence.",
+           "- Plots: " + (", ".join(f"[{x}](plots/{x})" for x in plots_made) if plots_made else "none (no training log).")]
+    md += ["", "## 4. Base vs trained (full validation, at the end of training)", ""]
+    fv = s["full_validation"]
+    if fv:
+        md += _table({"base": fv["base"], "trained": fv["trained"]})
+        md += ["", f"- Accuracy trained − base {fv['accuracy_diff']:+.4f}, paired bootstrap 95% CI {ci(fv['ci95'])}; "
+               f"AUC diff {fv['auc_diff']:+.4f}, CI {ci(fv['auc_ci95'])}. One training seed: CIs cover evaluation sampling only."]
+    else:
+        md += ["- Not available: training.full_val is false or training did not finish. See `validate` results (section 5)."]
+    md += ["", "## 5. Held-out evaluations (`validate` / `test`)", ""]
+    if s["evaluations"]:
+        md += ["| checkpoint | split | n | accuracy | macro-F1 | recall NEG | recall POS | pred. POS rate | AUC | Δ acc vs base [95% CI] |",
+               "|---|---|---:|---:|---:|---:|---:|---:|---:|---|"]
+        md += [f"| {st} | [{sp}]({r['file']}) | {r['n']} | {_pct(r['accuracy'])} | {_pct(r['macro_f1'])} | "
+               f"{_pct(r['recall_NEGATIVE'])} | {_pct(r['recall_POSITIVE'])} | {_pct(r['predicted_positive_rate'])} | {_pct(r['auc'])} | "
+               f"{r['accuracy_diff_vs_base']:+.4f} {ci(r['ci95'])} |" for st, e in s["evaluations"].items() for sp, r in e.items()]
+    else:
+        md += ["- None run yet (`scripts/run.py validate --run <name>`)."]
+    md += ["", "## 6. POSITIVE prediction rate and classification drift", ""]
+    sub = s["validation_subset"]
+    if sub:
+        md += [f"- Validation subset (n={sub[0]['n']}): predicted-POSITIVE rate " + ", ".join(
+            f"step {e['step']} {e['predicted_positive_rate']:.3f}" for e in sub) + "; accuracy " + ", ".join(
+            f"step {e['step']} {e['accuracy']:.3f}" for e in sub) + ". Step 0 is the base model (zero adapter)."]
+    if fv:
+        md += [f"- Full validation: predicted-POSITIVE rate base {fv['base']['predicted_positive_rate']:.4f} → trained "
+               f"{fv['trained']['predicted_positive_rate']:.4f}; recall NEGATIVE {fv['base']['recall_NEGATIVE']:.4f} → "
+               f"{fv['trained']['recall_NEGATIVE']:.4f}, POSITIVE {fv['base']['recall_POSITIVE']:.4f} → {fv['trained']['recall_POSITIVE']:.4f}."]
+    if not sub and not fv:
+        md += ["- Not available."]
+    md += ["", "## 7. Verification", ""]
+    if s["verification"]:
+        md += ["| checkpoint | split (n) | parameters changed | merge fp32 / bf16 | LR=0 control | adapter − base accuracy [CI] | report |",
+               "|---|---|---|---|---|---|---|"]
+        for st, v in s["verification"].items():
+            a = v["adapter_vs_base"].get("accuracy")
+            md.append(f"| {st} | {v['split']} ({v['n']}) | {v['parameter_updates']} | {v['merge_fp32']} / {v['merge_bf16']} | "
+                      f"{v['negative_control']} | " + (f"{a['diff']:+.4f} {ci(a['ci'])}" if a else "—")
+                      + f" | [report]({v['report']}) |")
+        md += ["", "NOT_RUN means the check was not executed (e.g. no LR=0 control configured), not that it passed."]
+    else:
+        md += ["- Not run yet (`scripts/run.py verify --run <name>`)."]
+    mem = s["memory"]
+    md += ["", "## 8. Hardware and memory", "",
+           f"- GPU: {mem['gpu']['name'] if mem.get('gpu') else 'not recorded'}; peak reserved "
+           + (f"{mem['peak_reserved_gib']:.2f} GiB" if mem.get("peak_reserved_gib") is not None else "not recorded")
+           + f" (budget {mem['gpu_budget_gib']} GiB" + (f", within: {mem['within_budget']}" if mem.get("within_budget") is not None else "")
+           + "); torch allocator statistics, excluding the CUDA context."]
+    md += ["", "## 9. Files", "",
+           "- `config.yaml` (resolved config), `manifest.json` (identity, status history, artifacts), `summary.json` (this report as data)",
+           "- `training/` (training.json, training.log, validation.json), `checkpoints/step<N>/`, `evaluation/step<N>/`, "
+           "`verification/step<N>/` (report.md, evidence/)"]
+    return "\n".join(md) + "\n"
+
+
+def update_run(name):
+    """Rebuild runs/<name>/{plots/, verification reports, summary.json, report.md} and the manifest's artifact list."""
+    d = runs.run_dir(name)
+    log, _ = training_record(name)
+    made = []
+    if log and log.get("training"):
+        (d / "plots").mkdir(exist_ok=True)
+        made = training_plots(log, d / "plots")
+    for _, out in steps_in(d / "verification"):
+        if (out / "evidence" / "manifest.json").is_file():
+            render(out, out / "evidence")
+    s = summarize(name)
+    runs.write_json(d / "summary.json", s)
+    (d / "report.md").write_text(run_report(s, made))
+    runs.record_artifacts(name)
+    return d / "report.md"

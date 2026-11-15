@@ -1,25 +1,20 @@
 """Evaluation: greedy predictions, metrics, complete-label scores, ROC AUC and paired bootstraps."""
 from collections import Counter
-from pathlib import Path
 
 import torch
 
 from qwen_grpo.grpo import response_mask
 from qwen_grpo.model import EOS_IDS
 from qwen_grpo.policy import compute_logprobs
+from qwen_grpo.runs import ROOT, baseline_path
 from qwen_grpo.sentiment import LABELS, build_prompts, parse_label, reward
 
 # Defaults of the saved baseline (research/baseline.py); runs override them through the YAML evaluation section.
 MAX_NEW, BATCH = 4, 32  # each label is 2 tokens + EOS
 SCORE_BATCH = 8  # label scoring keeps full [N, T, V] logits; 8 rows keeps that well inside the GPU budget
 BOOTSTRAP = 10_000
-RESULTS = Path(__file__).resolve().parents[1] / "results"
-BENCHMARKS = RESULTS / "benchmarks"
-
-
-def predictions_path(split):
-    """Saved greedy predictions and label scores of the untuned base model on `split` (research/baseline.py)."""
-    return RESULTS / "baseline" / f"{split}.json"
+RESULTS, BENCHMARKS = ROOT / "results", ROOT / "results" / "benchmarks"  # research/baseline.py's outputs (shared)
+predictions_path = baseline_path  # saved greedy predictions and label scores of the base model on a split
 
 
 @torch.no_grad()

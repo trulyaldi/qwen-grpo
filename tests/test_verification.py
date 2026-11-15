@@ -11,7 +11,7 @@ import torch
 from peft import get_peft_model
 from transformers import AutoTokenizer, Qwen3Config, Qwen3ForCausalLM
 
-from qwen_grpo import config, reporting, verification
+from qwen_grpo import config, reporting, runs, verification
 from qwen_grpo.evaluation import metrics, paired_f1_bootstrap
 from qwen_grpo.model import TARGETS, lora_config, lora_modules
 
@@ -203,33 +203,35 @@ def test_training_rollouts_rescored_from_the_log():
 
 # --- provenance --------------------------------------------------------------------------------------------------
 
-def control_log(tmp_path, cfg, **edit):
+def control_log(tmp_path, cfg, layout="run", **edit):
+    """An LR=0 control's training log, in the runs/ layout or the one before it; returns its final checkpoint."""
     y = dataclasses.asdict(cfg)
     y["run"]["name"], y["training"]["learning_rate"], y["training"]["full_val"] = "exp_lr0", 0.0, False
     for k, v in edit.items():
         sec, key = k.split("__")
         y[sec][key] = v
-    ckpt = tmp_path / "checkpoints" / "exp_lr0_step30"
+    ckpt = runs.checkpoint_path("exp_lr0", 30) if layout == "run" else runs.legacy_checkpoint("exp_lr0", 30)
     log = {"yaml_config": y, "final_checkpoint": {"path": verification.rel(ckpt)},
            "control": {"params_equal_init": True, "subset_predictions_unchanged": True}, "frozen_changed": []}
-    (tmp_path / "results" / "exp_lr0").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "results" / "exp_lr0" / "training.json").write_text(json.dumps(log))
+    runs.write_json(runs.training_log_for(ckpt), log)
     return ckpt
 
 
-def test_control_provenance(tmp_path):
-    ok, why, _ = verification.control_provenance(CFG, control_log(tmp_path, CFG), tmp_path / "results")
+@pytest.mark.parametrize("layout", ["run", "legacy"])
+def test_control_provenance(tmp_path, monkeypatch, layout):
+    monkeypatch.setattr(runs, "ROOT", tmp_path)
+    ok, why, _ = verification.control_provenance(CFG, control_log(tmp_path, CFG, layout))
     assert ok, why
     for edit, reason in [({"training__learning_rate": 1e-4}, "not 0"), ({"training__group_size": 4}, "differ"),
                          ({"lora__rank": 4}, "differ")]:
-        ok, why, _ = verification.control_provenance(CFG, control_log(tmp_path, CFG, **edit), tmp_path / "results")
+        ok, why, _ = verification.control_provenance(CFG, control_log(tmp_path, CFG, layout, **edit))
         assert not ok and reason in why
-    ckpt = control_log(tmp_path, CFG)
-    log = json.loads((tmp_path / "results" / "exp_lr0" / "training.json").read_text())
+    ckpt = control_log(tmp_path, CFG, layout)
+    log = runs.read_json(runs.training_log_for(ckpt))
     for broken, reason in [({**log, "control": {"params_equal_init": False}}, "control checks"),
                            ({k: v for k, v in log.items() if k != "yaml_config"}, "predates YAML")]:
-        (tmp_path / "results" / "exp_lr0" / "training.json").write_text(json.dumps(broken))
-        ok, why, _ = verification.control_provenance(CFG, ckpt, tmp_path / "results")
+        runs.write_json(runs.training_log_for(ckpt), broken)
+        ok, why, _ = verification.control_provenance(CFG, ckpt)
         assert not ok and reason in why
 
 
@@ -296,7 +298,8 @@ def test_report_with_training_log_plots_recorded_values(tmp_path):
     reporting.save(synthetic_evidence(str(log_path)), tmp_path)
     reporting.render(tmp_path)
     names = {p.name for p in (tmp_path / "plots").iterdir()}
-    assert names == {"reward.png", "validation_accuracy.png", "mixed_reward_fraction.png", "gradient_norm.png", "loss.png", "model_comparison.png"}
+    assert names == {"reward.png", "validation_accuracy.png", "mixed_reward_fraction.png", "gradient_norm.png", "loss.png",
+                     "model_comparison.png"}  # no prediction_bias.png: the log has no subset predictions
     d = verification.training_diagnostics(synthetic_log())
     assert d["mixed_reward_group_fraction"] == pytest.approx((2 + 1 + 2 + 1 + 2 + 0) / (2 * 6))  # all attempts in the denominator
     assert d["mean_completion_tokens"] is None and d["step_seconds"] is None  # not collected by that run: None, not invented

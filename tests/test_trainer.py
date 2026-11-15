@@ -9,7 +9,7 @@ import yaml
 from peft import get_peft_model
 from transformers import GenerationConfig, Qwen3Config, Qwen3ForCausalLM
 
-from qwen_grpo import checkpointing, config, trainer
+from qwen_grpo import checkpointing, config, runs, trainer
 from qwen_grpo.model import EOS_IDS, lora_config, target_modules
 from tests.test_config import RAW
 
@@ -59,20 +59,23 @@ def sandbox(tmp_path, monkeypatch):
 
     def use(label):
         root = tmp_path / label
-        monkeypatch.setattr(trainer, "CHECKPOINTS", root / "checkpoints")
-        monkeypatch.setattr(trainer, "RESULTS", root / "results")
-        monkeypatch.setattr(trainer, "BENCHMARKS", root / "results" / "benchmarks")
+        root.mkdir()
+        monkeypatch.setattr(runs, "ROOT", root)
         return root
     return use
 
 
+def ckpt(root, step, name="tiny"):
+    return root / "runs" / name / "checkpoints" / f"step{step}"
+
+
 def state(root, step):
-    return checkpointing.load_training_state(root / "checkpoints" / f"tiny_step{step}")
+    return checkpointing.load_training_state(ckpt(root, step))
 
 
 def adapter(root, step):
     from peft import load_peft_weights
-    return load_peft_weights(str(root / "checkpoints" / f"tiny_step{step}"))
+    return load_peft_weights(str(ckpt(root, step)), device="cpu")
 
 
 def same_tensors(a, b):
@@ -102,8 +105,15 @@ def test_resumed_run_equals_uninterrupted_run_bitwise(sandbox, tmp_path, monkeyp
     monkeypatch.setattr(trainer, "save_checkpoint", crash_after_step2)
     with pytest.raises(KeyboardInterrupt):
         trainer.train(cfg, device="cpu")
+    identity = runs.manifest("tiny")["id"]
+    assert runs.status("tiny", checkpointing.lock_owner) == "interrupted"
+    summary = runs.read_json(part / "runs" / "tiny" / "summary.json")  # rebuilt from the step-2 training state
+    assert summary["status"] == "interrupted" and summary["progress"]["optimizer_steps"] == 2
+    assert [c["step"] for c in summary["checkpoints"]] == [0, 2] and summary["full_validation"] is None
     monkeypatch.setattr(trainer, "save_checkpoint", save)
-    out = trainer.train(cfg, resume=part / "checkpoints" / "tiny_step2", device="cpu")
+    out = trainer.train(cfg, resume=ckpt(part, 2), device="cpu")
+    m = runs.manifest("tiny")
+    assert m["id"] == identity and [h["status"] for h in m["status_history"]] == ["running", "interrupted", "running", "completed"]
 
     assert out["resumed"][0]["step"] == 2
     keys = ("attempt", "rollout_sha256", "rewards", "loss", "grad_norm", "update_norm", "change_from_init")
@@ -114,33 +124,42 @@ def test_resumed_run_equals_uninterrupted_run_bitwise(sandbox, tmp_path, monkeyp
     assert same_tensors(state(part, 4)["optimizer"], state(full, 4)["optimizer"])
     assert same_tensors(state(part, 4)["rng"]["torch"], state(full, 4)["rng"]["torch"])
     assert out["batches_by_mixed_groups"] == ref["batches_by_mixed_groups"]
-    assert sorted(p.name for p in (full / "results" / "tiny" / "plots").iterdir())[0] == "gradient_norm.png"  # train writes plots
+    plots = sorted(p.name for p in (full / "runs" / "tiny" / "plots").iterdir())  # train writes plots and the report
+    assert {"reward.png", "validation_accuracy.png", "gradient_norm.png", "prediction_bias.png"} <= set(plots)
+    assert (full / "runs" / "tiny" / "report.md").read_text().startswith("# Run `tiny` — completed")
+    log = (full / "runs" / "tiny" / "training" / "training.log").read_text()
+    assert "step  4" in log and "train time" in log
 
 
 def test_resume_refuses_other_configs_later_checkpoints_and_adapter_only_checkpoints(sandbox, tmp_path):
     cfg = make_cfg(tmp_path)
     root = sandbox("run")
     trainer.train(cfg, device="cpu")
-    ckpts = root / "checkpoints"
     with pytest.raises(SystemExit, match=r"different config \(training.learning_rate\)"):
-        trainer.train(make_cfg(tmp_path, learning_rate=1e-3), resume=ckpts / "tiny_step4", device="cpu")
+        trainer.train(make_cfg(tmp_path, learning_rate=1e-3), resume=ckpt(root, 4), device="cpu")
     with pytest.raises(SystemExit, match="overwrite later checkpoints"):
-        trainer.train(cfg, resume=ckpts / "tiny_step2", device="cpu")
+        trainer.train(cfg, resume=ckpt(root, 2), device="cpu")
     with pytest.raises(SystemExit, match="cannot resume"):
-        trainer.train(cfg, resume=ckpts / "tiny_step0", device="cpu")
+        trainer.train(cfg, resume=ckpt(root, 0), device="cpu")
     with pytest.raises(SystemExit, match="refusing to overwrite"):
         trainer.train(cfg, device="cpu")
+    legacy = root / "checkpoints" / "tiny_step4"  # a checkpoint in the layout before runs/: not resumable into runs/
+    legacy.parent.mkdir()
+    import shutil
+    shutil.copytree(ckpt(root, 4), legacy)
+    with pytest.raises(SystemExit, match="cannot be resumed"):
+        trainer.train(cfg, resume=legacy, device="cpu")
+    assert runs.manifest("tiny")["status"] == "completed"  # refused resumes never touch the run
 
 
 def test_resume_from_the_final_checkpoint_only_reruns_the_closing_steps(sandbox, tmp_path):
     cfg = make_cfg(tmp_path)
-    sandbox("run")
+    root = sandbox("run")
     ref = trainer.train(cfg, device="cpu")
-    saved = config.load(trainer.RESULTS / "tiny" / "config.yaml")  # the resolved config train wrote: a valid --config
-    assert saved == cfg and ref["config_sha256"] == config.sha256(cfg)
-    (trainer.RESULTS / "tiny" / "config.yaml").unlink()  # as for a run started before config.yaml was written
-    out = trainer.train(saved, resume=trainer.CHECKPOINTS / "tiny_step4", device="cpu")
-    assert config.load(trainer.RESULTS / "tiny" / "config.yaml") == cfg and out["config_sha256"] == ref["config_sha256"]
+    saved = config.load(root / "runs" / "tiny" / "config.yaml")  # the resolved config train wrote: a valid --config
+    assert saved == cfg and ref["config_sha256"] == config.sha256(cfg) == runs.manifest("tiny")["config_sha256"]
+    out = trainer.train(saved, resume=ckpt(root, 4), device="cpu")
+    assert out["config_sha256"] == ref["config_sha256"]
     assert out["successful_steps"] == ref["successful_steps"] and out["training"] == ref["training"]
     assert out["final_checkpoint"] == ref["final_checkpoint"]
 
@@ -153,12 +172,12 @@ def test_exhausted_attempt_budget_saves_and_reports_the_last_step(sandbox, tmp_p
         return torch.zeros(len(labels), G) if len(calls) == 1 else hashed_rewards(responses, labels, G)
     monkeypatch.setattr(trainer, "group_rewards", first_batch_zero_signal)
     cfg = make_cfg(tmp_path, max_steps=5, max_attempts=5, eval_every=10)
-    sandbox("run")
+    root = sandbox("run")
     out = trainer.train(cfg, device="cpu")
     step = out["successful_steps"]
     assert out["zero_signal_groups"] >= 1 and 0 < step < 5  # budget ran out between eval_every checkpoints
-    assert out["final_checkpoint"]["step"] == step and out["final_checkpoint"]["path"].endswith(f"tiny_step{step}")
-    assert (trainer.CHECKPOINTS / f"tiny_step{step}" / checkpointing.STATE).exists()
+    assert out["final_checkpoint"]["step"] == step and out["final_checkpoint"]["path"].endswith(f"tiny/checkpoints/step{step}")
+    assert (ckpt(root, step) / checkpointing.STATE).exists() and runs.latest_checkpoint("tiny") == ckpt(root, step)
 
 
 def test_training_log_records_provenance(sandbox, tmp_path):
@@ -207,9 +226,9 @@ def tok():
 def test_overwrite_deletes_earlier_outputs_only_when_enabled(sandbox, tmp_path):
     root = sandbox("run")
     trainer.train(make_cfg(tmp_path, max_steps=2), device="cpu")
-    stale = root / "checkpoints" / "tiny_step99"
+    stale = ckpt(root, 99)
     stale.mkdir()
-    other = root / "checkpoints" / "tiny_lr0_step2"  # a different run whose name starts the same way
+    other = root / "runs" / "tiny_lr0"  # a different run whose name starts the same way
     other.mkdir()
     with pytest.raises(SystemExit, match="run.overwrite: true"):
         trainer.train(make_cfg(tmp_path), device="cpu")
@@ -218,4 +237,4 @@ def test_overwrite_deletes_earlier_outputs_only_when_enabled(sandbox, tmp_path):
     (tmp_path / "cfg.yaml").write_text(yaml.safe_dump(raw))
     out = trainer.train(config.load(tmp_path / "cfg.yaml"), device="cpu")
     assert out["successful_steps"] == 4 and not stale.exists() and other.exists()
-    assert sorted(p.name for p in (root / "checkpoints").glob("tiny_step*")) == [f"tiny_step{i}" for i in (0, 2, 4)]
+    assert [s for s, _ in runs.checkpoints("tiny")] == [0, 2, 4]

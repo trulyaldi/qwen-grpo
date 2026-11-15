@@ -7,7 +7,6 @@ states at the moment of saving. Older checkpoints hold the adapter only; they ev
 import json
 import os
 import random
-import re
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -15,21 +14,9 @@ import torch
 from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
 
 from qwen_grpo.model import matched_modules, skeleton, target_modules
+from qwen_grpo.runs import lock_path, rel  # noqa: F401 (re-exported)
 
-ROOT = Path(__file__).resolve().parents[1]
 STATE = "training_state.pt"
-
-
-def rel(path):
-    """Repository-relative path string if `path` is inside the repository, else the absolute path."""
-    path = Path(path).resolve()
-    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
-
-
-def run_of(checkpoint):
-    """checkpoints/<run>_step<N> -> (<run>, N)."""
-    m = re.fullmatch(r"(.+)_step(\d+)", Path(checkpoint).name)
-    return (m.group(1), int(m.group(2))) if m else (None, None)
 
 
 def check_adapter_matches(cfg, checkpoint):
@@ -61,11 +48,6 @@ def load_adapter(model, checkpoint):
     set_peft_model_state_dict(model, loaded)
     assert all(torch.equal(p, loaded[k].to(p.device)) for k, p in get_peft_model_state_dict(model).items()), "adapter not loaded"
     return {k: v.float().cpu() for k, v in loaded.items()}
-
-
-def lock_path(results, name):
-    """results/.<run>.lock: holds the PID of the process training <run> (scripts/run.py remove checks it)."""
-    return Path(results) / f".{name}.lock"
 
 
 def lock_owner(path):
