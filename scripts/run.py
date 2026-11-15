@@ -3,9 +3,14 @@
 python scripts/run.py train    --config configs/default.yaml
 python scripts/run.py validate --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py test     --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
+python scripts/run.py verify   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
+python scripts/run.py report   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser, compare it
 with the saved baseline predictions of that split (paired), and write results/eval/<checkpoint>/<split>.json.
+verify compares base, adapter-attached, merged and (if configured) an LR=0 control on verification.split and writes
+results/verification/<checkpoint>/ (evidence JSON, plots, report.md); report rebuilds plots and report.md from those files
+without loading a model. Neither retrains the checkpoint; only verification.negative_control.train runs a (control) training.
 """
 import argparse
 import json
@@ -18,21 +23,7 @@ sys.path.insert(0, str(ROOT))  # run as a script from anywhere: make qwen_grpo/ 
 SPLITS = {"validate": "validation", "test": "test"}
 
 
-def check_adapter_matches(cfg, checkpoint):
-    """The adapter's saved config must be the one the YAML describes; otherwise loading would silently mismatch."""
-    from qwen_grpo.model import TARGETS
-
-    saved = json.loads((checkpoint / "adapter_config.json").read_text())
-    expected = {"r": cfg.lora.rank, "lora_alpha": cfg.lora.alpha, "lora_dropout": cfg.lora.dropout,
-                "target_modules": TARGETS[cfg.lora.targets], "base_model_name_or_path": cfg.model.name}
-    got = {k: saved.get(k) for k in expected}
-    if got != expected:
-        raise SystemExit(f"{checkpoint} does not match the config:\n  checkpoint {got}\n  config     {expected}")
-
-
 def evaluate_checkpoint(cfg, checkpoint, split):
-    import torch
-    from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
     from transformers import AutoTokenizer
 
     from qwen_grpo.config import DTYPES, as_dict
@@ -40,6 +31,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
                                       win_matrix)
     from qwen_grpo.model import TARGETS, lora_model
     from qwen_grpo.sentiment import load_splits
+    from qwen_grpo.verification import check_adapter_matches, load_adapter
     from research.baseline import RESULTS, predictions_path
 
     checkpoint = Path(checkpoint).resolve()
@@ -51,12 +43,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     lo = cfg.lora
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
     model = lora_model(DTYPES[cfg.model.dtype], "cuda", TARGETS[lo.targets], lo.rank, lo.alpha, lo.dropout, cfg.model.name)
-    loaded = load_peft_weights(str(checkpoint))
-    live = get_peft_model_state_dict(model)
-    if live.keys() != loaded.keys():
-        raise SystemExit(f"adapter tensors differ: missing {sorted(live.keys() - loaded.keys())}, extra {sorted(loaded.keys() - live.keys())}")
-    set_peft_model_state_dict(model, loaded)
-    assert all(torch.equal(p, loaded[k].to(p.device)) for k, p in get_peft_model_state_dict(model).items()), "adapter not loaded"
+    load_adapter(model, checkpoint)
 
     examples = [{"id": i, **e} for i, e in enumerate(load_splits()[split])]
     preds = evaluate(model, tok, examples)
@@ -89,13 +76,65 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     return out
 
 
+def control_checkpoint(cfg):
+    """The LR=0 control for verify: an existing checkpoint, or a fresh run of train() with learning_rate 0 if (and only if)
+    verification.negative_control.train is set. Either way its provenance is checked against this config."""
+    import dataclasses
+
+    from qwen_grpo.verification import control_provenance
+
+    nc = cfg.verification.negative_control
+    if nc.train:
+        from research.train_multistep import train
+
+        name = f"{cfg.run.name}_lr0"
+        train(dataclasses.replace(cfg, run=dataclasses.replace(cfg.run, name=name),
+                                  training=dataclasses.replace(cfg.training, learning_rate=0.0, full_val=False)))
+        ckpt = ROOT / json.loads((ROOT / "results" / name / "training.json").read_text())["final_checkpoint"]["path"]
+        import gc
+
+        import torch
+
+        gc.collect()  # train() returns with its model and optimizer unreferenced; release them before verify loads a model
+        torch.cuda.empty_cache()
+    elif nc.checkpoint:
+        ckpt = ROOT / nc.checkpoint
+    else:
+        return None
+    ok, why, _ = control_provenance(cfg, ckpt)
+    if not ok:
+        raise SystemExit(f"LR=0 control rejected: {why}")
+    return ckpt
+
+
+def verify(cfg, checkpoint):
+    from qwen_grpo import reporting
+    from qwen_grpo.verification import verify as collect
+
+    out = ROOT / "results" / "verification" / Path(checkpoint).resolve().name
+    evidence = collect(cfg, checkpoint, control_checkpoint(cfg))
+    reporting.save(evidence, out)
+    path = reporting.render(out)
+    print(f"wrote {out.relative_to(ROOT)}/ ; report: {path.relative_to(ROOT)}")
+    return evidence
+
+
+def report(checkpoint):
+    from qwen_grpo import reporting
+
+    out = ROOT / "results" / "verification" / Path(checkpoint).resolve().name
+    if not (out / "manifest.json").exists():
+        raise SystemExit(f"no saved verification for {checkpoint}: run verify first ({out.relative_to(ROOT)} missing)")
+    print(f"wrote {reporting.render(out).relative_to(ROOT)}")
+
+
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="command", required=True)
-    for name in ("train", *SPLITS):
+    for name in ("train", *SPLITS, "verify", "report"):
         p = sub.add_parser(name)
         p.add_argument("--config", required=True, type=Path)
-        if name in SPLITS:
+        if name != "train":
             p.add_argument("--checkpoint", required=True, type=Path)
     return ap.parse_args(argv)
 
@@ -111,6 +150,10 @@ def main(argv=None):
         return train(cfg)
     if not (args.checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {args.checkpoint}")
+    if args.command == "verify":
+        return verify(cfg, args.checkpoint)
+    if args.command == "report":
+        return report(args.checkpoint)
     return evaluate_checkpoint(cfg, args.checkpoint, SPLITS[args.command])
 
 

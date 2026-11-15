@@ -67,12 +67,44 @@ def metrics(preds):
 
 
 
-def paired_bootstrap(base_correct, new_correct, n=BOOTSTRAP, seed=42, chunk=1000):
-    """Mean accuracy difference and 95% percentile CI, resampling paired examples with replacement."""
+def percentile_ci(x, level=0.95):
+    a = (1 - level) / 2
+    return x.quantile(a).item(), x.quantile(1 - a).item()
+
+
+def paired_bootstrap(base_correct, new_correct, n=BOOTSTRAP, seed=42, chunk=1000, level=0.95):
+    """Mean accuracy difference and percentile CI, resampling paired examples with replacement."""
+    assert n % chunk == 0, (n, chunk)
     d = torch.tensor(new_correct, dtype=torch.float64) - torch.tensor(base_correct, dtype=torch.float64)
     gen = torch.Generator().manual_seed(seed)
     means = torch.cat([d[torch.randint(len(d), (chunk, len(d)), generator=gen)].mean(1) for _ in range(n // chunk)])
-    return d.mean().item(), means.quantile(0.025).item(), means.quantile(0.975).item()
+    return (d.mean().item(), *percentile_ci(means, level))
+
+
+def macro_f1_counts(preds, weights):
+    """Macro-F1 under example multiplicities weights [K, n] (one row per resample) -> [K]; 2TP / (gold + predicted)."""
+    f1 = []
+    for label in LABELS:
+        gold = torch.tensor([p["label"] == label for p in preds], dtype=torch.float64)
+        pred = torch.tensor([p["prediction"] == label for p in preds], dtype=torch.float64)
+        f1.append(2 * (weights @ (gold * pred)) / (weights @ gold + weights @ pred))
+    return sum(f1) / len(f1)
+
+
+def paired_f1_bootstrap(ref, new, n=BOOTSTRAP, seed=42, chunk=1000, level=0.95):
+    """Macro-F1 difference new - ref with a paired bootstrap: each resample (multiplicity vector) scores both models."""
+    assert n % chunk == 0, (n, chunk)
+    assert [(p["id"], p["label"]) for p in ref] == [(p["id"], p["label"]) for p in new]
+    m = len(ref)
+    gen = torch.Generator().manual_seed(seed)
+    diffs = []
+    for _ in range(n // chunk):
+        c = torch.zeros(chunk, m, dtype=torch.float64).scatter_add_(
+            1, torch.randint(m, (chunk, m), generator=gen), torch.ones(chunk, m, dtype=torch.float64))
+        diffs.append(macro_f1_counts(new, c) - macro_f1_counts(ref, c))
+    ones = torch.ones(1, m, dtype=torch.float64)
+    return {"f1_diff": (macro_f1_counts(new, ones) - macro_f1_counts(ref, ones)).item(),
+            "ci": list(percentile_ci(torch.cat(diffs), level))}
 
 
 
@@ -125,11 +157,12 @@ def win_matrix(scores, labels):
 
 
 
-def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=42, chunk=500):
+def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=42, chunk=500, level=0.95):
     """AUC difference with a class-stratified paired bootstrap: the same resampled examples score both models.
 
     With multiplicity vectors c1, c0 of resampled positives/negatives, the resampled AUC is c1^T W c0 / (n1 n0).
     """
+    assert n % chunk == 0, (n, chunk)
     n1, n0 = W_new.shape
     gen = torch.Generator().manual_seed(seed)
     counts = lambda m: torch.zeros(chunk, m, dtype=torch.float64).scatter_add_(
@@ -139,7 +172,8 @@ def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=42, chunk=500):
         c1, c0 = counts(n1), counts(n0)
         diffs.append((((c1 @ W_new) * c0).sum(1) - ((c1 @ W_ref) * c0).sum(1)) / (n1 * n0))
     d = torch.cat(diffs)
-    return {"auc_diff": (W_new.mean() - W_ref.mean()).item(), "ci95": [d.quantile(0.025).item(), d.quantile(0.975).item()]}
+    ci = list(percentile_ci(d, level))
+    return {"auc_diff": (W_new.mean() - W_ref.mean()).item(), "ci": ci, **({"ci95": ci} if level == 0.95 else {})}
 
 
 

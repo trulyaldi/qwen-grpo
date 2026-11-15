@@ -11,10 +11,12 @@ qwen_grpo/          reusable implementation (no scripts, no experiment hyperpara
   sentiment.py      dataset splits, prompt, strict parser, reward
   model.py          base model id, EOS ids, bf16 base + fp32 LoRA (config, targets, inspection)
   config.py         YAML run configuration: strict loading and validation
+  verification.py   base / adapter / merged / LR=0 comparisons, merge equivalence, parameter deltas, reward integrity
+  reporting.py      verification JSON, plots and report.md from saved files
   training.py       prompt batching, rollout grouping, rewards, one GRPO optimizer update
   evaluation.py     greedy predictions, metrics, complete-label scores, ROC AUC, paired bootstraps
 configs/            YAML run configurations (default.yaml)
-scripts/run.py      entry point: train | validate | test --config <yaml>
+scripts/run.py      entry point: train | validate | test | verify | report --config <yaml>
 research/           experiments: each script has a main() and writes to results/ or checkpoints/
   baseline.py       greedy base-model evaluation
   train_multistep.py  multi-step GRPO + LoRA training loop, train(cfg); run via scripts/run.py
@@ -54,6 +56,25 @@ For a new experiment, copy the YAML and change `run.name` (training refuses to o
 `training.full_val`, `results/<name>/validation.json` and `results/benchmarks/<name>.{json,md}`. `validate`/`test` check that the
 adapter's saved config matches the YAML, evaluate it on the full split with the baseline's prompt, decoding and parser, and
 write `results/eval/<checkpoint>/<split>.json` with a paired comparison against the saved baseline predictions.
+
+### Verifying a checkpoint
+
+```bash
+.venv/bin/python scripts/run.py verify --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
+.venv/bin/python scripts/run.py report --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>   # no model loaded
+```
+
+`verify` never retrains the checkpoint. On `verification.split` it compares the base model (the saved baseline is reused
+after an in-process drift check), the adapter-attached model, the merged model (PEFT `merge_and_unload`, also checked in fp32
+on CPU) and, if configured, an LR=0 control. It writes `results/verification/<checkpoint>/`: `evaluation/<model>.json` (raw
+predictions, label scores, metrics), `verification/*.json` (parameter deltas, policy change, merge equivalence, negative
+control, paired bootstrap CIs, reward integrity, training diagnostics), `plots/` and `report.md`. `report` rebuilds `plots/`
+and `report.md` from those files.
+
+LR=0 control: set `verification.negative_control.checkpoint` to an existing control of the same config (its training log is
+checked), or `train: true` to run one first as `<run.name>_lr0`. A second `verify` with `train: true` refuses because
+`<run.name>_lr0` then exists; point `checkpoint:` at the control it produced instead. Training plots need the run's
+`results/<run.name>/training.json`; runs from this version on also save their initial adapter as `checkpoints/<run>_step0`.
 
 Historical runs (before YAML configs) were launched with command-line flags; their exact settings are in the `config` block
 of each training log.

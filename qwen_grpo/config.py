@@ -61,12 +61,34 @@ class Training:
 
 
 @dataclass(frozen=True)
+class NegativeControl:
+    checkpoint: str | None  # an LR=0 checkpoint of this config (provenance checked), or null
+    train: bool  # true: run the LR=0 control with train() before verifying (run.name + "_lr0"); never implicit
+
+
+@dataclass(frozen=True)
+class Statistics:
+    confidence_level: float
+    bootstrap_samples: int
+    seed: int
+
+
+@dataclass(frozen=True)
+class Verification:
+    split: str  # held-out split: validation (model selection) or test (final report only)
+    merge_subset: int  # examples for the full-logit adapter-vs-merged comparison
+    negative_control: NegativeControl
+    statistics: Statistics
+
+
+@dataclass(frozen=True)
 class Config:
     run: Run
     model: Model
     lora: Lora
     data: Data
     training: Training
+    verification: Verification
 
 
 def _build(cls, raw, where):
@@ -82,17 +104,20 @@ def _build(cls, raw, where):
         v, key = raw[f.name], f"{where}.{f.name}"
         if dataclasses.is_dataclass(f.type):
             values[f.name] = _build(f.type, v, key)
+        elif f.type == str | None and (v is None or type(v) is str):
+            values[f.name] = v
         elif f.type is float and isinstance(v, (int, float)) and not isinstance(v, bool):
             values[f.name] = float(v)
         elif type(v) is f.type:  # exact: rejects True for an int, 1 for a bool, "1e-4" for a float
             values[f.name] = v
         else:
-            raise ValueError(f"{key}: expected {f.type.__name__}, got {type(v).__name__} {v!r}")
+            raise ValueError(f"{key}: expected {getattr(f.type, '__name__', f.type)}, got {type(v).__name__} {v!r}")
     return cls(**values)
 
 
 def validate(cfg: Config) -> Config:
-    m, lo, d, t = cfg.model, cfg.lora, cfg.data, cfg.training
+    m, lo, d, t, v = cfg.model, cfg.lora, cfg.data, cfg.training, cfg.verification
+    nc, st = v.negative_control, v.statistics
     checks = [
         (re.fullmatch(r"[A-Za-z0-9_.-]+", cfg.run.name) is not None, "run.name: letters, digits, '_', '.', '-' only"),
         (m.name == MODEL, f"model.name: only {MODEL} is supported (the LoRA target regexes name its layers 26-27)"),
@@ -115,6 +140,12 @@ def validate(cfg: Config) -> Config:
         (t.temperature == 1.0, "training.temperature: only 1.0 (log-probs are computed from untempered logits, so "
                                "any other value would make the sampler differ from the policy being optimized)"),
         (t.max_new_tokens >= 1 and t.eval_every >= 1, "training.max_new_tokens and training.eval_every: >= 1"),
+        (v.split in ("validation", "test"), "verification.split: validation or test"),
+        (v.merge_subset >= 1, "verification.merge_subset: >= 1"),
+        (not (nc.train and nc.checkpoint), "verification.negative_control: set checkpoint or train, not both"),
+        (0 < st.confidence_level < 1, "verification.statistics.confidence_level: in (0, 1)"),
+        (st.bootstrap_samples >= 100 and st.bootstrap_samples % 100 == 0,
+         "verification.statistics.bootstrap_samples: a multiple of 100, >= 100 (resampled in chunks of 100)"),
     ]
     errors = [msg for ok, msg in checks if not ok]
     if errors:

@@ -143,6 +143,7 @@ def train(cfg: Config):
     print(f"LoRA modules ({len(modules)}): {module_names}")
     print(f"trainable parameters: {n_trainable:,} of {n_total:,} ({100 * n_trainable / n_total:.4f}%)")
     init = {n: p.detach().clone() for n, p in params.items()}
+    model.save_pretrained(ROOT / "checkpoints" / f"{name}_step0")  # initial adapter: reference for parameter deltas
     frozen_digest = {n: digest(p) for n, p in frozen.items()}
     optimizer = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
 
@@ -157,7 +158,8 @@ def train(cfg: Config):
                    "lora": {"targets": lo.targets, "target_regex": TARGETS[lo.targets], "modules": module_names,
                             "trainable_params": n_trainable, "r": lo.rank, "alpha": lo.alpha, "dropout": lo.dropout},
                    "dtypes": {"base": str(dtype), "lora": "torch.float32"}, "gpu_budget_gib": GPU_BUDGET_GIB,
-                   "checkpoint_contents": "adapter weights + adapter_config only (no optimizer/RNG state)"},
+                   "checkpoint_contents": "adapter weights + adapter_config only (no optimizer/RNG state)",
+                   "initial_checkpoint": f"checkpoints/{name}_step0"},
         "training": [], "zero_signal": [], "evaluations": [],
     }
 
@@ -181,6 +183,7 @@ def train(cfg: Config):
     while step < t.max_steps and attempts < t.max_attempts:
         batch = next(stream)
         attempts += 1
+        t_step = time.time()
         prompts = build_prompts(tok, [e["text"] for e in batch])
         rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=t.max_new_tokens, temperature=t.temperature)
         check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].cuda(), G)
@@ -191,7 +194,8 @@ def train(cfg: Config):
         group = {"attempt": attempts, "prompt_ids": [e["id"] for e in batch], "labels": [e["label"] for e in batch],
                  "mixed_groups": mixed, "responses": responses, "rewards": rewards.tolist(), "mean_reward": rewards.mean().item(),
                  "invalid_responses": sum(parse_label(r) is None for r in responses),
-                 "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16]}
+                 "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16],
+                 "mean_completion_tokens": rollouts["completion_mask"].sum(1).float().mean().item()}  # through the first EOS
         out = grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=t.clip_eps)
         del rollouts
         if out is None:
@@ -201,7 +205,8 @@ def train(cfg: Config):
         with torch.no_grad():  # norms over several modules aggregate as sqrt(sum of squares)
             row = {"step": step, **group, "loss": out["loss"], "init_diff": out["init_diff"], "grad_norm": out["grad_norm"],
                    "grad_norm_A": l2(out["grad_norms"][n] for n in names_A), "grad_norm_B": l2(out["grad_norms"][n] for n in names_B),
-                   "update_norm": out["update_norm"],
+                   "update_norm": out["update_norm"], "learning_rate": optimizer.param_groups[0]["lr"],
+                   "step_seconds": time.time() - t_step,  # rollout generation + rewards + GRPO update
                    "lora_A_norm": l2(params[n].norm().item() for n in names_A),
                    "lora_B_norm": l2(params[n].norm().item() for n in names_B),
                    "effective_adapter_norm": l2(((lo.alpha / lo.rank) * Bm @ A).norm().item() for A, Bm in pairs),
