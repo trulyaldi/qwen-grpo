@@ -142,6 +142,28 @@ def test_trainable_parameter_count():
     assert n == expected_lora_params(lora_modules(model)) == by_hand == 1408
 
 
+def test_first_lora_step_updates_only_B_and_leaves_base_bitwise_unchanged():
+    """B = 0 at init gives dL/dA = (a/r) B^T (dL/dh) x^T = 0 exactly, so step 1 moves B only."""
+    from qwen_grpo.model import digest
+    model = get_peft_model(tiny_qwen3(), lora_config(TARGETS["last2-attention"]))
+    params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+    frozen = {n: digest(p) for n, p in model.named_parameters() if not p.requires_grad}
+    before = {n: p.detach().clone() for n, p in params.items()}
+    G, P, R = 6, 3, 4
+    ids = torch.randint(0, 16, (G, P + R), generator=torch.Generator().manual_seed(0))
+    r = {"input_ids": ids, "attention_mask": torch.ones_like(ids), "completion_mask": torch.ones(G, R, dtype=torch.bool), "prompt_len": P}
+
+    out = grpo_step(model, params, torch.optim.AdamW(params.values(), lr=1e-2, weight_decay=0.0), r,
+                    torch.tensor([[1.0, 0, 1, 0, 0, 1]]))
+    assert out is not None
+    for n, p in params.items():
+        if ".lora_A." in n:
+            assert out["grad_norms"][n] == 0 and torch.equal(p, before[n])
+        else:
+            assert math.isfinite(out["grad_norms"][n]) and out["grad_norms"][n] > 0 and not torch.equal(p, before[n])
+    assert all(digest(p) == frozen[n] for n, p in model.named_parameters() if not p.requires_grad)
+
+
 def test_output_names_differ():
     assert output_name("last-o-proj") == "grpo_lora" and output_name("last-o-proj", "_lr0") == "grpo_lora_lr0"
     assert output_name("last2-attention") == "grpo_lora_last2" and output_name("last2-attention", "_smoke") == "grpo_lora_last2_smoke"
