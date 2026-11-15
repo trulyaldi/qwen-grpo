@@ -156,7 +156,8 @@ def validate(cfg: Config) -> Config:
     nc, st = v.negative_control, v.statistics
     custom = lo.targets if isinstance(lo.targets, LoraTargets) else None
     checks = [
-        (re.fullmatch(r"[A-Za-z0-9_.-]+", cfg.run.name) is not None, "run.name: letters, digits, '_', '.', '-' only"),
+        (re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", cfg.run.name) is not None,
+         "run.name: letters, digits, '_', '.', '-', starting with a letter or digit (\"..\" would name the parent directory)"),
         (cfg.run.gpu_budget_gib > 0, "run.gpu_budget_gib: > 0"),
         (re.fullmatch(r"Qwen/Qwen3-[0-9.]+B", m.name) is not None,
          "model.name: a dense Qwen3 model 'Qwen/Qwen3-<size>B' (prompt, EOS ids and LoRA presets assume Qwen3)"),

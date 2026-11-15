@@ -5,6 +5,7 @@ python scripts/run.py validate --config configs/default.yaml --checkpoint checkp
 python scripts/run.py test     --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py verify   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
 python scripts/run.py report   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
+python scripts/run.py remove   --config configs/default.yaml --checkpoint checkpoints/<run>_step<N> [--confirm]
 
 train --resume continues a run from one of its checkpoints (same YAML; see qwen_grpo/checkpointing.py).
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
@@ -13,6 +14,8 @@ decoding, else the base evaluated in-process), and write results/eval/<checkpoin
 verify compares base, adapter-attached, merged and (if configured) an LR=0 control on verification.split and writes
 results/verification/<checkpoint>/ (evidence JSON, plots, report.md); report rebuilds plots and report.md from those files
 without loading a model. Neither retrains the checkpoint; only verification.negative_control.train runs a (control) training.
+remove lists the generated artifacts of the checkpoint's run (checkpoints, logs, plots, evaluations, verification) with
+their sizes and deletes them only with --confirm; it refuses when ownership is uncertain (see qwen_grpo/cleanup.py).
 """
 import argparse
 import json
@@ -143,13 +146,15 @@ def report(checkpoint):
 def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="command", required=True)
-    for name in ("train", *SPLITS, "verify", "report"):
+    for name in ("train", *SPLITS, "verify", "report", "remove"):
         p = sub.add_parser(name)
         p.add_argument("--config", required=True, type=Path)
         if name == "train":
             p.add_argument("--resume", type=Path, help="continue the run from this checkpoint of it")
         else:
             p.add_argument("--checkpoint", required=True, type=Path)
+        if name == "remove":
+            p.add_argument("--confirm", action="store_true", help="delete the listed paths (default: dry run)")
     return ap.parse_args(argv)
 
 
@@ -162,6 +167,10 @@ def main(argv=None):
         from qwen_grpo.trainer import train
 
         return train(cfg, resume=args.resume)
+    if args.command == "remove":
+        from qwen_grpo.cleanup import remove
+
+        return remove(cfg, ROOT, args.checkpoint, confirm=args.confirm)
     if not (args.checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {args.checkpoint}")
     if args.command == "verify":

@@ -5,8 +5,10 @@ checkpoints were added, training_state.pt: optimizer state, progress counters, t
 states at the moment of saving. Older checkpoints hold the adapter only; they evaluate as before but cannot resume.
 """
 import json
+import os
 import random
 import re
+from contextlib import contextmanager
 from pathlib import Path
 
 import torch
@@ -59,6 +61,37 @@ def load_adapter(model, checkpoint):
     set_peft_model_state_dict(model, loaded)
     assert all(torch.equal(p, loaded[k].to(p.device)) for k, p in get_peft_model_state_dict(model).items()), "adapter not loaded"
     return {k: v.float().cpu() for k, v in loaded.items()}
+
+
+def lock_path(results, name):
+    """results/.<run>.lock: holds the PID of the process training <run> (scripts/run.py remove checks it)."""
+    return Path(results) / f".{name}.lock"
+
+
+def lock_owner(path):
+    """PID of the live process holding the lock at `path`, or None (no lock, unreadable or stale lock)."""
+    try:
+        pid = int(Path(path).read_text())
+        os.kill(pid, 0)
+    except PermissionError:
+        return pid  # alive, owned by another user
+    except (OSError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+@contextmanager
+def training_lock(path):
+    """One training process per run: refuses while a live process holds the lock; a stale lock is taken over."""
+    path = Path(path)
+    if (pid := lock_owner(path)) is not None:
+        raise SystemExit(f"run is already being trained by process {pid} (lock {path})")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(os.getpid()))
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def rng_state():

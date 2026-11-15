@@ -12,13 +12,14 @@ qwen_grpo/          reusable implementation (no scripts, no experiment hyperpara
   model.py          EOS ids, bf16 base + fp32 LoRA, decoder-layer discovery and LoRA target resolution
   config.py         YAML run configuration: strict loading, validation, normalization of saved configs
   trainer.py        multi-step GRPO + LoRA run: train(cfg, resume=None); logs, checkpoints, final evaluation
-  checkpointing.py  adapter save/load/config checks, resumable training state (optimizer, progress, RNG)
+  checkpointing.py  adapter save/load/config checks, resumable training state (optimizer, progress, RNG), training lock
+  cleanup.py        `remove`: find a run's generated artifacts and delete them only when ownership is certain
   verification.py   base / adapter / merged / LR=0 comparisons, merge equivalence, parameter deltas, reward integrity
   reporting.py      verification JSON, plots and report.md from saved files
   training.py       prompt batching, rollout grouping, rewards, one GRPO optimizer update
   evaluation.py     greedy predictions, metrics, complete-label scores, ROC AUC, paired bootstraps
 configs/            YAML run configurations: default.yaml (the historical last2 B=2 run), qwen3_4b.yaml (untested example)
-scripts/run.py      entry point: train [--resume] | validate | test | verify | report --config <yaml>
+scripts/run.py      entry point: train [--resume] | validate | test | verify | report | remove --config <yaml>
 research/           historical experiments: each script has a main() and writes to results/ or checkpoints/
   baseline.py       greedy base-model evaluation
   train_grpo.py     historical, Stage 1: one full-rank GRPO step on one fp32 matrix, LR=0 control
@@ -109,6 +110,43 @@ checked), or `train: true` to run one first as `<run.name>_lr0`. A second `verif
 
 Historical runs (before YAML configs) were launched with command-line flags; their exact settings are in the `config` block
 of each training log.
+
+### Removing a run's artifacts
+
+```bash
+.venv/bin/python scripts/run.py remove --config configs/qwen.yaml --checkpoint checkpoints/qwen_step30            # dry run
+.venv/bin/python scripts/run.py remove --config configs/qwen.yaml --checkpoint checkpoints/qwen_step30 --confirm  # delete
+```
+
+Without `--confirm` it only lists what belongs to the run, with sizes and the total:
+
+```
+run 'qwen' (dry run):
+   519.9 KiB  checkpoints/qwen_step0/
+     1.8 MiB  checkpoints/qwen_step10/
+     ...
+     1.3 MiB  results/verification/qwen_step30/
+     8.1 MiB  total, 9 paths
+dry run: nothing deleted; add --confirm to delete these paths
+```
+
+A run `<N>` owns exactly `checkpoints/<N>_step<k>/`, `results/<N>/` (logs, predictions, plots),
+`results/benchmarks/<N>.{json,md}`, `results/eval/<N>_step<k>/` and `results/verification/<N>_step<k>/`, matched by full
+name (so `qwen` never matches `qwen_lr0`, `qwen.v2` or `qwen_step3_step10`). The whole run is removed; the checkpoint
+argument identifies it. Nothing else is touched: no parent directory, config, dataset or baseline. The command refuses,
+listing every reason, when:
+
+- the checkpoint is not `checkpoints/<run.name>_step<k>`, or the YAML differs from the one in `results/<N>/training.json`;
+- a checkpoint does not match the YAML's LoRA settings, or is neither listed in the training log nor resumable;
+- an evaluation or verification output names a checkpoint of another run;
+- another file (other runs' results, `configs/`, `README.md`, `docs/`, `research/`) mentions one of the paths, e.g. an LR=0
+  control used by another run's `verify`;
+- a path is, contains, or passes through a symbolic link;
+- a path is committed to git (deleting it would free no space; use `git rm` deliberately instead);
+- the run is training: `train` holds `results/.<N>.lock` with its PID for the whole run (a lock left by a dead process is
+  removed with the run).
+
+`validate`, `test` and `verify` hold no lock, so do not run `remove` on a run while evaluating it.
 
 ## Evidence
 

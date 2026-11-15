@@ -25,7 +25,8 @@ import torch
 from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
 from transformers import AutoTokenizer
 
-from qwen_grpo.checkpointing import load_adapter, load_training_state, rel, run_of, save_checkpoint, set_rng_state
+from qwen_grpo.checkpointing import (load_adapter, load_training_state, lock_path, rel, run_of, save_checkpoint, set_rng_state,
+                                     training_lock)
 from qwen_grpo.config import DTYPES, Config, as_dict, normalized
 from qwen_grpo.evaluation import (BENCHMARKS, RESULTS, confusion_table, evaluate, label_scores, metrics, metrics_table,
                                   paired_auc_bootstrap, paired_bootstrap, paired_changes, paired_compare, predictions_path,
@@ -152,6 +153,12 @@ def check_resume(cfg, checkpoint, state):
 
 
 def train(cfg: Config, resume=None, device="cuda"):
+    """Train under results/.<run>.lock so that `scripts/run.py remove` cannot delete a run while it is training."""
+    with training_lock(lock_path(RESULTS, cfg.run.name)):
+        return _train(cfg, resume, device)
+
+
+def _train(cfg: Config, resume=None, device="cuda"):
     t, lo, d, ev = cfg.training, cfg.lora, cfg.data, cfg.evaluation
     B, mode, G, name = t.batch_size, t.batch_mode, t.group_size, cfg.run.name
     gen_kw, score_kw = settings(ev)
