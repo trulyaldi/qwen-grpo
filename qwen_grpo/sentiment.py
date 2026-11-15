@@ -5,7 +5,7 @@ from pathlib import Path
 
 LABELS = ("NEGATIVE", "POSITIVE")  # index = rotten_tomatoes label id
 DATASET = "cornell-movie-review-data/rotten_tomatoes"
-SPLITS_PATH = Path(__file__).parent / "data" / "sentiment.json"
+SPLITS_PATH = Path(__file__).parents[1] / "data" / "sentiment.json"
 N_TRAIN, SEED = 1500, 0
 
 PROMPT = (
@@ -17,6 +17,19 @@ PROMPT = (
 
 def prompt_text(sentence: str) -> str:
     return PROMPT.format(sentence=sentence)
+
+
+
+def build_prompts(tok, sentences):
+    texts = [
+        tok.apply_chat_template(
+            [{"role": "user", "content": prompt_text(s)}],
+            tokenize=False, add_generation_prompt=True, enable_thinking=False,
+        )
+        for s in sentences
+    ]
+    assert all(t.endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n") for t in texts), texts[0]
+    return texts
 
 
 def parse_label(response: str) -> str | None:

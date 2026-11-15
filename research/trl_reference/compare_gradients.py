@@ -10,12 +10,11 @@ import math
 import torch
 from transformers import AutoTokenizer
 
-from baseline import EOS_IDS, MODEL, build_prompts
-from grpo import group_advantages, grpo_loss, response_mask
-from policy import compute_logprobs, generate_rollouts
-from train_grpo import DTYPE, decode
-from train_lora import lora_model
-from train_multistep import TARGETS, group_rewards
+from qwen_grpo.grpo import group_advantages, grpo_loss, response_mask
+from qwen_grpo.model import DTYPE, EOS_IDS, MODEL, TARGETS, lora_model
+from qwen_grpo.policy import compute_logprobs, generate_rollouts
+from qwen_grpo.sentiment import build_prompts
+from qwen_grpo.training import decode, group_rewards
 
 from research.trl_reference.train import CONFIG, G, HERE, MANUAL_TRAINING, ROOT, BalancedGRPOTrainer, check_lora, grpo_args, make_dataset, make_reward, stream, train_examples
 
@@ -49,7 +48,7 @@ def manual_rollouts(tok, prompts, completions, device):
 
 
 def manual_gradient(model, params, rollouts, advantages, micro=None):
-    """Gradient of grpo.grpo_loss (old = current, as in train_multistep.grpo_step) w.r.t. the LoRA params.
+    """Gradient of grpo.grpo_loss (old = current, as in training.grpo_step) w.r.t. the LoRA params.
 
     micro: process rows in chunks of this size and weight each chunk loss by its share of rows. Same math, different
     bf16 batch shapes: the numerical noise floor.

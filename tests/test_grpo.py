@@ -3,7 +3,7 @@ import math
 import pytest
 import torch
 
-from grpo import group_advantages, grpo_loss, response_logprobs, response_mask
+from qwen_grpo.grpo import group_advantages, grpo_loss, response_logprobs, response_mask
 
 torch.set_default_dtype(torch.float64)
 EOS = [151645, 151643]

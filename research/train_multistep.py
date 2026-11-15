@@ -1,14 +1,12 @@
 """Multi-step GRPO + LoRA on Qwen3-0.6B: fp32 adapters on selected projections of a frozen bf16 model.
 
-Rollouts: T=1 sampling, MAX_NEW_TOKENS. Evaluation: baseline.predict (greedy, baseline.MAX_NEW tokens, BATCH chunks).
+Rollouts: T=1 sampling, MAX_NEW_TOKENS. Evaluation: evaluation.predict (greedy, evaluation.MAX_NEW tokens, BATCH chunks).
 Checkpoints hold adapter weights only; optimizer and RNG state are not saved, so they cannot resume training exactly.
 """
 import argparse
 import hashlib
-import itertools
 import json
 import math
-import random
 import time
 from collections import Counter
 from pathlib import Path
@@ -17,31 +15,22 @@ import torch
 from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
 from transformers import AutoTokenizer
 
-from baseline import BATCH, EOS_IDS, MAX_NEW, MODEL, build_prompts, predict
-from grpo import group_advantages, grpo_loss
-from policy import compute_logprobs, generate_rollouts
-from sentiment import LABELS, load_splits, parse_label, reward
-from train_grpo import DTYPE, INIT_TOL, decode, masked_max
-from train_lora import ALPHA, RANK, TARGET, digest, lora_model
+from qwen_grpo.evaluation import (BATCH, BOOTSTRAP, MAX_NEW, evaluate, label_scores, metrics, paired_auc_bootstrap,
+                                  paired_bootstrap, paired_changes, paired_compare, summary, win_matrix)
+from qwen_grpo.model import (ALPHA, DTYPE, EOS_IDS, EXPECTED_MODULES, MODEL, RANK, TARGETS, digest, expected_lora_params,
+                             lora_model, lora_modules)
+from qwen_grpo.policy import generate_rollouts
+from qwen_grpo.sentiment import build_prompts, load_splits, parse_label
+from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_step
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).parents[1]
 BASE_FILE = ROOT / "results" / "baseline_validation.json"
-# PEFT re.fullmatch-es a string target against module names, so these regexes select exact modules.
-TARGETS = {
-    "last-o-proj": TARGET,
-    "last2-attention": r"model\.layers\.(26|27)\.self_attn\.(q|v|o)_proj",
-}
-EXPECTED_MODULES = {
-    "last-o-proj": ["model.layers.27.self_attn.o_proj"],
-    "last2-attention": [f"model.layers.{i}.self_attn.{p}_proj" for i in (26, 27) for p in "qvo"],
-}
 SUFFIX = {"last-o-proj": "", "last2-attention": "_last2"}
 BATCH_MODES = ("cycle", "balanced", "unconstrained")
 TRAIN_SAMPLES, VAL_SUBSET, G = 32, 160, 6
-SCORE_BATCH = 8  # label scoring keeps full [N, T, V] logits; 8 rows keeps that well inside the GPU budget
 MAX_NEW_TOKENS, MAX_STEPS, EVAL_EVERY = 8, 30, 10
 LEARNING_RATE, CLIP_EPS, SEED = 1e-4, 0.2, 42
-GPU_BUDGET_GIB, BOOTSTRAP = 4.0, 10_000
+GPU_BUDGET_GIB = 4.0
 
 
 def output_name(targets, tag="", B=1, mode="cycle"):
@@ -63,194 +52,9 @@ REFERENCES = {
 }
 
 
-def batches(train, B, mode, seed=SEED):
-    """Deterministic, infinite stream of training batches. A zero-signal batch is consumed, never retried.
-
-    cycle:         B=1; train[0], train[1], ... in subset order (the original policy)
-    balanced:      B=2; [next POSITIVE, next NEGATIVE], each class reshuffled (own seeded RNG) after each pass
-    unconstrained: B prompts from one stream over the whole subset, reshuffled after each pass
-    """
-    def stream(pool, rng):
-        while True:
-            order = list(pool)
-            rng.shuffle(order)
-            yield from order
-
-    if mode == "cycle":
-        assert B == 1
-        return ([train[i % len(train)]] for i in itertools.count())
-    if mode == "balanced":
-        assert B == 2
-        pos, neg = (stream([e for e in train if e["label"] == label], random.Random(seed + k))
-                    for k, label in enumerate(("POSITIVE", "NEGATIVE")))
-        return ([next(pos), next(neg)] for _ in itertools.count())
-    assert mode == "unconstrained"
-    s = stream(train, random.Random(seed))
-    return ([next(s) for _ in range(B)] for _ in itertools.count())
-
-
-def check_grouping(rollouts, prompt_ids, G):
-    """Rows b*G .. b*G+G-1 must start with prompt b's left-padded tokens, the order group_rewards assumes."""
-    P = rollouts["prompt_len"]
-    assert torch.equal(rollouts["input_ids"][:, :P], prompt_ids.repeat_interleave(G, dim=0)), "rollout rows not grouped by prompt"
-
-
-def lora_modules(model):
-    """(name without PEFT prefix, module) for every module carrying a LoRA adapter."""
-    return [(n.removeprefix("base_model.model."), m) for n, m in model.named_modules() if hasattr(m, "lora_A") and len(m.lora_A)]
-
-
-def expected_lora_params(modules):
-    """sum over adapted Linear layers of r * (in + out): A is [r, in], B is [out, r]."""
-    return sum(RANK * (m.base_layer.in_features + m.base_layer.out_features) for _, m in modules)
-
-
 def l2(norms):
     """Aggregate L2 norm sqrt(sum_k ||theta_k||^2) from per-tensor norms."""
     return math.sqrt(sum(x * x for x in norms))
-
-
-def balanced_subset(rows, n, seed):
-    """n/2 rows per label, drawn and shuffled with a fixed seed; id = index in `rows`."""
-    assert n % 2 == 0
-    rng = random.Random(seed)
-    picked = [i for label in LABELS for i in rng.sample([i for i, r in enumerate(rows) if r["label"] == label], n // 2)]
-    rng.shuffle(picked)
-    return [{"id": i, **rows[i]} for i in picked]
-
-
-def group_rewards(responses, labels, G):
-    """responses [B*G], rows b*G .. b*G+G-1 answer prompt b -> rewards [B, G]."""
-    assert len(responses) == len(labels) * G, (len(responses), len(labels), G)
-    return torch.tensor([reward(r, labels[i // G]) for i, r in enumerate(responses)]).reshape(len(labels), G)
-
-
-def grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=CLIP_EPS):
-    """One AdamW update from a fresh rollout group -> scalar logs, or None (no step) if no group has mixed rewards."""
-    if (rewards == rewards[:, :1]).all():
-        return None
-    adv = group_advantages(rewards).flatten().to(rollouts["input_ids"].device)
-    mask = rollouts["completion_mask"]
-    with torch.no_grad():
-        old_logp = compute_logprobs(model, rollouts)  # sampling policy of this group only
-    new_logp = compute_logprobs(model, rollouts)
-    init_diff = masked_max(new_logp.detach() - old_logp, mask)
-    if init_diff > INIT_TOL:
-        raise RuntimeError(f"old/current log-prob mismatch before the step: {init_diff:.3e}")
-    loss = grpo_loss(new_logp, old_logp, adv, mask, clip_eps=clip_eps)
-    if not (torch.isfinite(adv).all() and torch.isfinite(loss)):
-        raise RuntimeError(f"non-finite advantages {adv.tolist()} or loss {loss.item()}")
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    grad_norms = {n: p.grad.norm().item() for n, p in params.items()}
-    if not all(math.isfinite(g) for g in grad_norms.values()):
-        optimizer.zero_grad(set_to_none=True)
-        raise RuntimeError(f"non-finite gradients {grad_norms}; no optimizer step taken")
-    before = {n: p.detach().clone() for n, p in params.items()}
-    optimizer.step()
-    optimizer.zero_grad(set_to_none=True)
-    return {
-        "loss": loss.item(), "init_diff": init_diff, "grad_norms": grad_norms,
-        "grad_norm": math.sqrt(sum(g * g for g in grad_norms.values())),
-        "update_norm": math.sqrt(sum((p.detach() - before[n]).pow(2).sum().item() for n, p in params.items())),
-    }
-
-
-def metrics(preds):
-    n = len(preds)
-    m = {"n": n, "accuracy": sum(p["correct"] for p in preds) / n,
-         "invalid_rate": sum(p["prediction"] is None for p in preds) / n,
-         "predicted_positive_rate": sum(p["prediction"] == "POSITIVE" for p in preds) / n,
-         "predicted_negative_rate": sum(p["prediction"] == "NEGATIVE" for p in preds) / n}
-    f1 = []
-    for label in LABELS:
-        tp = sum(p["prediction"] == label == p["label"] for p in preds)
-        gold, pred = sum(p["label"] == label for p in preds), sum(p["prediction"] == label for p in preds)
-        m[f"recall_{label}"] = tp / gold
-        f1.append(2 * tp / (gold + pred))  # 2TP / (2TP + FP + FN); invalid outputs count as FN
-    m["macro_f1"] = sum(f1) / len(f1)
-    m["confusion"] = {str(k): {g: sum(p["prediction"] == k and p["label"] == g for p in preds) for g in LABELS}
-                      for k in (*LABELS, None)}  # rows: predicted (None = invalid), columns: gold
-    return m
-
-
-def paired_bootstrap(base_correct, new_correct, n=BOOTSTRAP, seed=SEED, chunk=1000):
-    """Mean accuracy difference and 95% percentile CI, resampling paired examples with replacement."""
-    d = torch.tensor(new_correct, dtype=torch.float64) - torch.tensor(base_correct, dtype=torch.float64)
-    gen = torch.Generator().manual_seed(seed)
-    means = torch.cat([d[torch.randint(len(d), (chunk, len(d)), generator=gen)].mean(1) for _ in range(n // chunk)])
-    return d.mean().item(), means.quantile(0.025).item(), means.quantile(0.975).item()
-
-
-def paired_changes(base, new):
-    assert [(p["id"], p["text"], p["label"]) for p in base] == [(p["id"], p["text"], p["label"]) for p in new]
-    out = {label: {"base_wrong_now_right": sum(not b["correct"] and t["correct"] for b, t in zip(base, new) if b["label"] == label),
-                   "base_right_now_wrong": sum(b["correct"] and not t["correct"] for b, t in zip(base, new) if b["label"] == label)}
-           for label in LABELS}
-    out["flips"] = dict(Counter(f"{b['prediction']}->{t['prediction']}" for b, t in zip(base, new) if b["prediction"] != t["prediction"]))
-    out["invalid_to_valid"] = sum(b["prediction"] is None and t["prediction"] is not None for b, t in zip(base, new))
-    out["valid_to_invalid"] = sum(b["prediction"] is not None and t["prediction"] is None for b, t in zip(base, new))
-    return out
-
-
-def paired_compare(ref, new):
-    """new vs ref on the same examples (asserted aligned): accuracy difference, paired bootstrap CI, flips."""
-    changes = paired_changes(ref, new)
-    diff, lo, hi = paired_bootstrap([p["correct"] for p in ref], [p["correct"] for p in new])
-    return {"ref_metrics": metrics(ref), "accuracy_diff": diff, "ci95": [lo, hi], "paired_changes": changes}
-
-
-@torch.no_grad()
-def label_scores(model, tok, examples, batch=SCORE_BATCH):
-    """s(x) = log P(POSITIVE<|im_end|> | x) - log P(NEGATIVE<|im_end|> | x): teacher-forced sums over every token
-    of the label's full tokenization plus the end-of-turn token, on the evaluation prompt. Not used in training."""
-    conts = {label: tok(label, add_special_tokens=False)["input_ids"] + [EOS_IDS[0]] for label in LABELS}
-    out = []
-    for i in range(0, len(examples), batch):
-        chunk = examples[i : i + batch]
-        enc = tok(build_prompts(tok, [e["text"] for e in chunk]), return_tensors="pt", padding=True, add_special_tokens=False).to(model.device)
-        logp = {}
-        for label, c in conts.items():
-            c = torch.tensor(c, device=model.device).expand(len(chunk), -1)
-            r = {"input_ids": torch.cat([enc["input_ids"], c], 1), "prompt_len": enc["input_ids"].shape[1],
-                 "attention_mask": torch.cat([enc["attention_mask"], torch.ones_like(c)], 1)}
-            logp[label] = compute_logprobs(model, r).sum(1)
-        out += (logp["POSITIVE"] - logp["NEGATIVE"]).tolist()
-    return out
-
-
-def win_matrix(scores, labels):
-    """W[i, j] = 1[s_pos_i > s_neg_j] + 0.5 * 1[tie], positives and negatives in example order; AUC = W.mean()."""
-    s = torch.tensor(scores, dtype=torch.float64)
-    is_pos = torch.tensor([label == "POSITIVE" for label in labels])
-    p, n = s[is_pos][:, None], s[~is_pos][None, :]
-    return (p > n).double() + 0.5 * (p == n).double()
-
-
-def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=SEED, chunk=500):
-    """AUC difference with a class-stratified paired bootstrap: the same resampled examples score both models.
-
-    With multiplicity vectors c1, c0 of resampled positives/negatives, the resampled AUC is c1^T W c0 / (n1 n0).
-    """
-    n1, n0 = W_new.shape
-    gen = torch.Generator().manual_seed(seed)
-    counts = lambda m: torch.zeros(chunk, m, dtype=torch.float64).scatter_add_(
-        1, torch.randint(m, (chunk, m), generator=gen), torch.ones(chunk, m, dtype=torch.float64))
-    diffs = []
-    for _ in range(n // chunk):
-        c1, c0 = counts(n1), counts(n0)
-        diffs.append((((c1 @ W_new) * c0).sum(1) - ((c1 @ W_ref) * c0).sum(1)) / (n1 * n0))
-    d = torch.cat(diffs)
-    return {"auc_diff": (W_new.mean() - W_ref.mean()).item(), "ci95": [d.quantile(0.025).item(), d.quantile(0.975).item()]}
-
-
-def evaluate(model, tok, examples):
-    return predict(model, tok, examples, [e["id"] for e in examples])[0]
-
-
-def summary(m):
-    return (f"acc {m['accuracy']:.4f}  F1 {m['macro_f1']:.4f}  rec POS {m['recall_POSITIVE']:.4f} NEG {m['recall_NEGATIVE']:.4f}"
-            f"  invalid {m['invalid_rate']:.4f}  pred POS {m['predicted_positive_rate']:.4f}  (n={m['n']})")
 
 
 def main():

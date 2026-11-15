@@ -6,9 +6,12 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-import baseline
-from sentiment import load_splits
-from train_multistep import balanced_subset, group_rewards, grpo_step, metrics, paired_bootstrap
+from qwen_grpo import evaluation
+from qwen_grpo.evaluation import metrics, paired_bootstrap
+from qwen_grpo.sentiment import load_splits
+from qwen_grpo.training import balanced_subset, group_rewards, grpo_step
+
+ROOT = Path(__file__).parents[1]
 
 
 class Tiny(torch.nn.Module):
@@ -78,10 +81,10 @@ def test_step_updates_and_logs_plain_scalars():
 
 
 def test_predictions_keep_baseline_schema(monkeypatch):
-    monkeypatch.setattr(baseline, "generate", lambda model, tok, s: [("POSITIVE", 2, False), ("meh", 2, False)][: len(s)])
+    monkeypatch.setattr(evaluation, "generate", lambda model, tok, s: [("POSITIVE", 2, False), ("meh", 2, False)][: len(s)])
     ex = [{"id": 7, "text": "good", "label": "POSITIVE"}, {"id": 9, "text": "bad", "label": "NEGATIVE"}]
-    preds = baseline.predict(None, None, ex, [7, 9])[0]
-    saved = json.loads((Path(baseline.__file__).parent / "results" / "baseline_validation.json").read_text())["predictions"][0]
+    preds = evaluation.predict(None, None, ex, [7, 9])[0]
+    saved = json.loads((ROOT / "results" / "baseline_validation.json").read_text())["predictions"][0]
     assert all(p.keys() == saved.keys() for p in preds)
     assert [(p["id"], p["prediction"], p["correct"]) for p in preds] == [(7, "POSITIVE", True), (9, None, False)]
 
@@ -104,8 +107,9 @@ def test_paired_bootstrap_identical_models_has_zero_interval():
 from peft import get_peft_model
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
-import train_lora
-from train_multistep import EXPECTED_MODULES, TARGETS, expected_lora_params, lora_modules, output_name, paired_compare
+from qwen_grpo.evaluation import paired_compare
+from qwen_grpo.model import EXPECTED_MODULES, TARGET, TARGETS, expected_lora_params, lora_config, lora_modules
+from research.train_multistep import output_name
 
 
 def tiny_qwen3():
@@ -117,13 +121,13 @@ def tiny_qwen3():
 
 
 def test_original_target_unchanged():
-    assert TARGETS["last-o-proj"] == train_lora.TARGET == r"model\.layers\.27\.self_attn\.o_proj"
-    assert train_lora.lora_config().target_modules == train_lora.TARGET
+    assert TARGETS["last-o-proj"] == TARGET == r"model\.layers\.27\.self_attn\.o_proj"
+    assert lora_config().target_modules == TARGET
 
 
 @pytest.mark.parametrize("targets", list(TARGETS))
 def test_peft_attaches_exactly_the_requested_projections(targets):
-    model = get_peft_model(tiny_qwen3(), train_lora.lora_config(TARGETS[targets]))
+    model = get_peft_model(tiny_qwen3(), lora_config(TARGETS[targets]))
     modules = lora_modules(model)
     assert [n for n, _ in modules] == EXPECTED_MODULES[targets]
     trainable = [n for n, p in model.named_parameters() if p.requires_grad]
@@ -132,7 +136,7 @@ def test_peft_attaches_exactly_the_requested_projections(targets):
 
 
 def test_trainable_parameter_count():
-    model = get_peft_model(tiny_qwen3(), train_lora.lora_config(TARGETS["last2-attention"]))
+    model = get_peft_model(tiny_qwen3(), lora_config(TARGETS["last2-attention"]))
     n = sum(p.numel() for p in model.parameters() if p.requires_grad)
     by_hand = 2 * 8 * ((16 + 16) + (16 + 8) + (16 + 16))  # 2 layers x r x (in + out) for q, v, o
     assert n == expected_lora_params(lora_modules(model)) == by_hand == 1408
@@ -173,9 +177,12 @@ def test_bootstrap_pairs_examples():
 # ---- Stage 3C: B=2 batches, grouping, label scoring ----
 from transformers import AutoTokenizer
 
-from baseline import EOS_IDS, MODEL, build_prompts
-from grpo import group_advantages
-from train_multistep import REFERENCES, batches, check_grouping, label_scores, paired_auc_bootstrap, paired_changes, win_matrix
+from qwen_grpo.evaluation import label_scores, paired_auc_bootstrap, paired_changes, win_matrix
+from qwen_grpo.grpo import group_advantages
+from qwen_grpo.model import EOS_IDS, MODEL
+from qwen_grpo.sentiment import build_prompts
+from qwen_grpo.training import batches, check_grouping
+from research.train_multistep import REFERENCES
 
 TRAIN = balanced_subset(load_splits()["train"], 32, 42)
 

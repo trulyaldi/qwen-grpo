@@ -2,9 +2,10 @@ import pytest
 import torch
 from transformers import AutoTokenizer, GenerationConfig, Qwen3Config, Qwen3ForCausalLM
 
-from baseline import EOS_IDS, MODEL, build_prompts
-from grpo import response_mask
-from policy import compute_logprobs, generate_rollouts
+from qwen_grpo.grpo import response_mask
+from qwen_grpo.model import EOS_IDS, MODEL
+from qwen_grpo.policy import compute_logprobs, generate_rollouts
+from qwen_grpo.sentiment import build_prompts
 
 B, G = 2, 4
 SENTENCES = ["A gorgeous, witty film.", "Two hours of my life I will never get back, and the jokes are stale."]

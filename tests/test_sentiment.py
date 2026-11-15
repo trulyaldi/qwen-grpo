@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from sentiment import LABELS, _dedup, _key, make_splits, parse_label, reward
+from qwen_grpo.sentiment import LABELS, _dedup, _key, make_splits, parse_label, reward
 
 
 @pytest.mark.parametrize(

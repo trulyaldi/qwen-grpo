@@ -1,6 +1,6 @@
 import torch
 
-from grpo import response_logprobs, response_mask
+from qwen_grpo.grpo import response_logprobs, response_mask
 
 
 @torch.no_grad()

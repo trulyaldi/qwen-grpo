@@ -2,35 +2,17 @@
 
 Same setup as train_grpo.py (the full-rank reference).
 """
-import hashlib
-
 import torch
-from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
+from transformers import AutoTokenizer
 
-from baseline import EOS_IDS, MODEL, build_prompts
-from grpo import group_advantages, grpo_loss
-from policy import compute_logprobs, generate_rollouts
-from sentiment import load_splits, reward
-from train_grpo import B, CLIP_EPS, DTYPE, G, INIT_TOL, LEARNING_RATE, MAX_ATTEMPTS, MAX_NEW_TOKENS, SEED, decode, masked_max
+from qwen_grpo.grpo import group_advantages, grpo_loss
+from qwen_grpo.model import ALPHA, DTYPE, MODEL, RANK, digest, lora_model
+from qwen_grpo.policy import compute_logprobs, generate_rollouts
+from qwen_grpo.sentiment import build_prompts, load_splits, reward
+from qwen_grpo.training import INIT_TOL, decode, masked_max
+from research.train_grpo import B, CLIP_EPS, G, LEARNING_RATE, MAX_ATTEMPTS, MAX_NEW_TOKENS, SEED
 
 GPU_BUDGET_GIB = 4.0  # local stand-in for the assignment's 8 GB cap
-TARGET = r"model\.layers\.27\.self_attn\.o_proj"  # PEFT re.fullmatch-es a string against full module names
-RANK, ALPHA = 8, 16
-
-
-def lora_config(target=TARGET):
-    return LoraConfig(r=RANK, lora_alpha=ALPHA, lora_dropout=0.0, bias="none", task_type="CAUSAL_LM", target_modules=target)
-
-
-def lora_model(dtype, device, target=TARGET):
-    base = AutoModelForCausalLM.from_pretrained(MODEL, dtype=dtype).to(device).eval()
-    base.generation_config = GenerationConfig(eos_token_id=EOS_IDS, pad_token_id=EOS_IDS[1])
-    return get_peft_model(base, lora_config(target)).eval()
-
-
-def digest(t):
-    return hashlib.sha256(t.detach().contiguous().view(torch.uint8).cpu().numpy()).hexdigest()
 
 
 def seq_mean(x, mask):

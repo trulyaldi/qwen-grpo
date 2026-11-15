@@ -17,11 +17,10 @@ from peft import get_peft_model_state_dict, load_peft_weights
 from transformers import AutoTokenizer, TrainerCallback
 from trl import GRPOConfig, GRPOTrainer
 
-from baseline import EOS_IDS, MODEL, build_prompts
-from sentiment import load_splits, parse_label, reward
-from train_grpo import DTYPE
-from train_lora import ALPHA, RANK, digest, lora_model
-from train_multistep import EXPECTED_MODULES, TARGETS, balanced_subset, batches, expected_lora_params, lora_modules
+from qwen_grpo.model import (ALPHA, DTYPE, EOS_IDS, EXPECTED_MODULES, MODEL, RANK, TARGETS, digest, expected_lora_params,
+                             lora_model, lora_modules)
+from qwen_grpo.sentiment import build_prompts, load_splits, parse_label, reward
+from qwen_grpo.training import balanced_subset, batches
 
 HERE = Path(__file__).parent
 ROOT = HERE.parents[1]
@@ -44,7 +43,7 @@ def make_dataset(tok, examples):
 
 
 def decode_completion(tok, ids):
-    """As train_grpo.decode: drop only a terminating EOS. TRL's own `completions` use skip_special_tokens=True instead."""
+    """As training.decode: drop only a terminating EOS. TRL's own `completions` use skip_special_tokens=True instead."""
     return tok.decode(ids[:-1] if ids and ids[-1] in EOS_IDS else ids)
 
 

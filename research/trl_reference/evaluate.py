@@ -1,7 +1,7 @@
 """Full-validation evaluation of the TRL adapter, exactly as the manual runs were evaluated, vs base and manual balanced GRPO.
 
 Run from the repo root:  .venv/bin/python -m research.trl_reference.evaluate
-Greedy baseline.predict (16 new tokens, batch 32) and train_multistep.label_scores on a fresh bf16 model; adapters
+Greedy evaluation.predict (16 new tokens, batch 32) and evaluation.label_scores on a fresh bf16 model; adapters
 are loaded from disk. Base = the same model with B = 0 adapters (exactly the base model).
 """
 import json
@@ -11,12 +11,11 @@ import torch
 from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
 from transformers import AutoTokenizer
 
-from baseline import MODEL
-from sentiment import load_splits
-from train_grpo import DTYPE
-from train_lora import lora_model
-from train_multistep import (BASE_FILE, BOOTSTRAP, SEED, TARGETS, evaluate, label_scores, metrics, paired_auc_bootstrap,
-                             paired_bootstrap, paired_changes, summary, win_matrix)
+from qwen_grpo.evaluation import (BOOTSTRAP, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap,
+                                  paired_changes, summary, win_matrix)
+from qwen_grpo.model import DTYPE, MODEL, TARGETS, lora_model
+from qwen_grpo.sentiment import load_splits
+from research.train_multistep import BASE_FILE, SEED
 
 from research.trl_reference.train import CONFIG, HERE, MANUAL_TRAINING, NAME, ROOT
 

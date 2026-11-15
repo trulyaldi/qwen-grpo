@@ -1,0 +1,154 @@
+"""Evaluation: greedy predictions, metrics, complete-label scores, ROC AUC and paired bootstraps."""
+from collections import Counter
+
+import torch
+
+from qwen_grpo.grpo import response_mask
+from qwen_grpo.model import EOS_IDS
+from qwen_grpo.policy import compute_logprobs
+from qwen_grpo.sentiment import LABELS, build_prompts, parse_label, reward
+
+MAX_NEW, BATCH = 16, 32
+SCORE_BATCH = 8  # label scoring keeps full [N, T, V] logits; 8 rows keeps that well inside the GPU budget
+BOOTSTRAP = 10_000
+
+
+@torch.no_grad()
+def generate(model, tok, sentences):
+    """Greedy responses -> (text without EOS, token length incl. EOS, truncated) per sentence."""
+    batch = tok(build_prompts(tok, sentences), return_tensors="pt", padding=True).to(model.device)
+    ids = model.generate(**batch, do_sample=False, max_new_tokens=MAX_NEW)[:, batch["input_ids"].shape[1]:]
+    mask = response_mask(ids, EOS_IDS)
+    out = []
+    for row, m in zip(ids.tolist(), mask):
+        n = int(m.sum())
+        truncated = row[n - 1] not in EOS_IDS
+        out.append((tok.decode(row[: n if truncated else n - 1]), n, truncated))
+    return out
+
+
+
+def predict(model, tok, examples, ids):
+    """Greedy prediction records in BATCH-sized chunks (order matters: bf16 outputs depend on batch shape)."""
+    predictions, lengths, truncated = [], [], []
+    for i in range(0, len(examples), BATCH):
+        chunk = examples[i : i + BATCH]
+        for k, ex, (response, n, trunc) in zip(ids[i : i + BATCH], chunk, generate(model, tok, [ex["text"] for ex in chunk])):
+            predictions.append({
+                "id": k,
+                "text": ex["text"],
+                "label": ex["label"],
+                "response": response,
+                "prediction": parse_label(response),
+                "correct": reward(response, ex["label"]) == 1.0,
+            })
+            lengths.append(n)
+            truncated.append(trunc)
+    return predictions, lengths, truncated
+
+
+
+def metrics(preds):
+    n = len(preds)
+    m = {"n": n, "accuracy": sum(p["correct"] for p in preds) / n,
+         "invalid_rate": sum(p["prediction"] is None for p in preds) / n,
+         "predicted_positive_rate": sum(p["prediction"] == "POSITIVE" for p in preds) / n,
+         "predicted_negative_rate": sum(p["prediction"] == "NEGATIVE" for p in preds) / n}
+    f1 = []
+    for label in LABELS:
+        tp = sum(p["prediction"] == label == p["label"] for p in preds)
+        gold, pred = sum(p["label"] == label for p in preds), sum(p["prediction"] == label for p in preds)
+        m[f"recall_{label}"] = tp / gold
+        f1.append(2 * tp / (gold + pred))  # 2TP / (2TP + FP + FN); invalid outputs count as FN
+    m["macro_f1"] = sum(f1) / len(f1)
+    m["confusion"] = {str(k): {g: sum(p["prediction"] == k and p["label"] == g for p in preds) for g in LABELS}
+                      for k in (*LABELS, None)}  # rows: predicted (None = invalid), columns: gold
+    return m
+
+
+
+def paired_bootstrap(base_correct, new_correct, n=BOOTSTRAP, seed=42, chunk=1000):
+    """Mean accuracy difference and 95% percentile CI, resampling paired examples with replacement."""
+    d = torch.tensor(new_correct, dtype=torch.float64) - torch.tensor(base_correct, dtype=torch.float64)
+    gen = torch.Generator().manual_seed(seed)
+    means = torch.cat([d[torch.randint(len(d), (chunk, len(d)), generator=gen)].mean(1) for _ in range(n // chunk)])
+    return d.mean().item(), means.quantile(0.025).item(), means.quantile(0.975).item()
+
+
+
+def paired_changes(base, new):
+    assert [(p["id"], p["text"], p["label"]) for p in base] == [(p["id"], p["text"], p["label"]) for p in new]
+    out = {label: {"base_wrong_now_right": sum(not b["correct"] and t["correct"] for b, t in zip(base, new) if b["label"] == label),
+                   "base_right_now_wrong": sum(b["correct"] and not t["correct"] for b, t in zip(base, new) if b["label"] == label)}
+           for label in LABELS}
+    out["flips"] = dict(Counter(f"{b['prediction']}->{t['prediction']}" for b, t in zip(base, new) if b["prediction"] != t["prediction"]))
+    out["invalid_to_valid"] = sum(b["prediction"] is None and t["prediction"] is not None for b, t in zip(base, new))
+    out["valid_to_invalid"] = sum(b["prediction"] is not None and t["prediction"] is None for b, t in zip(base, new))
+    return out
+
+
+
+def paired_compare(ref, new):
+    """new vs ref on the same examples (asserted aligned): accuracy difference, paired bootstrap CI, flips."""
+    changes = paired_changes(ref, new)
+    diff, lo, hi = paired_bootstrap([p["correct"] for p in ref], [p["correct"] for p in new])
+    return {"ref_metrics": metrics(ref), "accuracy_diff": diff, "ci95": [lo, hi], "paired_changes": changes}
+
+
+
+@torch.no_grad()
+def label_scores(model, tok, examples, batch=SCORE_BATCH):
+    """s(x) = log P(POSITIVE<|im_end|> | x) - log P(NEGATIVE<|im_end|> | x): teacher-forced sums over every token
+    of the label's full tokenization plus the end-of-turn token, on the evaluation prompt. Not used in training."""
+    conts = {label: tok(label, add_special_tokens=False)["input_ids"] + [EOS_IDS[0]] for label in LABELS}
+    out = []
+    for i in range(0, len(examples), batch):
+        chunk = examples[i : i + batch]
+        enc = tok(build_prompts(tok, [e["text"] for e in chunk]), return_tensors="pt", padding=True, add_special_tokens=False).to(model.device)
+        logp = {}
+        for label, c in conts.items():
+            c = torch.tensor(c, device=model.device).expand(len(chunk), -1)
+            r = {"input_ids": torch.cat([enc["input_ids"], c], 1), "prompt_len": enc["input_ids"].shape[1],
+                 "attention_mask": torch.cat([enc["attention_mask"], torch.ones_like(c)], 1)}
+            logp[label] = compute_logprobs(model, r).sum(1)
+        out += (logp["POSITIVE"] - logp["NEGATIVE"]).tolist()
+    return out
+
+
+
+def win_matrix(scores, labels):
+    """W[i, j] = 1[s_pos_i > s_neg_j] + 0.5 * 1[tie], positives and negatives in example order; AUC = W.mean()."""
+    s = torch.tensor(scores, dtype=torch.float64)
+    is_pos = torch.tensor([label == "POSITIVE" for label in labels])
+    p, n = s[is_pos][:, None], s[~is_pos][None, :]
+    return (p > n).double() + 0.5 * (p == n).double()
+
+
+
+def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=42, chunk=500):
+    """AUC difference with a class-stratified paired bootstrap: the same resampled examples score both models.
+
+    With multiplicity vectors c1, c0 of resampled positives/negatives, the resampled AUC is c1^T W c0 / (n1 n0).
+    """
+    n1, n0 = W_new.shape
+    gen = torch.Generator().manual_seed(seed)
+    counts = lambda m: torch.zeros(chunk, m, dtype=torch.float64).scatter_add_(
+        1, torch.randint(m, (chunk, m), generator=gen), torch.ones(chunk, m, dtype=torch.float64))
+    diffs = []
+    for _ in range(n // chunk):
+        c1, c0 = counts(n1), counts(n0)
+        diffs.append((((c1 @ W_new) * c0).sum(1) - ((c1 @ W_ref) * c0).sum(1)) / (n1 * n0))
+    d = torch.cat(diffs)
+    return {"auc_diff": (W_new.mean() - W_ref.mean()).item(), "ci95": [d.quantile(0.025).item(), d.quantile(0.975).item()]}
+
+
+
+def evaluate(model, tok, examples):
+    return predict(model, tok, examples, [e["id"] for e in examples])[0]
+
+
+
+def summary(m):
+    return (f"acc {m['accuracy']:.4f}  F1 {m['macro_f1']:.4f}  rec POS {m['recall_POSITIVE']:.4f} NEG {m['recall_NEGATIVE']:.4f}"
+            f"  invalid {m['invalid_rate']:.4f}  pred POS {m['predicted_positive_rate']:.4f}  (n={m['n']})")
+

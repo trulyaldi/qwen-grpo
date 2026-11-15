@@ -2,14 +2,15 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
-from baseline import EOS_IDS, MODEL, build_prompts
-from grpo import group_advantages, grpo_loss
-from policy import compute_logprobs, generate_rollouts
-from sentiment import load_splits, reward
+from qwen_grpo.grpo import group_advantages, grpo_loss
+from qwen_grpo.model import DTYPE, EOS_IDS, MODEL
+from qwen_grpo.policy import compute_logprobs, generate_rollouts
+from qwen_grpo.sentiment import build_prompts, load_splits, reward
+from qwen_grpo.training import INIT_TOL, decode, masked_max
 
 B, G = 1, 6
 MAX_NEW_TOKENS, LEARNING_RATE, CLIP_EPS = 8, 1e-5, 0.2
-DTYPE, SEED, MAX_ATTEMPTS, INIT_TOL = torch.bfloat16, 0, 5, 1e-6
+SEED, MAX_ATTEMPTS = 0, 5
 TRAINABLE = "model.layers.27.self_attn.o_proj.weight"
 
 
@@ -25,19 +26,6 @@ def make_fp32_trainable(model, name):
     linear.register_forward_pre_hook(lambda m, args: (args[0].float(),))
     linear.register_forward_hook(lambda m, args, out: out.to(DTYPE))
     return linear.weight
-
-
-def masked_max(x, mask):
-    return x[mask].abs().max().item()
-
-
-def decode(tok, rollouts):
-    """Response text without its terminating EOS, as baseline.generate() does."""
-    out = []
-    for row, m in zip(rollouts["response_ids"], rollouts["completion_mask"]):
-        ids = row[m].tolist()
-        out.append(tok.decode(ids[:-1] if ids[-1] in EOS_IDS else ids))
-    return out
 
 
 def grpo_step(model, param, lr, rollouts, old_logp, adv):

@@ -10,16 +10,15 @@ import torch
 from peft import get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, GenerationConfig, Qwen3Config, Qwen3ForCausalLM
 
-from baseline import EOS_IDS, MODEL, build_prompts
-from grpo import group_advantages
+from qwen_grpo.evaluation import metrics
+from qwen_grpo.grpo import group_advantages
+from qwen_grpo.model import EOS_IDS, EXPECTED_MODULES, MODEL, TARGETS, lora_config, lora_modules
+from qwen_grpo.sentiment import _key, build_prompts, load_splits
+from qwen_grpo.training import decode, group_rewards
 from research.trl_reference.compare_gradients import (compare, manual_gradient, manual_rollouts, make_trainer, trl_advantages,
                                                       trl_gradient)
 from research.trl_reference.evaluate import shift_stats
 from research.trl_reference.train import CONFIG, G, MANUAL_TRAINING, check_lora, grpo_args, make_dataset, make_reward, stream, train_examples
-from sentiment import _key, load_splits
-from train_grpo import decode
-from train_lora import lora_config
-from train_multistep import EXPECTED_MODULES, TARGETS, group_rewards, lora_modules, metrics
 
 ROOT = Path(__file__).parents[1]
 POS, NEG, IM_START = [17456, 44350, 151645], [97127, 23215, 151645], 151644
