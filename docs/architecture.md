@@ -32,7 +32,7 @@ V  vocabulary size (151 936)
 | # | Where | Operation | Output |
 |---|---|---|---|
 | 1 | `sentiment.build_prompts` | chat template, non-thinking (`<think>\n\n</think>` appended) | B strings |
-| 2 | `policy.generate_rollouts` | `generate`, T = 1, top-p 1, top-k 0, `num_return_sequences=G`, no grad | `input_ids` [N, P+R] |
+| 2 | `policy.generate_rollouts` | `generate`, temperature 1, top-p 1, top-k 0, `num_return_sequences=G`, no grad | `input_ids` [N, P+R] |
 | 3 | `grpo.response_mask` | tokens up to and including the first EOS (Qwen's pad id is an EOS id, so `ids != pad` is wrong) | `completion_mask` [N, R] bool |
 | 4 | `training.decode`, `training.group_rewards` | strict parse; reward 1 if exactly the gold label | rewards [B, G] |
 | 5 | `grpo.group_advantages` | `(r - mean_g) / (std_g + 1e-4)`, population std (`unbiased=False`) | [B, G] → flattened [N] |
@@ -66,7 +66,7 @@ grad L = -(1/N) sum_i (A_i / |o_i|) sum_t grad log pi(o_it | q, o_<t)
 - LoRA: fp32 A [r, in] and B [out, r], r = 8, alpha = 16, no dropout, on `layers.27.o_proj` (`last-o-proj`) or q/v/o of layers 26–27 (`last2-attention`). PEFT runs the adapter path in fp32 and adds it to the bf16 base output, cast back to bf16.
 - Backward runs from the loss through `lm_head`, the final norm and every layer above an adapter. Gradients pass through frozen bf16 weights to reach the layer-26 adapters, but those weights get no `.grad`. Below the lowest adapter no input requires grad, so autograd records nothing there.
 - At init B = 0, so dL/dA = (alpha/r) B^T (dL/dh) x^T = 0 exactly; the first step moves B only (`tests/test_multistep.py`).
-- Peak activation memory is dominated by the [N, P+R, V] bf16 logits and the fp32 [N, R, V] slice. Neither is chunked.
+- Neither the [N, P+R, V] bf16 logits nor the fp32 [N, R, V] slice is chunked. Their sizes are 2·N·(P+R)·V and 4·N·R·V bytes, e.g. 12·8·151 936·4 B ≈ 58 MB for the fp32 slice at N = 12, R = 8. That is arithmetic, not a profiled peak.
 
 ## Evaluation
 

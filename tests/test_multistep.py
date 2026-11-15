@@ -108,7 +108,7 @@ from peft import get_peft_model
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from qwen_grpo.evaluation import paired_compare
-from qwen_grpo.model import EXPECTED_MODULES, TARGET, TARGETS, expected_lora_params, lora_config, lora_modules
+from qwen_grpo.model import EXPECTED_MODULES, TARGET, TARGETS, digest, expected_lora_params, lora_config, lora_modules
 from research.train_multistep import output_name
 
 
@@ -144,7 +144,6 @@ def test_trainable_parameter_count():
 
 def test_first_lora_step_updates_only_B_and_leaves_base_bitwise_unchanged():
     """B = 0 at init gives dL/dA = (a/r) B^T (dL/dh) x^T = 0 exactly, so step 1 moves B only."""
-    from qwen_grpo.model import digest
     model = get_peft_model(tiny_qwen3(), lora_config(TARGETS["last2-attention"]))
     params = {n: p for n, p in model.named_parameters() if p.requires_grad}
     frozen = {n: digest(p) for n, p in model.named_parameters() if not p.requires_grad}
