@@ -16,7 +16,7 @@ from qwen_grpo.policy import compute_logprobs, generate_rollouts
 from qwen_grpo.sentiment import build_prompts
 from qwen_grpo.training import decode, group_rewards
 
-from research.trl_reference.train import CONFIG, G, HERE, MANUAL_TRAINING, ROOT, BalancedGRPOTrainer, check_lora, grpo_args, make_dataset, make_reward, stream, train_examples
+from research.trl_reference.train import CONFIG, G, HERE, MANUAL_TRAINING, BalancedGRPOTrainer, check_lora, grpo_args, make_dataset, make_reward, stream, train_examples
 
 ADV_EPS = 1e-4
 

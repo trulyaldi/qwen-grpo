@@ -9,7 +9,7 @@ MODEL = "Qwen/Qwen3-0.6B"
 EOS_IDS = [151645, 151643]  # <|im_end|>, <|endoftext|>
 DTYPE = torch.bfloat16
 RANK, ALPHA = 8, 16
-TARGET = r"model\.layers\.27\.self_attn\.o_proj"  # PEFT re.fullmatch-es a string against full module names
+TARGET = r"model\.layers\.27\.self_attn\.o_proj"
 # PEFT re.fullmatch-es a string target against module names, so these regexes select exact modules.
 TARGETS = {
     "last-o-proj": TARGET,
