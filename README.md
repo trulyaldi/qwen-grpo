@@ -14,14 +14,15 @@ qwen_grpo/          reusable implementation (no scripts, no experiment hyperpara
   evaluation.py     greedy predictions, metrics, complete-label scores, ROC AUC, paired bootstraps
 research/           experiments: each script has a main() and writes to results/ or checkpoints/
   baseline.py       greedy base-model evaluation
-  train_grpo.py     Stage 1: one full-rank GRPO step on one fp32 matrix, LR=0 control
-  train_lora.py     Stage 2: one LoRA GRPO step, precision and merge checks
-  train_multistep.py  multi-step GRPO + LoRA runs (CLI)
+  train_multistep.py  current training entry point: multi-step GRPO + LoRA runs (CLI)
+  train_grpo.py     historical, Stage 1: one full-rank GRPO step on one fp32 matrix, LR=0 control
+  train_lora.py     historical, Stage 2: one LoRA GRPO step, precision and merge checks (shares train_grpo.py's constants)
   trl_reference/    independent reference with Hugging Face TRL GRPOTrainer (own results/, checkpoints/, findings.md)
 tests/              unit and small integration tests (tiny models; no 0.6B weights except the tokenizer)
 data/               cached dataset splits (data/sentiment.json)
 results/            run outputs (JSON) and the implementation audit
 checkpoints/        LoRA adapters saved by the runs
+docs/architecture.md  one GRPO + LoRA step tensor by tensor: shapes, objective, gradient flow, precision
 ```
 
 ## Setup and tests
