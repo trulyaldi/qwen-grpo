@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import torch
+import yaml
 from peft import get_peft_model, get_peft_model_state_dict
 from safetensors import safe_open
 
@@ -38,6 +39,17 @@ def test_default_yaml_is_the_historical_default_rerun_config():
     assert config.normalized(saved)["evaluation"] == now["evaluation"] == dataclasses.asdict(config.Evaluation())
     saved["run"]["name"], saved["verification"]["negative_control"]["checkpoint"] = "default", None
     assert config.sha256(config._build(config.Config, saved, "saved")) == config.sha256(DEFAULT)
+
+
+def test_a_committed_full_yaml_loads_and_equals_the_minimal_default():
+    """verify wrote every key of the config it ran with; that full file still loads and equals default.yaml except for
+    the LR=0 control it was pointed at."""
+    path = ROOT / "results" / "verification" / "default_step30" / "config.yaml"
+    full = config.load(path)
+    assert "verification" in yaml.safe_load(path.read_text())
+    assert config.differences(config.as_dict(full), config.as_dict(DEFAULT)) == ["verification.negative_control.checkpoint"]
+    v = dataclasses.replace(full.verification, negative_control=config.NegativeControl())
+    assert config.sha256(dataclasses.replace(full, verification=v)) == config.sha256(DEFAULT)
 
 
 def test_saved_logs_still_pass_provenance_checks():

@@ -138,7 +138,9 @@ def test_resume_from_the_final_checkpoint_only_reruns_the_closing_steps(sandbox,
     ref = trainer.train(cfg, device="cpu")
     saved = config.load(trainer.RESULTS / "tiny" / "config.yaml")  # the resolved config train wrote: a valid --config
     assert saved == cfg and ref["config_sha256"] == config.sha256(cfg)
+    (trainer.RESULTS / "tiny" / "config.yaml").unlink()  # as for a run started before config.yaml was written
     out = trainer.train(saved, resume=trainer.CHECKPOINTS / "tiny_step4", device="cpu")
+    assert config.load(trainer.RESULTS / "tiny" / "config.yaml") == cfg and out["config_sha256"] == ref["config_sha256"]
     assert out["successful_steps"] == ref["successful_steps"] and out["training"] == ref["training"]
     assert out["final_checkpoint"] == ref["final_checkpoint"]
 

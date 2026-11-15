@@ -224,6 +224,11 @@ def _train(cfg: Config, resume=None, device="cuda"):
     frozen_digest = {n: digest(p) for n, p in frozen.items()}
     optimizer = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
 
+    def save_config():
+        (RESULTS / name).mkdir(parents=True, exist_ok=True)
+        (RESULTS / name / "config.yaml").write_text(f"# resolved config of run {name}, sha256 {sha256(cfg)}\n"
+                                                    + yaml.safe_dump(as_dict(cfg), sort_keys=False))
+
     def eval_subset(step, ckpt=None):
         preds = evaluate(model, tok, val_sub, **gen_kw)
         result["evaluations"].append({"step": step, "checkpoint": ckpt, "split": "validation", "metrics": metrics(preds), "predictions": preds})
@@ -231,9 +236,7 @@ def _train(cfg: Config, resume=None, device="cuda"):
 
     if resume is None:
         model.save_pretrained(CHECKPOINTS / f"{name}_step0")  # initial adapter: reference for parameter deltas
-        (RESULTS / name).mkdir(parents=True, exist_ok=True)
-        (RESULTS / name / "config.yaml").write_text(f"# resolved config of run {name}, sha256 {sha256(cfg)}\n"
-                                                    + yaml.safe_dump(as_dict(cfg), sort_keys=False))
+        save_config()
         result = {
             "model": cfg.model.name, "method": "GRPO+LoRA", "seed": t.seed, "yaml_config": as_dict(cfg),
             "config_sha256": sha256(cfg),
@@ -268,6 +271,9 @@ def _train(cfg: Config, resume=None, device="cuda"):
         load_adapter(model, resume)
         optimizer.load_state_dict(state["optimizer"])
         result, base_full = state["result"], state["base_full"]
+        result.setdefault("config_sha256", sha256(cfg))  # runs started before the hash was recorded
+        if not (RESULTS / name / "config.yaml").exists():
+            save_config()
         step, attempts, ckpt, elapsed = state["step"], state["attempts"], state["checkpoint"], state["train_seconds"]
         mixed_counts = Counter(state["mixed_counts"])
         result.setdefault("resumed", []).append({"from": rel(resume), "step": step, "attempts": attempts,
