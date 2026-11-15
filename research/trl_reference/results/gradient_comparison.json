@@ -1,0 +1,447 @@
+{
+ "model": "Qwen/Qwen3-0.6B",
+ "dtype": "torch.bfloat16",
+ "prompt_ids": [
+  630,
+  256
+ ],
+ "labels": [
+  "POSITIVE",
+  "NEGATIVE"
+ ],
+ "responses": [
+  "POSITIVE",
+  "POSITIVE",
+  "POSITIVE",
+  "POSITIVE",
+  "NEGATIVE",
+  "POSITIVE",
+  "POSITIVE",
+  "POSITIVE",
+  "NEGATIVE",
+  "NEGATIVE",
+  "NEGATIVE",
+  "POSITIVE"
+ ],
+ "rewards": [
+  [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   0.0,
+   1.0
+  ],
+  [
+   0.0,
+   0.0,
+   1.0,
+   1.0,
+   1.0,
+   0.0
+  ]
+ ],
+ "rollouts_equal_manual_attempt_1": true,
+ "advantages": {
+  "manual_population_std": [
+   [
+    0.4470937252044678,
+    0.4470937252044678,
+    0.4470937252044678,
+    0.4470937252044678,
+    -2.2354681491851807,
+    0.4470937252044678
+   ],
+   [
+    -0.9998000264167786,
+    -0.9998000264167786,
+    0.9998000264167786,
+    0.9998000264167786,
+    0.9998000264167786,
+    -0.9998000264167786
+   ]
+  ],
+  "trl_formula_restated": [
+   [
+    0.40814831852912903,
+    0.40814831852912903,
+    0.40814831852912903,
+    0.40814831852912903,
+    -2.0407416820526123,
+    0.40814831852912903
+   ],
+   [
+    -0.9127042889595032,
+    -0.9127042889595032,
+    0.9127042889595032,
+    0.9127042889595032,
+    0.9127042889595032,
+    -0.9127042889595032
+   ]
+  ],
+  "trl_internal": [
+   0.4081483483314514,
+   0.4081483483314514,
+   0.4081483483314514,
+   0.4081483483314514,
+   -2.040741443634033,
+   0.4081483483314514,
+   -0.9127042293548584,
+   -0.9127042293548584,
+   0.9127042293548584,
+   0.9127042293548584,
+   0.9127042293548584,
+   -0.9127042293548584
+  ],
+  "trl_internal_vs_restated_max_abs": 2.384185791015625e-07,
+  "trl_over_manual_per_group": [
+   [
+    0.9128921031951904,
+    0.9128921031951904,
+    0.9128921031951904,
+    0.9128921031951904,
+    0.9128922820091248,
+    0.9128921031951904
+   ],
+   [
+    0.9128868579864502,
+    0.9128868579864502,
+    0.9128868579864502,
+    0.9128868579864502,
+    0.9128868579864502,
+    0.9128868579864502
+   ]
+  ]
+ },
+ "logp_trl_vs_manual_max_abs": 0.0004775524139404297,
+ "loss": {
+  "manual": -2.4835269840650653e-08,
+  "manual_with_trl_advantages": -4.967053879312289e-09,
+  "trl": -4.967053968130131e-08
+ },
+ "grad_norms": {
+  "manual": 0.2721203254478962,
+  "manual_with_trl_advantages": 0.24949819870485945,
+  "trl": 0.2548461626209337
+ },
+ "trl_vs_manual": {
+  "rel_diff": 0.11243859279357354,
+  "cosine": 0.9954017308315263,
+  "norm_ratio": 0.9365201302088324,
+  "per_tensor_rel_diff": {
+   "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.12640587760504707,
+   "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.11101627618175418,
+   "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.08934012191543024,
+   "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.12647711889174051,
+   "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.09458160413484107,
+   "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.07430891524008545
+  }
+ },
+ "trl_vs_manual_with_trl_advantages": {
+  "rel_diff": 0.10274769026263599,
+  "cosine": 0.9950571328732994,
+  "norm_ratio": 1.0214348798662092,
+  "per_tensor_rel_diff": {
+   "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.125476117063042,
+   "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.08344600091018431,
+   "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.05466390228223194,
+   "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.12269823907895194,
+   "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.10792043805694915,
+   "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.07012610316595733
+  }
+ },
+ "noise_floor_manual_vs_manual_microbatched": {
+  "rel_diff": 0.11604288947766057,
+  "cosine": 0.9934246913048098,
+  "norm_ratio": 1.012360622559675,
+  "per_tensor_rel_diff": {
+   "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.11716361881683643,
+   "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.1080871416350767,
+   "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.09692819471642802,
+   "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.12656141594804196,
+   "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.14742376485317404,
+   "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+   "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.11644125824459015
+  }
+ },
+ "bf16_batch_shapes": {
+  "micro_1": {
+   "manual_full_vs_manual_micro": {
+    "rel_diff": 0.08086965464392447,
+    "cosine": 0.9967334643767881,
+    "norm_ratio": 1.00091677058527,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.09846615968232762,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.06313449890438448,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.07268035581255398,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.07826362447278873,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.07023469374560676,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.0649261644323974
+    }
+   },
+   "manual_micro_vs_trl": {
+    "rel_diff": 0.09018995651375922,
+    "cosine": 0.9962204745396588,
+    "norm_ratio": 1.0204993161109106,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.10397078917531515,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.07493961167298378,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.05686243049186602,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.12979769124910892,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.0895577290693015,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.07621179717796746
+    }
+   }
+  },
+  "micro_2": {
+   "manual_full_vs_manual_micro": {
+    "rel_diff": 0.12447721321854312,
+    "cosine": 0.9940349797904949,
+    "norm_ratio": 1.0540359602647187,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.1404516073509146,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.10223301228009309,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.10511814840691017,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.17356109017792315,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.11810745194412962,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.08272230449359419
+    }
+   },
+   "manual_micro_vs_trl": {
+    "rel_diff": 0.08762851663556039,
+    "cosine": 0.9965316720406202,
+    "norm_ratio": 0.9690702389410681,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.09376329618983358,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.08791228774929814,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.08158055135335462,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.11087143141605707,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.05959544372800982,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.05770402819494226
+    }
+   }
+  },
+  "micro_3": {
+   "manual_full_vs_manual_micro": {
+    "rel_diff": 0.09278184655868998,
+    "cosine": 0.9964518876915461,
+    "norm_ratio": 1.0355010302551813,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.09134775207637971,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.08528136898396561,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.09764427924188829,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.11255660790165434,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.10545956614494188,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.07031016589678649
+    }
+   },
+   "manual_micro_vs_trl": {
+    "rel_diff": 0.09744746483398349,
+    "cosine": 0.9952801429703809,
+    "norm_ratio": 0.9864160923282658,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.10897184116775112,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.09739441955762433,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.07691160746462802,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.10762455859946557,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.08664744596024218,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.060355668781880936
+    }
+   }
+  },
+  "micro_4": {
+   "manual_full_vs_manual_micro": {
+    "rel_diff": 0.05035176980955679,
+    "cosine": 0.9989060191378791,
+    "norm_ratio": 0.9802369057990108,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.03358197577202062,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.06607908265259152,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.04816509774782468,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.03822893409318687,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.0699369797123444,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.029597498209791198
+    }
+   },
+   "manual_micro_vs_trl": {
+    "rel_diff": 0.1200200900897124,
+    "cosine": 0.9939356655554712,
+    "norm_ratio": 1.0420285890313599,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.1333693991007279,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.1153338702859487,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.08161221075978159,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.13678557107497696,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.1305157849381706,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.07667136802216615
+    }
+   }
+  },
+  "micro_6": {
+   "manual_full_vs_manual_micro": {
+    "rel_diff": 0.11604288947766057,
+    "cosine": 0.9934246913048098,
+    "norm_ratio": 1.012360622559675,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.11716361881683643,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.1080871416350767,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.09692819471642802,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.12656141594804196,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.14742376485317404,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.11644125824459015
+    }
+   },
+   "manual_micro_vs_trl": {
+    "rel_diff": 0.09972938827965007,
+    "cosine": 0.9951110185994394,
+    "norm_ratio": 1.008963463319613,
+    "per_tensor_rel_diff": {
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.11621678969645313,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.09133543633918287,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.07688573927779709,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.0794991652480875,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.10003082842602015,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+     "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.09056327476139152
+    }
+   }
+  }
+ },
+ "fp32": {
+  "trl_vs_manual_with_trl_advantages": {
+   "rel_diff": 1.992826809053726e-05,
+   "cosine": 0.9999999998036315,
+   "norm_ratio": 0.9999979024332935,
+   "per_tensor_rel_diff": {
+    "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 1.928729239468807e-05,
+    "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 1.803928369099199e-05,
+    "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 1.9536758295190268e-05,
+    "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 2.2026685301582384e-05,
+    "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 2.5392307397741088e-05,
+    "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 2.0412792359954827e-05
+   }
+  },
+  "trl_vs_manual": {
+   "rel_diff": 0.0871192880845579,
+   "cosine": 0.9999999997962181,
+   "norm_ratio": 0.9128807140504621,
+   "per_tensor_rel_diff": {
+    "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 0.0871165974209018,
+    "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 0.08712163437328566,
+    "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 0.08711395055493709,
+    "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 0.08712080942994216,
+    "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 0.08712968844777252,
+    "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 0.08712083324462983
+   }
+  },
+  "noise_floor_manual_micro2_vs_micro3": {
+   "rel_diff": 1.164434166517551e-05,
+   "cosine": 0.9999999999329103,
+   "norm_ratio": 0.999998811982407,
+   "per_tensor_rel_diff": {
+    "base_model.model.model.layers.26.self_attn.q_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.q_proj.lora_B.default.weight": 8.690631381360543e-06,
+    "base_model.model.model.layers.26.self_attn.v_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.v_proj.lora_B.default.weight": 1.1974709913125888e-05,
+    "base_model.model.model.layers.26.self_attn.o_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.26.self_attn.o_proj.lora_B.default.weight": 1.3025370840539537e-05,
+    "base_model.model.model.layers.27.self_attn.q_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.q_proj.lora_B.default.weight": 1.6370368484167262e-05,
+    "base_model.model.model.layers.27.self_attn.v_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.v_proj.lora_B.default.weight": 1.3664010195323169e-05,
+    "base_model.model.model.layers.27.self_attn.o_proj.lora_A.default.weight": 0.0,
+    "base_model.model.model.layers.27.self_attn.o_proj.lora_B.default.weight": 1.2543460963937484e-05
+   }
+  },
+  "trl_loss": -4.967053968130131e-08
+ },
+ "peak_reserved_gib": 2.537109375
+}
