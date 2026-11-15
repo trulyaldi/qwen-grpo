@@ -146,3 +146,38 @@ def test_summary_paths_resolve_inside_the_run(sandbox, tmp_path):
     s = json.loads((runs.run_dir("tiny") / "summary.json").read_text())
     paths = [c["path"] for c in s["checkpoints"]] + [v for k, v in s["artifacts"].items() if k != "plots"] + s["artifacts"]["plots"]
     assert all((runs.run_dir("tiny") / p).exists() for p in paths)
+
+
+def test_full_validation_sections_from_a_real_final_block(sandbox, tmp_path):
+    """The end-of-training comparison as a GPU run records it (taken from the committed default_rerun benchmark)."""
+    sandbox("r")
+    trainer.train(make_cfg(tmp_path, max_steps=2), device="cpu")
+    bench = json.loads((REPO / "results" / "benchmarks" / "default_rerun.json").read_text())
+    path = runs.training_dir("tiny") / "training.json"
+    log = json.loads(path.read_text())
+    log["final"] = {k: bench[k] for k in ("base", "trained", "accuracy_diff", "bootstrap_ci95", "bootstrap", "paired_changes",
+                                          "vs_saved", "auc", "auc_vs")}
+    log["memory"] = bench["memory"]
+    path.write_text(json.dumps(log))
+    run.main(["report", "--run", "tiny"])
+    s = runs.read_json(runs.run_dir("tiny") / "summary.json")
+    fv = s["full_validation"]
+    assert fv["trained"]["accuracy"] == bench["trained"]["accuracy"] and fv["trained"]["auc"] == bench["auc"]["trained"]
+    assert fv["ci95"] == bench["bootstrap_ci95"] and fv["auc_diff"] == bench["auc_vs"]["base"]["auc_diff"]
+    assert s["memory"]["peak_reserved_gib"] == bench["memory"]["peak_reserved_gib"]
+    report = (runs.run_dir("tiny") / "report.md").read_text()
+    assert f"| accuracy | {bench['base']['accuracy']:.4f} | {bench['trained']['accuracy']:.4f} |" in report
+    assert (f"predicted-POSITIVE rate base {bench['base']['predicted_positive_rate']:.4f} → trained "
+            f"{bench['trained']['predicted_positive_rate']:.4f}") in report
+    assert f"peak reserved {bench['memory']['peak_reserved_gib']:.2f} GiB" in report
+
+
+def test_report_of_a_run_that_failed_before_its_first_checkpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(runs, "ROOT", tmp_path)
+    runs.create("early", "0" * 64, {"git_commit": None, "git_dirty": None})
+    runs.set_status("early", "failed", error="RuntimeError: CUDA out of memory")
+    shutil.copy(REPO / "configs" / "default.yaml", runs.run_dir("early") / "config.yaml")
+    run.main(["report", "--run", "early"])
+    s = runs.read_json(runs.run_dir("early") / "summary.json")
+    assert s["status"] == "failed" and s["checkpoints"] == [] and s["training_log"] is None
+    assert "No training log is available" in (runs.run_dir("early") / "report.md").read_text()

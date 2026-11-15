@@ -306,7 +306,7 @@ def training_record(name):
         return json.loads(path.read_text()), runs.rel(path)
     for step, ckpt in reversed(runs.checkpoints(name)):
         if (ckpt / STATE).is_file():
-            return torch.load(ckpt / STATE, weights_only=True)["result"], f"{runs.rel(ckpt / STATE)} (training did not finish)"
+            return torch.load(ckpt / STATE, weights_only=True, map_location="cpu")["result"], f"{runs.rel(ckpt / STATE)} (training did not finish)"
     return None, "no training log and no resumable checkpoint"
 
 
@@ -329,9 +329,10 @@ def summarize(name):
     m = runs.manifest(name)
     if m is None:
         raise SystemExit(f"{runs.rel(d)} is not a run directory (no manifest.json)")
-    import yaml
+    from qwen_grpo.config import as_dict
+    from qwen_grpo.config import load as load_config
 
-    cfg = yaml.safe_load((d / "config.yaml").read_text())
+    cfg = as_dict(load_config(d / "config.yaml"))  # resolved and validated, defaults filled in
     log, log_source = training_record(name)
     t, rows = cfg["training"], (log or {}).get("training", [])
     ckpts = runs.checkpoints(name)

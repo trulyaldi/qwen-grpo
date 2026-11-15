@@ -163,7 +163,8 @@ def report_run(name):
     from qwen_grpo import runs
     from qwen_grpo.reporting import update_run
 
-    runs.resolve(name)  # refuses a missing run with a hint
+    if not runs.run_dir(name).is_dir():
+        runs.resolve(name)  # raises, with a hint for a run from before runs/ existed
     path = update_run(name)
     print(f"wrote {runs.rel(runs.run_dir(name) / 'summary.json')} and {runs.rel(path)}")
     return path
