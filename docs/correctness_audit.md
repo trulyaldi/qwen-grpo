@@ -90,7 +90,8 @@ research/train_grpo.py, train_lora.py   historical Stage 1/2 scripts; not import
   - rewards equal a hand table;
   - advantages equal (1−p)/(√(p(1−p))+ε) for correct rows and −p/(√(p(1−p))+ε) for wrong rows, written without `group_advantages`;
   - the gradient of the loss with respect to `logp` equals −A_i/(N·|o_i|) on valid tokens and 0 elsewhere.
-- **Mutations caught:** replacing `repeat_interleave` with `repeat` and `labels[i // G]` with `labels[i % B]` makes the test fail.
+- **Mutations caught:** scoring row i against `labels[i % B]` instead of `labels[i // G]` makes 2 audit tests fail.
+- **Not caught by the audit tests:** expanding the prompt attention mask with `repeat` instead of `repeat_interleave` (`policy.py:25`). The audit's stand-in models ignore the attention mask. The existing `tests/test_policy.py::test_prompt_grouping` catches it (verified by mutation).
 
 Micro-batching: there is none. One forward and one backward pass cover all N rows, so reordering across micro-batches cannot occur.
 
@@ -236,7 +237,7 @@ There is no gradient clipping (by design; logged as `grad_clipping: None`). `zer
 
 Historical: B=1 needed 36 attempts for 30 steps; B=2 balanced and unconstrained needed 31 attempts each, with mixed-group counts {0:1, 1:10, 2:20}.
 
-**Determinism.** The `_audit` and `_audit_lr0` runs share seeds. They produced identical step-0 subset evaluations and identical step-1 rollouts and rewards. Their gradient norms are identical at step 1 (0.2721) and differ at step 2 (0.3281 vs 0.3280), which is evidence that the lr>0 policy actually moved.
+**Determinism.** The `_audit` and `_audit_lr0` runs share seeds. They produced identical step-0 subset evaluations, and identical rollouts (equal `rollout_sha256`) and rewards at **both** steps. The lr>0 step-1 update was too small to change any sampled token under the same RNG stream. Their gradient norms are identical at step 1 (0.2721) and differ at step 2 (0.3281 vs 0.3280): on identical tokens, that difference is evidence that the lr>0 policy actually moved.
 
 **Checkpointing.**
 - `save_pretrained` writes the adapter only: 532 KB, 12 tensors, `adapter_config.json` with the target regex.
@@ -308,8 +309,8 @@ Re-read critically from `research/trl_reference/` (code, `config.json`, `finding
 - **Real model with fixed rollouts** (`gradient_comparison.json`, `findings.md`):
   - fp32 aligned: δ = 2.0e-5 against an fp32 manual-vs-manual chunking floor of 1.2e-5;
   - bf16: δ = 0.103, cosine 0.995, inside the bf16 manual-vs-manual floor of 0.05–0.125.
-- **Two tests skip on this branch** (§9): batch-stream equivalence and the anchored label-score numbers. Run against the historical files recovered from git:
-  - the batch-stream test **passes**;
+- **Two tests skip on this branch** (§9): `test_dataset_matches_manual_subset` (training-subset ids equal the manual run's) and `test_complete_label_scoring_matches_saved_manual_results` (anchored label-score numbers). Run against the historical files recovered from git:
+  - the subset test **passes**;
   - the label-score test cannot pass as written, because it reads `label_scores` from `validation.json`, a format no saved run has ever had (scores used to live in `training.json["final"]`);
   - re-running its assertions against the old location **holds**: base accuracy 0.7486 → trained 0.7261, score shift positive on 100% of examples, mean shift 0.650, Pearson r 0.997;
   - the historical in-run base scores equal the current baseline file to max |Δ| = 0.0.
@@ -381,7 +382,8 @@ $ .venv/bin/python -m pytest -q
 | Mutation | Failing tests |
 |---|---|
 | off-by-one causal slice | 1 |
-| `repeat` instead of `repeat_interleave`, plus `labels[i % B]` | 2 |
+| `labels[i % B]` instead of `labels[i // G]` | 2 |
+| prompt-mask `repeat` instead of `repeat_interleave` (`policy.py:25`) | 0 (caught by existing `test_policy.py::test_prompt_grouping`) |
 | sample std | 3 |
 | global token normalization | 4 |
 | mask drops EOS | 4 |
