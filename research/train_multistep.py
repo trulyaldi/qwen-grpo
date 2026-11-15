@@ -200,7 +200,7 @@ def main():
                  "mixed_groups": mixed, "responses": responses, "rewards": rewards.tolist(), "mean_reward": rewards.mean().item(),
                  "invalid_responses": sum(parse_label(r) is None for r in responses),
                  "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16]}
-        out = grpo_step(model, params, optimizer, rollouts, rewards)
+        out = grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=CLIP_EPS)
         del rollouts
         if out is None:
             result["zero_signal"].append(group)

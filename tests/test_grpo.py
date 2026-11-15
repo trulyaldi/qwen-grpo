@@ -5,7 +5,16 @@ import torch
 
 from qwen_grpo.grpo import group_advantages, grpo_loss, response_logprobs, response_mask
 
-torch.set_default_dtype(torch.float64)
+
+@pytest.fixture(scope="module", autouse=True)
+def float64_default():
+    """fp64 for this module only; a module-level set_default_dtype leaked into every later test module."""
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    yield
+    torch.set_default_dtype(previous)
+
+
 EOS = [151645, 151643]
 
 

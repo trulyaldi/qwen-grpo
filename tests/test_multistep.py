@@ -356,7 +356,7 @@ def test_b2_opposite_labels_hand_rewards_and_independent_reference_gradient():
     toks = {"POSITIVE": [POS, TAIL, EOS], "NEGATIVE": [NEG, TAIL, EOS], "x": [JUNK] * 4}  # "x": truncated, |o| = 4
     responses = ["POSITIVE", "POSITIVE", "NEGATIVE", "POSITIVE", "x", "NEGATIVE",   # prompt 0, gold POSITIVE
                  "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "POSITIVE"]  # prompt 1, gold NEGATIVE
-    rewards = group_rewards(responses, ["POSITIVE", "NEGATIVE"], 6)
+    rewards = group_rewards(responses, ["POSITIVE", "NEGATIVE"], 6).double()  # fp64 advantages: the 1e-12 checks below assume them
     assert rewards.tolist() == [[1, 1, 0, 1, 0, 0], [1, 1, 1, 1, 1, 0]]
     a0 = 0.5 / (0.5 + 1e-4)                            # group 0: mean 1/2, population std 1/2
     s1 = math.sqrt(5) / 6                              # group 1: mean 5/6, population std sqrt(5/36)
