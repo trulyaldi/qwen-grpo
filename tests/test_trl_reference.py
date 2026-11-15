@@ -18,9 +18,11 @@ from qwen_grpo.training import decode, group_rewards
 from research.trl_reference.compare_gradients import (compare, manual_gradient, manual_rollouts, make_trainer, trl_advantages,
                                                       trl_gradient)
 from research.trl_reference.evaluate import shift_stats
-from research.trl_reference.train import CONFIG, G, MANUAL_TRAINING, check_lora, grpo_args, make_dataset, make_reward, stream, train_examples
+from research.trl_reference.train import CONFIG, G, MANUAL_PREDICTIONS, MANUAL_TRAINING, check_lora, grpo_args, make_dataset, make_reward, stream, train_examples
 
 ROOT = Path(__file__).parents[1]
+BASE_FILE = ROOT / "results" / "baseline" / "validation.json"
+needs_manual_run = pytest.mark.skipif(not MANUAL_TRAINING.exists(), reason=f"saved manual run not found: {MANUAL_TRAINING.parent}")
 POS, NEG, IM_START = [17456, 44350, 151645], [97127, 23215, 151645], 151644
 # Two groups of G=6 for a [POSITIVE, NEGATIVE] prompt pair. Covers: canonical, wrong label, pad id as the EOS, EOS only,
 # truncated (no EOS, R = 8 columns), a special token inside the label, lowercase (filled in by the fixture), trailing ".".
@@ -98,6 +100,7 @@ def test_reward_matches_manual_parser(tok, examples, pair, completions):
     assert trl_texts[5] == "POSITIVE"  # TRL's skip_special_tokens text would score 1 here; the id-based reward gives 0
 
 
+@needs_manual_run
 def test_dataset_matches_manual_subset(tok, examples):
     saved = json.loads(MANUAL_TRAINING.read_text())["config"]["train_ids"]
     assert [e["id"] for e in examples] == saved and len(examples) == CONFIG["train_samples"] == 32
@@ -190,13 +193,14 @@ def test_score_shift_stats_by_hand():
     assert s["sd"] == pytest.approx(torch.tensor([0.5, 0.5, 0.75, 0.25]).std().item())
 
 
+@needs_manual_run
 def test_complete_label_scoring_matches_saved_manual_results(tok):
     """The label continuations scored by label_scores, and the saved manual numbers this comparison is anchored to."""
     assert tok("POSITIVE", add_special_tokens=False)["input_ids"] + [EOS_IDS[0]] == POS
     assert tok("NEGATIVE", add_special_tokens=False)["input_ids"] + [EOS_IDS[0]] == NEG
-    saved = json.loads(MANUAL_TRAINING.read_text())["final"]
-    preds = json.loads((ROOT / "results" / "grpo_lora_last2_b2_balanced_step30_validation.json").read_text())["predictions"]
-    base = json.loads((ROOT / "results" / "baseline_validation.json").read_text())["predictions"]
+    saved = json.loads(MANUAL_PREDICTIONS.read_text())
+    preds = saved["predictions"]
+    base = json.loads(BASE_FILE.read_text())["predictions"]
     labels = [p["label"] for p in base]
     assert [p["id"] for p in base] == [p["id"] for p in preds] == saved["label_scores"]["ids"] == list(range(1066))
     assert round(metrics(base)["accuracy"], 4) == 0.7486 and round(metrics(preds)["accuracy"], 4) == 0.7261

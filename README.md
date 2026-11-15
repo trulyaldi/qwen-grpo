@@ -20,7 +20,8 @@ research/           experiments: each script has a main() and writes to results/
   trl_reference/    independent reference with Hugging Face TRL GRPOTrainer (own results/, checkpoints/, findings.md)
 tests/              unit and small integration tests (tiny models; no 0.6B weights except the tokenizer)
 data/               cached dataset splits (data/sentiment.json)
-results/            run outputs (JSON) and the implementation audit
+results/            baseline/<split>.json and <run>/{validation,training}.json: raw predictions and training logs
+  benchmarks/       <name>.json (metrics) and <name>.md (report) for the baseline and every GRPO + LoRA run
 checkpoints/        LoRA adapters saved by the runs
 docs/architecture.md  one GRPO + LoRA step tensor by tensor: shapes, objective, gradient flow, precision
 ```
@@ -45,14 +46,14 @@ Run from the repository root as modules:
 .venv/bin/python -m research.trl_reference.train            # then .compare_gradients, .evaluate
 ```
 
-`python -m research.train_multistep --help` lists all options. The exact configuration of every saved run, including smoke and LR=0 runs, is in the `config` block of its `results/*_training.json`.
+`python -m research.train_multistep --help` lists all options. The exact configuration of every saved run, including smoke and LR=0 runs, is in the `config` block of its `results/<run>/training.json`.
 
 ## Evidence
 
 | Question | Where |
 |---|---|
-| Base model accuracy | `results/baseline_validation.json`, `results/baseline_test.json` (test split used once) |
-| Multi-step runs: per-step logs, subset evaluations, full validation, AUC, bootstraps | `results/grpo_lora*_training.json`, `results/grpo_lora*_step30_validation.json` |
+| Base model metrics and AUC | `results/benchmarks/baseline.{json,md}`; raw predictions `results/baseline/{validation,test}.json` |
+| Multi-step runs: full-validation metrics, AUC, bootstraps vs base | `results/benchmarks/<run>.{json,md}`; per-step logs and raw predictions in `results/<run>/` |
 | Implementation audit and the POSITIVE-drift analysis | `results/grpo_lora_audit.md` |
 | Independent TRL reference: gradient equivalence, training, evaluation | `research/trl_reference/findings.md` and `research/trl_reference/results/` |
 | Adapters | `checkpoints/<run>_step<N>/`, `research/trl_reference/checkpoints/` |

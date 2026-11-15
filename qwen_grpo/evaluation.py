@@ -8,7 +8,7 @@ from qwen_grpo.model import EOS_IDS
 from qwen_grpo.policy import compute_logprobs
 from qwen_grpo.sentiment import LABELS, build_prompts, parse_label, reward
 
-MAX_NEW, BATCH = 16, 32
+MAX_NEW, BATCH = 4, 32  # each label is 2 tokens + EOS
 SCORE_BATCH = 8  # label scoring keeps full [N, T, V] logits; 8 rows keeps that well inside the GPU budget
 BOOTSTRAP = 10_000
 
@@ -145,6 +145,26 @@ def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=42, chunk=500):
 
 def evaluate(model, tok, examples):
     return predict(model, tok, examples, [e["id"] for e in examples])[0]
+
+
+
+TABLE_ROWS = ("n", "accuracy", "macro_f1", "recall_NEGATIVE", "recall_POSITIVE", "predicted_positive_rate", "invalid_rate", "auc")
+
+
+def metrics_table(columns):
+    """Markdown table: one column per {name: metrics dict (optionally with "auc")}, one row per TABLE_ROWS entry."""
+    cell = lambda v: "—" if v is None else str(v) if isinstance(v, int) else f"{v:.4f}"
+    lines = ["| metric | " + " | ".join(columns) + " |", "|---" * (len(columns) + 1) + "|"]
+    lines += [f"| {r} | " + " | ".join(cell(m.get(r)) for m in columns.values()) + " |" for r in TABLE_ROWS]
+    return "\n".join(lines)
+
+
+
+def confusion_table(m):
+    """Rows: predicted (None = invalid), columns: gold."""
+    lines = ["| predicted \\ gold | " + " | ".join(LABELS) + " |", "|---" * (len(LABELS) + 1) + "|"]
+    lines += [f"| {k} | " + " | ".join(str(row[g]) for g in LABELS) + " |" for k, row in m["confusion"].items()]
+    return "\n".join(lines)
 
 
 

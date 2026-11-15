@@ -1,7 +1,7 @@
 """Full-validation evaluation of the TRL adapter, exactly as the manual runs were evaluated, vs base and manual balanced GRPO.
 
 Run from the repo root:  .venv/bin/python -m research.trl_reference.evaluate
-Greedy evaluation.predict (16 new tokens, batch 32) and evaluation.label_scores on a fresh bf16 model; adapters
+Greedy evaluation.predict (evaluation.MAX_NEW new tokens, batch 32) and evaluation.label_scores on a fresh bf16 model; adapters
 are loaded from disk. Base = the same model with B = 0 adapters (exactly the base model).
 """
 import json
@@ -17,9 +17,8 @@ from qwen_grpo.model import DTYPE, MODEL, TARGETS, lora_model
 from qwen_grpo.sentiment import load_splits
 from research.train_multistep import BASE_FILE, SEED
 
-from research.trl_reference.train import CONFIG, HERE, MANUAL_TRAINING, NAME, ROOT
+from research.trl_reference.train import CONFIG, HERE, MANUAL_PREDICTIONS, NAME, ROOT
 
-MANUAL_PREDICTIONS = ROOT / "results" / "grpo_lora_last2_b2_balanced_step30_validation.json"
 MANUAL_CKPT = ROOT / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"
 TRL_CKPT = HERE / "checkpoints" / f"{NAME}_step{CONFIG['grpo_config']['max_steps']}"
 
@@ -64,9 +63,10 @@ def main():
     val = [{"id": i, **r} for i, r in enumerate(load_splits()["validation"])]
     labels = [e["label"] for e in val]
     key = [(e["id"], e["text"], e["label"]) for e in val]
-    saved = {"base": json.loads(BASE_FILE.read_text())["predictions"], "manual": json.loads(MANUAL_PREDICTIONS.read_text())["predictions"]}
+    manual = json.loads(MANUAL_PREDICTIONS.read_text())
+    saved = {"base": json.loads(BASE_FILE.read_text())["predictions"], "manual": manual["predictions"]}
     assert all([(p["id"], p["text"], p["label"]) for p in v] == key for v in saved.values())
-    saved_scores = json.loads(MANUAL_TRAINING.read_text())["final"]["label_scores"]
+    saved_scores = manual["label_scores"]
     assert saved_scores["ids"] == [e["id"] for e in val]
 
     base_preds = evaluate(model, tok, val)

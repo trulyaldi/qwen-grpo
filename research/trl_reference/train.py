@@ -27,7 +27,8 @@ ROOT = HERE.parents[1]
 CONFIG = json.loads((HERE / "config.json").read_text())
 G = CONFIG["grpo_config"]["num_generations"]
 NAME = "trl_grpo_last2_b2_balanced"
-MANUAL_TRAINING = ROOT / "results" / "grpo_lora_last2_b2_balanced_training.json"
+MANUAL_RUN = ROOT / "results" / "grpo_lora_last2_b2_balanced"
+MANUAL_TRAINING, MANUAL_PREDICTIONS = MANUAL_RUN / "training.json", MANUAL_RUN / "validation.json"
 PACKAGES = ("trl", "torch", "transformers", "peft", "accelerate", "datasets")
 
 

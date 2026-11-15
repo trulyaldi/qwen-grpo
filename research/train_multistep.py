@@ -2,6 +2,8 @@
 
 Rollouts: T=1 sampling, MAX_NEW_TOKENS. Evaluation: evaluation.predict (greedy, evaluation.MAX_NEW tokens, BATCH chunks).
 Checkpoints hold adapter weights only; optimizer and RNG state are not saved, so they cannot resume training exactly.
+Outputs: results/<run>/training.json (config, per-step log, subset evaluations, memory), results/<run>/validation.json
+(raw full-validation predictions and label scores of the final checkpoint), results/benchmarks/<run>.{json,md} (metrics).
 """
 import argparse
 import hashlib
@@ -15,16 +17,17 @@ import torch
 from peft import get_peft_model_state_dict, load_peft_weights, set_peft_model_state_dict
 from transformers import AutoTokenizer
 
-from qwen_grpo.evaluation import (BATCH, BOOTSTRAP, MAX_NEW, evaluate, label_scores, metrics, paired_auc_bootstrap,
-                                  paired_bootstrap, paired_changes, paired_compare, summary, win_matrix)
+from qwen_grpo.evaluation import (BATCH, BOOTSTRAP, MAX_NEW, confusion_table, evaluate, label_scores, metrics, metrics_table,
+                                  paired_auc_bootstrap, paired_bootstrap, paired_changes, paired_compare, summary, win_matrix)
 from qwen_grpo.model import (ALPHA, DTYPE, EOS_IDS, EXPECTED_MODULES, MODEL, RANK, TARGETS, digest, expected_lora_params,
                              lora_model, lora_modules)
 from qwen_grpo.policy import generate_rollouts
 from qwen_grpo.sentiment import build_prompts, load_splits, parse_label
 from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_step
+from research.baseline import BENCHMARKS, RESULTS, predictions_path
 
 ROOT = Path(__file__).parents[1]
-BASE_FILE = ROOT / "results" / "baseline_validation.json"
+BASE_FILE = predictions_path("validation")
 SUFFIX = {"last-o-proj": "", "last2-attention": "_last2"}
 BATCH_MODES = ("cycle", "balanced", "unconstrained")
 TRAIN_SAMPLES, VAL_SUBSET, G = 32, 160, 6
@@ -39,10 +42,10 @@ def output_name(targets, tag="", B=1, mode="cycle"):
 
 def _ref(targets, B=1, mode="cycle"):
     name = output_name(targets, B=B, mode=mode)
-    return ROOT / "results" / f"{name}_step{MAX_STEPS}_validation.json", ROOT / "checkpoints" / f"{name}_step{MAX_STEPS}", targets
+    return RESULTS / name / "validation.json", ROOT / "checkpoints" / f"{name}_step{MAX_STEPS}", targets
 
 
-# Saved step-30 predictions (and adapters, for label scoring) of earlier runs: (predictions, checkpoint, targets).
+# Saved final (step-30) predictions (and adapters, for label scoring) of earlier runs: (predictions, checkpoint, targets).
 REFERENCES = {
     "base": (BASE_FILE, None, None),
     "last-o-proj B=1": _ref("last-o-proj"),
@@ -55,6 +58,46 @@ REFERENCES = {
 def l2(norms):
     """Aggregate L2 norm sqrt(sum_k ||theta_k||^2) from per-tensor norms."""
     return math.sqrt(sum(x * x for x in norms))
+
+
+def write_benchmark(name, result):
+    """results/benchmarks/<run>.json (final full-validation metrics vs base) and a Markdown rendering of it."""
+    f, cfg = result["final"], result["config"]
+    bench = {"run": name, "model": MODEL, "seed": result["seed"], "split": "validation",
+             "checkpoint": result["final_checkpoint"]["path"], "step": result["final_checkpoint"]["step"],
+             "predictions": str((RESULTS / name / "validation.json").relative_to(ROOT)),
+             "training_log": str((RESULTS / name / "training.json").relative_to(ROOT)),
+             "baseline_predictions": str(BASE_FILE.relative_to(ROOT)),
+             "config": {k: v for k, v in cfg.items() if k not in ("train_ids", "val_subset_ids")},
+             **f, "memory": result["memory"]}
+    BENCHMARKS.mkdir(parents=True, exist_ok=True)
+    (BENCHMARKS / f"{name}.json").write_text(json.dumps(bench, indent=1))
+
+    ci = lambda c: f"[{c[0]:+.4f}, {c[1]:+.4f}]"
+    lora = cfg["lora"]
+    md = [f"# {name}: GRPO + LoRA vs baseline", "",
+          f"{MODEL}, LoRA r={lora['r']} α={lora['alpha']} on {lora.get('targets', lora.get('target'))}, lr {cfg['lr']}, "
+          f"{bench['step']} steps, B={cfg['B']} ({cfg['batch_mode']}), G={cfg['G']}, seed {result['seed']}. "
+          f"Full validation (n={f['trained']['n']}), greedy, max_new_tokens = {cfg['eval_max_new_tokens']}. One training seed: CIs cover "
+          "evaluation sampling only.", "",
+          metrics_table({"base": {**f["base"], "auc": f["auc"]["base"]}, "trained": {**f["trained"], "auc": f["auc"]["trained"]}}),
+          "", f"Accuracy trained − base: {f['accuracy_diff']:+.4f}, paired bootstrap 95% CI {ci(f['bootstrap_ci95'])}.",
+          f"AUC trained − base: {f['auc_vs']['base']['auc_diff']:+.4f}, class-stratified paired bootstrap 95% CI "
+          f"{ci(f['auc_vs']['base']['ci95'])}.", "",
+          "## Paired changes vs base", "", "```", json.dumps(f["paired_changes"]), "```", "",
+          "## Trained confusion", "", confusion_table(f["trained"])]
+    others = [k for k in f["auc_vs"] if k != "base"]
+    if others or f["vs_saved"]:
+        md += ["", "## Trained vs saved runs", "", "| reference | Δ accuracy | 95% CI | Δ AUC | 95% CI |", "|---|---|---|---|---|"]
+        for ref in dict.fromkeys([*f["vs_saved"], *others]):
+            a, u = f["vs_saved"].get(ref), f["auc_vs"].get(ref)
+            md.append(f"| {ref} | " + (f"{a['accuracy_diff']:+.4f} | {ci(a['ci95'])}" if a else "— | —") + " | "
+                      + (f"{u['auc_diff']:+.4f} | {ci(u['ci95'])}" if u else "— | —") + " |")
+    m = result["memory"]
+    md += ["", f"Peak reserved {m['peak_reserved_gib']:.2f} GiB of {GPU_BUDGET_GIB} GiB budget. "
+           f"Frozen weights changed: {len(result['frozen_changed'])}. Raw predictions: `{bench['predictions']}`; "
+           f"training log: `{bench['training_log']}`."]
+    (BENCHMARKS / f"{name}.md").write_text("\n".join(md) + "\n")
 
 
 def main():
@@ -212,7 +255,7 @@ def main():
         trained_full = evaluate(model, tok, val_all)
         tm, bm = metrics(trained_full), metrics(base_full)
         diff, lo, hi = paired_bootstrap([p["correct"] for p in base_full], [p["correct"] for p in trained_full])
-        out_path = ROOT / "results" / f"{name}_step{step}_validation.json"
+        out_path = RESULTS / name / "validation.json"
         result["final"] = {"base": bm, "trained": tm, "accuracy_diff": diff, "bootstrap_ci95": [lo, hi],
                            "bootstrap": {"resamples": BOOTSTRAP, "seed": SEED, "paired_by": "id"},
                            "paired_changes": paired_changes(base_full, trained_full),
@@ -229,10 +272,11 @@ def main():
         W = {k: win_matrix(v, [e["label"] for e in val_all]) for k, v in scores.items()}
         result["final"]["auc"] = {k: w.mean().item() for k, w in W.items()}
         result["final"]["auc_vs"] = {k: paired_auc_bootstrap(W["trained"], W[k]) for k in W if k != "trained"}
-        result["final"]["label_scores"] = {"ids": [e["id"] for e in val_all], **scores}
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps({
-            "model": MODEL, "checkpoint": f"{name.replace('_', '-')}-step{step}", "split": "validation",
-            "decoding": {"do_sample": False, "max_new_tokens": MAX_NEW}, "metrics": tm, "predictions": trained_full,
+            "model": MODEL, "checkpoint": ckpt, "step": step, "split": "validation",
+            "decoding": {"do_sample": False, "max_new_tokens": MAX_NEW},
+            "label_scores": {"ids": [e["id"] for e in val_all], **scores}, "predictions": trained_full,
         }, indent=1))
 
     torch.cuda.synchronize()
@@ -241,7 +285,10 @@ def main():
            "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30, "device_gib": total / 2**30}
     mem["within_budget"] = mem["peak_reserved_gib"] < GPU_BUDGET_GIB
     result["memory"] = mem
-    (ROOT / "results" / f"{name}_training.json").write_text(json.dumps(result, indent=1))
+    (RESULTS / name).mkdir(parents=True, exist_ok=True)
+    (RESULTS / name / "training.json").write_text(json.dumps({k: v for k, v in result.items() if k != "final"}, indent=1))
+    if "final" in result:
+        write_benchmark(name, result)
 
     rows = result["training"]
     print(f"\nbatches by number of mixed groups: {result['batches_by_mixed_groups']}, prompt groups {attempts * B}, "

@@ -84,7 +84,7 @@ def test_predictions_keep_baseline_schema(monkeypatch):
     monkeypatch.setattr(evaluation, "generate", lambda model, tok, s: [("POSITIVE", 2, False), ("meh", 2, False)][: len(s)])
     ex = [{"id": 7, "text": "good", "label": "POSITIVE"}, {"id": 9, "text": "bad", "label": "NEGATIVE"}]
     preds = evaluation.predict(None, None, ex, [7, 9])[0]
-    saved = json.loads((ROOT / "results" / "baseline_validation.json").read_text())["predictions"][0]
+    saved = json.loads((ROOT / "results" / "baseline" / "validation.json").read_text())["predictions"][0]
     assert all(p.keys() == saved.keys() for p in preds)
     assert [(p["id"], p["prediction"], p["correct"]) for p in preds] == [(7, "POSITIVE", True), (9, None, False)]
 

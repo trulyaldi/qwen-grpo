@@ -70,4 +70,4 @@ grad L = -(1/N) sum_i (A_i / |o_i|) sum_t grad log pi(o_it | q, o_<t)
 
 ## Evaluation
 
-`evaluation.predict`: greedy decoding, `max_new_tokens = 16`, chunks of 32. bf16 outputs depend on batch shape, so chunking is fixed. `label_scores` computes s(x) = log P(POSITIVE<|im_end|>|x) − log P(NEGATIVE<|im_end|>|x) with teacher forcing, for ROC AUC. Model comparisons are paired by example id (bootstrap CIs for accuracy and AUC).
+`evaluation.predict`: greedy decoding, `max_new_tokens = 4` (`evaluation.MAX_NEW`), chunks of 32. bf16 outputs depend on batch shape, so chunking is fixed. `label_scores` computes s(x) = log P(POSITIVE<|im_end|>|x) − log P(NEGATIVE<|im_end|>|x) with teacher forcing, for ROC AUC. Model comparisons are paired by example id (bootstrap CIs for accuracy and AUC).
