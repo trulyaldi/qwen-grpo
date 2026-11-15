@@ -58,7 +58,7 @@ rejects unknown, missing or ill-typed keys and values the code does not support.
 
 | section | keys | notes |
 |---|---|---|
-| `run` | `name`, `gpu_budget_gib` (optional, 4.0) | `name` names every output; the budget is reported, not enforced |
+| `run` | `name`, `gpu_budget_gib` (optional, 4.0), `overwrite` (optional, false) | `name` names every output; the budget is reported, not enforced; `overwrite: true` makes `train` delete `results/<name>/`, `results/benchmarks/<name>.*` and `checkpoints/<name>_step*` first (not with `--resume`) |
 | `model` | `name`, `dtype`, `thinking` | `name`: any `Qwen/Qwen3-<size>B`; `dtype`: `bfloat16` or `float32` (base weights); `thinking`: `false` only |
 | `lora` | `rank`, `alpha`, `dropout`, `targets` | `targets`: a preset (`last2-attention`, `last-o-proj`) or `{modules: [q_proj, ...], num_layers: N}`: those Linear layers in each of the last N decoder layers, found on the loaded model |
 | `data` | `train_samples`, `val_subset`, `subset_seed` | balanced subsets of the cached splits |
@@ -69,7 +69,7 @@ rejects unknown, missing or ill-typed keys and values the code does not support.
 Optional keys were added after the first YAML runs. Their defaults are the values those runs used, so older configs and
 the `yaml_config` saved in older training logs still load and compare as before.
 
-For a new experiment, copy the YAML and change `run.name` (training refuses to overwrite existing outputs of that name).
+For a new experiment, copy the YAML and change `run.name` (training refuses to overwrite existing outputs of that name unless `run.overwrite: true`).
 `train` writes `results/<name>/training.json` (with the exact YAML config), `checkpoints/<name>_step<N>/`, and, with
 `training.full_val`, `results/<name>/validation.json` and `results/benchmarks/<name>.{json,md}`. The training log also
 records an `environment` block: git commit and dirty flag, Python and package versions, dataset name, split seed and

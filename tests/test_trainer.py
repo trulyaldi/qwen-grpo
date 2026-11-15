@@ -197,3 +197,20 @@ def test_one_grpo_step_decreases_the_grpo_loss_through_both_lora_factors(tok):
 def tok():
     from transformers import AutoTokenizer
     return AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B", padding_side="left")
+
+
+def test_overwrite_deletes_earlier_outputs_only_when_enabled(sandbox, tmp_path):
+    root = sandbox("run")
+    trainer.train(make_cfg(tmp_path, max_steps=2), device="cpu")
+    stale = root / "checkpoints" / "tiny_step99"
+    stale.mkdir()
+    other = root / "checkpoints" / "tiny_lr0_step2"  # a different run whose name starts the same way
+    other.mkdir()
+    with pytest.raises(SystemExit, match="run.overwrite: true"):
+        trainer.train(make_cfg(tmp_path), device="cpu")
+    raw = yaml.safe_load((tmp_path / "cfg.yaml").read_text())
+    raw["run"]["overwrite"] = True
+    (tmp_path / "cfg.yaml").write_text(yaml.safe_dump(raw))
+    out = trainer.train(config.load(tmp_path / "cfg.yaml"), device="cpu")
+    assert out["successful_steps"] == 4 and not stale.exists() and other.exists()
+    assert sorted(p.name for p in (root / "checkpoints").glob("tiny_step*")) == [f"tiny_step{i}" for i in (0, 2, 4)]

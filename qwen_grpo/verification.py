@@ -47,8 +47,8 @@ def strict_correct(response: str, label: str) -> bool:
 def comparable(cfg_a: dict, cfg_b: dict, ignore):
     """Training configs equal except for the dotted keys in `ignore`. Both are normalized to the current schema first, so
     logs written before a key existed compare by its default. Settings that cannot change the trained adapter never
-    matter: the verification and evaluation sections and run.gpu_budget_gib."""
-    ignore = {*ignore, "run.gpu_budget_gib"}
+    matter: the verification and evaluation sections, run.gpu_budget_gib and run.overwrite."""
+    ignore = {*ignore, "run.gpu_budget_gib", "run.overwrite"}
     strip = lambda c: {s: {k: v for k, v in sec.items() if f"{s}.{k}" not in ignore}
                        for s, sec in normalized(c).items() if s not in ("verification", "evaluation")}
     return strip(cfg_a) == strip(cfg_b)

@@ -24,6 +24,7 @@ BATCH_MODES = ("cycle", "balanced", "unconstrained")
 class Run:
     name: str  # outputs: results/<name>/, results/benchmarks/<name>.*, checkpoints/<name>_step<N>/
     gpu_budget_gib: float = 4.0  # peak reserved memory the run is checked against (reported, not enforced)
+    overwrite: bool = False  # true: train deletes this run's earlier results/checkpoints first (never on --resume)
 
 
 @dataclass(frozen=True)
