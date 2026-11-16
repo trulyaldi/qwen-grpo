@@ -1,0 +1,917 @@
+........................................................................ [ 18%]
+............................................F..........F................ [ 37%]
+.....F....................................................F.F........... [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 94%]
+...................                                                      [100%]
+==================================== ERRORS ====================================
+_________________ ERROR collecting tests/test_trl_reference.py _________________
+ImportError while importing test module '/home/aldiyar/qwen-grpo/tests/test_trl_reference.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_trl_reference.py:18: in <module>
+    from research.trl_reference.compare_gradients import (compare, manual_gradient, manual_rollouts, make_trainer, trl_advantages,
+E   ModuleNotFoundError: No module named 'research.trl_reference'
+=================================== FAILURES ===================================
+______ test_new_runs_reject_the_historical_schema_with_the_offending_keys ______
+
+tmp_path = PosixPath('/tmp/pytest-of-aldiyar/pytest-36/test_new_runs_reject_the_histo0')
+
+    def test_new_runs_reject_the_historical_schema_with_the_offending_keys(tmp_path):
+        for path in (ROOT / "runs" / "qwen" / "config.yaml", DEFAULT, EXPERIMENTS / "grpo_clip_k3.yaml"):
+>           with pytest.raises(ValueError, match="historical config schema"):
+E           Failed: DID NOT RAISE ValueError
+
+tests/test_config.py:164: Failed
+_______ test_historical_configs_in_the_repository_still_load_as_records ________
+
+    def test_historical_configs_in_the_repository_still_load_as_records():
+        default = config.load(DEFAULT, historical=True)
+>       assert (default.training.legacy_batch_mode, default.training.batch_size, default.lora.rank) == ("balanced", 2, 8)
+E       AssertionError: assert (None, 5, 32) == ('balanced', 2, 8)
+E         
+E         At index 0 diff: None != 'balanced'
+E         Use -v to get more diff
+
+tests/test_config.py:222: AssertionError
+______________ test_current_configs_load_with_distinct_run_names _______________
+
+    def test_current_configs_load_with_distinct_run_names():
+        paths = sorted((ROOT / "configs").glob("*.yaml"))
+        current = [p for p in paths if p != DEFAULT]
+        names = [config.load(p).run.name for p in current]
+>       assert len(current) >= 2 and len(set(names)) == len(names), names
+E       AssertionError: ['qwen']
+E       assert (1 >= 2)
+E        +  where 1 = len([PosixPath('/home/aldiyar/qwen-grpo/configs/qwen.yaml')])
+
+tests/test_config.py:394: AssertionError
+_________ test_saved_log_and_checkpoint_configs_are_the_reference_yaml _________
+
+    def test_saved_log_and_checkpoint_configs_are_the_reference_yaml():
+        """The training log's yaml_config and every checkpoint's training state normalize to configs/qwen.yaml."""
+        log = json.loads((RUN / "training" / "training.json").read_text())
+        assert config.normalized(log["yaml_config"]) == config.as_dict(QWEN)
+        for ckpt in CHECKPOINTS[1:]:
+>           state = checkpointing.load_training_state(ckpt)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_historical.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+qwen_grpo/checkpointing.py:102: in load_training_state
+    return torch.load(path, weights_only=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:1605: in load
+    return _load(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2241: in _load
+    result = unpickler.load()
+             ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/_weights_only_unpickler.py:535: in load
+    self.append(self.persistent_load(pid))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:2205: in persistent_load
+    typed_storage = load_tensor(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2167: in load_tensor
+    wrap_storage = restore_location(storage, location)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:734: in default_restore_location
+    result = fn(storage, location)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:667: in _deserialize
+    device = _validate_device(location, backend_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+location = 'cuda:0', backend_name = 'cuda'
+
+    def _validate_device(location, backend_name):
+        """
+        Check whether the device index of specified backend is valid
+    
+        In case of privateuse1 backend, your must first register a device_module for
+        privateuse1 using torch._register_device_module. Implement the following
+        methods in device_module like cuda: device_module._utils._get_device_index(location, True),
+        device_module.device_count().
+    
+        Args:
+            location: string of device
+            backend_name: the backend name or the name of privateuse1, which can be renamed
+    
+        Returns:
+            device_index: int
+        """
+        if not hasattr(torch, backend_name):
+            raise RuntimeError(
+                f"The {backend_name.upper()} device module is not registered. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+        device_module = getattr(torch, backend_name)
+        if hasattr(device_module, "_utils") and hasattr(
+            device_module._utils, "_get_device_index"
+        ):
+            device_index = device_module._utils._get_device_index(location, True)
+            device = torch.device(backend_name, device_index)
+        else:
+            device = torch.device(location)
+            device_index = device.index if device.index else 0
+        if hasattr(device_module, "is_available") and not device_module.is_available():
+>           raise RuntimeError(
+                f"Attempting to deserialize object on a {backend_name.upper()} "
+                f"device but torch.{backend_name}.is_available() is False. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+E           RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available() is False. If you are running on a CPU-only machine, please use torch.load with map_location=torch.device('cpu') to map your storages to the CPU.
+
+.venv/lib/python3.12/site-packages/torch/serialization.py:634: RuntimeError
+______________ test_reference_run_resumes_under_the_current_code _______________
+
+    def test_reference_run_resumes_under_the_current_code():
+        """check_resume accepts the final checkpoint with the run's saved (historical) config and with configs/qwen.yaml, and
+        refuses an earlier one only because later checkpoints exist (the config comparison comes first)."""
+        saved = config.load(RUN / "config.yaml", historical=True)
+        last = CHECKPOINTS[-1]
+>       state = checkpointing.load_training_state(last)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_historical.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+qwen_grpo/checkpointing.py:102: in load_training_state
+    return torch.load(path, weights_only=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:1605: in load
+    return _load(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2241: in _load
+    result = unpickler.load()
+             ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/_weights_only_unpickler.py:535: in load
+    self.append(self.persistent_load(pid))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:2205: in persistent_load
+    typed_storage = load_tensor(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2167: in load_tensor
+    wrap_storage = restore_location(storage, location)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:734: in default_restore_location
+    result = fn(storage, location)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:667: in _deserialize
+    device = _validate_device(location, backend_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+location = 'cuda:0', backend_name = 'cuda'
+
+    def _validate_device(location, backend_name):
+        """
+        Check whether the device index of specified backend is valid
+    
+        In case of privateuse1 backend, your must first register a device_module for
+        privateuse1 using torch._register_device_module. Implement the following
+        methods in device_module like cuda: device_module._utils._get_device_index(location, True),
+        device_module.device_count().
+    
+        Args:
+            location: string of device
+            backend_name: the backend name or the name of privateuse1, which can be renamed
+    
+        Returns:
+            device_index: int
+        """
+        if not hasattr(torch, backend_name):
+            raise RuntimeError(
+                f"The {backend_name.upper()} device module is not registered. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+        device_module = getattr(torch, backend_name)
+        if hasattr(device_module, "_utils") and hasattr(
+            device_module._utils, "_get_device_index"
+        ):
+            device_index = device_module._utils._get_device_index(location, True)
+            device = torch.device(backend_name, device_index)
+        else:
+            device = torch.device(location)
+            device_index = device.index if device.index else 0
+        if hasattr(device_module, "is_available") and not device_module.is_available():
+>           raise RuntimeError(
+                f"Attempting to deserialize object on a {backend_name.upper()} "
+                f"device but torch.{backend_name}.is_available() is False. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+E           RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available() is False. If you are running on a CPU-only machine, please use torch.load with map_location=torch.device('cpu') to map your storages to the CPU.
+
+.venv/lib/python3.12/site-packages/torch/serialization.py:634: RuntimeError
+==================================== PASSES ====================================
+______________________ test_confirm_deletes_only_the_run _______________________
+----------------------------- Captured stdout call -----------------------------
+run 'qwen' (deleting):
+     1.1 KiB  checkpoints/qwen_step0/
+     1.1 KiB  checkpoints/qwen_step10/
+       950 B  results/qwen/
+         2 B  results/benchmarks/qwen.json
+         4 B  results/benchmarks/qwen.md
+        41 B  results/eval/qwen_step10/
+        41 B  results/verification/qwen_step10/
+     3.3 KiB  total, 7 paths
+deleted 7 paths
+________ test_missing_artifacts_are_fine_but_some_evidence_is_required _________
+----------------------------- Captured stdout call -----------------------------
+run 'qwen' (deleting):
+     1.1 KiB  checkpoints/qwen_step0/
+       950 B  results/qwen/
+         2 B  results/benchmarks/qwen.json
+     2.1 KiB  total, 3 paths
+deleted 3 paths
+_______________ test_live_lock_refuses_and_stale_lock_is_removed _______________
+----------------------------- Captured stdout call -----------------------------
+run 'qwen' (deleting):
+     1.1 KiB  checkpoints/qwen_step0/
+     1.1 KiB  checkpoints/qwen_step10/
+       950 B  results/qwen/
+         2 B  results/benchmarks/qwen.json
+         4 B  results/benchmarks/qwen.md
+        41 B  results/eval/qwen_step10/
+        41 B  results/verification/qwen_step10/
+         6 B  results/.qwen.lock
+     3.3 KiB  total, 8 paths
+deleted 8 paths
+__________ test_training_holds_the_lock_and_refuses_a_second_trainer ___________
+----------------------------- Captured stdout call -----------------------------
+
+run qwen: runs/qwen/  report: runs/qwen/report.md
+__________ test_remove_run_dry_run_then_confirm_deletes_only_that_run __________
+----------------------------- Captured stdout call -----------------------------
+run 'qwen' (deleting):
+     1.4 KiB  runs/qwen/
+         9 B  runs/.qwen.lock
+     1.4 KiB  total, 2 paths
+deleted 2 paths
+________________________ test_cli_parsing_and_dispatch _________________________
+----------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] {train,validate,test,verify,report,remove} ...
+__main__.py: error: validate: give --run <name>, or both --config and --checkpoint
+_______________________ test_verify_and_report_dispatch ________________________
+----------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] {train,validate,test,verify,report,remove} ...
+__main__.py: error: verify: give --run <name>, or both --config and --checkpoint
+__________________ test_new_run_identity_and_name_collisions ___________________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 1, '2': 1}, prompt groups 4, responses 12, train time 0 s
+steps 2/2, batches 2, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [2.885e-01, 3.470e-01]  change from init 4.246e-02  |(a/r)BA| 6.671e-02
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+________________ test_cli_accepts_run_names_and_the_older_paths ________________
+----------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] {train,validate,test,verify,report,remove} ...
+__main__.py: error: verify: give --run <name>, or both --config and --checkpoint
+usage: __main__.py [-h] {train,validate,test,verify,report,remove} ...
+__main__.py: error: verify: give --run <name>, or both --config and --checkpoint
+usage: __main__.py [-h] {train,validate,test,verify,report,remove} ...
+__main__.py: error: verify: give --run <name>, or both --config and --checkpoint
+usage: __main__.py [-h] {train,validate,test,verify,report,remove} ...
+__main__.py: error: --step selects a checkpoint of --run
+usage: __main__.py train [-h] --config CONFIG [--resume RESUME]
+__main__.py train: error: the following arguments are required: --config
+__________________ test_summary_paths_resolve_inside_the_run ___________________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 1, '2': 1}, prompt groups 4, responses 12, train time 0 s
+steps 2/2, batches 2, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [2.885e-01, 3.470e-01]  change from init 4.246e-02  |(a/r)BA| 6.671e-02
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+____________ test_full_validation_sections_from_a_real_final_block _____________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 1, '2': 1}, prompt groups 4, responses 12, train time 0 s
+steps 2/2, batches 2, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [2.885e-01, 3.470e-01]  change from init 4.246e-02  |(a/r)BA| 6.671e-02
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+wrote runs/tiny/summary.json and runs/tiny/report.md
+_________ test_report_of_a_run_that_failed_before_its_first_checkpoint _________
+----------------------------- Captured stdout call -----------------------------
+wrote runs/early/summary.json and runs/early/report.md
+______________ test_resumed_run_equals_uninterrupted_run_bitwise _______________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny/checkpoints/step2: step 2, attempt 2
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+__ test_resume_inside_a_reused_rollout_batch_equals_uninterrupted_run_bitwise __
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   2) 210N,625P    mixed 2  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 3.381e-01 (A 4.90e-03, B 3.38e-01)  |dtheta| 2.37e-02  |(a/r)BA| 1.543e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 1, '2': 1}, prompt groups 4, responses 12, train time 0 s
+steps 4/4, batches 2, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [2.803e-01, 3.381e-01]  change from init 1.005e-01  |(a/r)BA| 1.543e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny/checkpoints/step2: step 2, attempt 1
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   2) 210N,625P    mixed 2  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 3.381e-01 (A 4.90e-03, B 3.38e-01)  |dtheta| 2.37e-02  |(a/r)BA| 1.543e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 1, '2': 1}, prompt groups 4, responses 12, train time 0 s
+steps 4/4, batches 2, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [2.803e-01, 3.381e-01]  change from init 1.005e-01  |(a/r)BA| 1.543e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+_________ test_the_evaluation_interval_does_not_change_the_trajectory __________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+  [val subset, step 1] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+  [val subset, step 3] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+_ test_resume_refuses_other_configs_later_checkpoints_and_adapter_only_checkpoints _
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+_____ test_resume_from_the_final_checkpoint_only_reruns_the_closing_steps ______
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny/checkpoints/step4: step 4, attempt 4
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+________ test_exhausted_attempt_budget_saves_and_reports_the_last_step _________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.622e-01 (A 0.00e+00, B 3.62e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.331e-02  
+step  2 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.781e-01 (A 7.40e-04, B 1.78e-01)  |dtheta| 2.66e-02  |(a/r)BA| 6.923e-02  
+step  3 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.849e-01 (A 1.52e-03, B 2.85e-01)  |dtheta| 2.25e-02  |(a/r)BA| 8.957e-02  
+step  4 (attempt   5) 43P,210N     mixed 2  R 0.50  loss +0.0000  |g| 3.106e-01 (A 2.63e-03, B 3.11e-01)  |dtheta| 2.03e-02  |(a/r)BA| 1.055e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+Attempt budget exhausted: 4 of 5 steps after 5 groups
+
+batches by number of mixed groups: {'0': 1, '1': 1, '2': 3}, prompt groups 10, responses 30, train time 1 s
+steps 4/5, batches 5, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.781e-01, 3.622e-01]  change from init 7.232e-02  |(a/r)BA| 1.055e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+_____________________ test_training_log_records_provenance _____________________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+___________ test_overwrite_deletes_earlier_outputs_only_when_enabled ___________
+----------------------------- Captured stdout call -----------------------------
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 1, '2': 1}, prompt groups 4, responses 12, train time 0 s
+steps 2/2, batches 2, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [2.885e-01, 3.470e-01]  change from init 4.246e-02  |(a/r)BA| 6.671e-02
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+run.overwrite: deleted runs/tiny/
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   2) 210N,625P    mixed 2  R 0.67  loss +0.0000  |g| 3.470e-01 (A 1.69e-03, B 3.47e-01)  |dtheta| 2.70e-02  |(a/r)BA| 6.671e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   3) 210N,1266N   mixed 1  R 0.67  loss +0.0000  |g| 1.687e-01 (A 9.48e-04, B 1.69e-01)  |dtheta| 2.06e-02  |(a/r)BA| 8.696e-02  
+step  4 (attempt   4) 625P,43P     mixed 2  R 0.50  loss +0.0000  |g| 2.840e-01 (A 1.82e-03, B 2.84e-01)  |dtheta| 1.83e-02  |(a/r)BA| 1.033e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 0, '1': 2, '2': 2}, prompt groups 8, responses 24, train time 1 s
+steps 4/4, batches 4, zero-signal batches 0, frozen changed 0/46, params equal init: False
+grad norm range [1.687e-01, 3.470e-01]  change from init 6.984e-02  |(a/r)BA| 1.033e-01
+
+run tiny: runs/tiny/  report: runs/tiny/report.md
+=========================== short test summary info ============================
+PASSED tests/test_audit.py::test_grouping_rewards_advantages_and_loss_weights[1-4-correct0]
+PASSED tests/test_audit.py::test_grouping_rewards_advantages_and_loss_weights[2-4-correct1]
+PASSED tests/test_audit.py::test_grouping_rewards_advantages_and_loss_weights[2-8-correct2]
+PASSED tests/test_audit.py::test_partially_constant_batch_scales_signal_by_mixed_fraction
+PASSED tests/test_audit.py::test_end_to_end_loss_by_hand_with_padding_eos_truncation_and_clipping
+PASSED tests/test_audit.py::test_lr_zero_step_leaves_parameters_and_policy_bitwise_unchanged
+PASSED tests/test_audit.py::test_evaluation_and_training_tokenize_prompts_identically
+PASSED tests/test_budget.py::test_bytes_and_unit_conversions
+PASSED tests/test_budget.py::test_bf16_and_fp32_parameter_sizes
+PASSED tests/test_budget.py::test_read_header_matches_saved_safetensors
+PASSED tests/test_budget.py::test_tied_head_stored_in_checkpoint_is_counted_once
+PASSED tests/test_budget.py::test_tied_head_absent_from_checkpoint_and_untied_head
+PASSED tests/test_budget.py::test_decoder_layer_sizes_individually
+PASSED tests/test_budget.py::test_unsupported_or_incomplete_config[over0-UnsupportedArchitecture-model_type]
+PASSED tests/test_budget.py::test_unsupported_or_incomplete_config[over1-UnsupportedArchitecture-mixture-of-experts]
+PASSED tests/test_budget.py::test_unsupported_or_incomplete_config[over2-MetadataError-head_dim]
+PASSED tests/test_budget.py::test_inconsistent_or_incomplete_checkpoint
+PASSED tests/test_budget.py::test_missing_remote_metadata_is_reported
+PASSED tests/test_budget.py::test_lora_parameters_match_peft
+PASSED tests/test_budget.py::test_adamw_state_bytes_match_torch
+PASSED tests/test_budget.py::test_activation_checkpoints_only_for_the_adapted_span
+PASSED tests/test_budget.py::test_response_only_vs_full_sequence_logits_match_model_output
+PASSED tests/test_budget.py::test_gqa_kv_cache_matches_dynamic_cache
+PASSED tests/test_budget.py::test_layer_buffer_residency
+PASSED tests/test_budget.py::test_phase_peak_is_max_over_moments_not_sum
+PASSED tests/test_budget.py::test_verdicts
+PASSED tests/test_budget.py::test_residency_recommendation
+PASSED tests/test_budget.py::test_pcie_transfer_volumes_and_times
+PASSED tests/test_budget.py::test_merge_peak_memory
+PASSED tests/test_budget.py::test_shipped_budget_configs_validate[qwen3-0.6b.yaml]
+PASSED tests/test_budget.py::test_shipped_budget_configs_validate[qwen3-4b.yaml]
+PASSED tests/test_budget.py::test_config_errors
+PASSED tests/test_budget.py::test_report_round_trip_and_no_overwrite
+PASSED tests/test_cleanup.py::test_dry_run_lists_exactly_the_run_with_sizes_and_changes_nothing
+PASSED tests/test_cleanup.py::test_confirm_deletes_only_the_run
+PASSED tests/test_cleanup.py::test_rejects_checkpoints_of_other_runs_and_paths_outside_checkpoints
+PASSED tests/test_cleanup.py::test_rejects_a_config_or_adapter_that_differs_from_the_run
+PASSED tests/test_cleanup.py::test_unlisted_checkpoint_and_foreign_evaluation_are_rejected
+PASSED tests/test_cleanup.py::test_missing_artifacts_are_fine_but_some_evidence_is_required
+PASSED tests/test_cleanup.py::test_references_from_other_experiments_block_removal
+PASSED tests/test_cleanup.py::test_symlinks_are_refused_and_never_followed
+PASSED tests/test_cleanup.py::test_live_lock_refuses_and_stale_lock_is_removed
+PASSED tests/test_cleanup.py::test_git_tracked_artifacts_are_refused
+PASSED tests/test_cleanup.py::test_output_directory_symlink_is_refused
+PASSED tests/test_cleanup.py::test_cli_dispatches_remove_with_dry_run_by_default
+PASSED tests/test_cleanup.py::test_run_names_that_could_escape_or_hide_are_rejected[.]
+PASSED tests/test_cleanup.py::test_run_names_that_could_escape_or_hide_are_rejected[..]
+PASSED tests/test_cleanup.py::test_run_names_that_could_escape_or_hide_are_rejected[...]
+PASSED tests/test_cleanup.py::test_run_names_that_could_escape_or_hide_are_rejected[-x]
+PASSED tests/test_cleanup.py::test_run_names_that_could_escape_or_hide_are_rejected[_x]
+PASSED tests/test_cleanup.py::test_training_holds_the_lock_and_refuses_a_second_trainer
+PASSED tests/test_cleanup.py::test_ownership_follows_the_resolved_config_not_how_the_yaml_is_written
+PASSED tests/test_cleanup.py::test_remove_run_dry_run_then_confirm_deletes_only_that_run
+PASSED tests/test_cleanup.py::test_remove_run_refuses_uncertain_ownership_and_unsafe_paths[<lambda>-ownership cannot be confirmed0]
+PASSED tests/test_cleanup.py::test_remove_run_refuses_uncertain_ownership_and_unsafe_paths[<lambda>-ownership cannot be confirmed1]
+PASSED tests/test_cleanup.py::test_remove_run_refuses_uncertain_ownership_and_unsafe_paths[<lambda>-being trained by process]
+PASSED tests/test_cleanup.py::test_remove_run_refuses_uncertain_ownership_and_unsafe_paths[<lambda>-symbolic link runs/qwen/link]
+PASSED tests/test_cleanup.py::test_remove_run_refuses_uncertain_ownership_and_unsafe_paths[<lambda>-runs/qwen_lr0/config.yaml references runs/qwen]
+PASSED tests/test_cleanup.py::test_remove_run_refuses_symlinked_run_and_runs_directories
+PASSED tests/test_cleanup.py::test_remove_run_rejects_names_that_are_not_run_names[..]
+PASSED tests/test_cleanup.py::test_remove_run_rejects_names_that_are_not_run_names[../qwen]
+PASSED tests/test_cleanup.py::test_remove_run_rejects_names_that_are_not_run_names[.qwen]
+PASSED tests/test_cleanup.py::test_remove_run_rejects_names_that_are_not_run_names[qwen/../qwen_lr0]
+PASSED tests/test_cleanup.py::test_remove_run_rejects_names_that_are_not_run_names[]
+PASSED tests/test_cleanup.py::test_remove_run_of_a_missing_or_legacy_run
+PASSED tests/test_cleanup.py::test_remove_run_refuses_git_tracked_runs
+PASSED tests/test_config.py::test_reference_config_loads_with_the_successful_run_values
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-unknown keys ['extra']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-unknown keys ['lr']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-missing keys ['rank']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-missing keys ['data']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-missing keys ['evaluation']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-missing keys ['every']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-expected float, got str]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-expected int, got bool]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-expected int, got float]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-got float]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-expected bool, got int]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-expected a mapping]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-unknown keys ['models']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-got int]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-missing keys ['seed']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-missing keys ['num_layers']]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-expected list, got str]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-lora.targets: expected]
+PASSED tests/test_config.py::test_unknown_missing_and_ill_typed_keys_are_rejected[<lambda>-unknown keys ['max_new']]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-model.name0]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-model.name1]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-model.dtype]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-lora.targets]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-lora.targets.modules0]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-lora.targets.modules1]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-lora.targets.num_layers]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-evaluation.bootstrap_samples]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-evaluation: token and batch sizes]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-evaluation.every]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-run.gpu_budget_gib]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.batch_size0]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.batch_size1]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.group_size]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-max_steps <= max_attempts * num_iterations]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.learning_rate]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.clip_eps]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.num_iterations]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.micro_batch_size]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-batch_size * group_size = 30]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-training.max_new_tokens]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-data.train_samples]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-run.name]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-verification.split]
+PASSED tests/test_config.py::test_unsupported_values_are_rejected[<lambda>-not both]
+PASSED tests/test_config.py::test_lr_zero_float32_any_batch_size_and_micro_batches_are_accepted
+PASSED tests/test_config.py::test_max_steps_may_use_every_update_of_reused_batches
+PASSED tests/test_config.py::test_lora_settings_reach_the_adapter
+PASSED tests/test_config.py::test_sampling_settings_reach_generate
+PASSED tests/test_config.py::test_the_saved_config_of_the_reference_run_upgrades_to_the_reference_yaml
+PASSED tests/test_config.py::test_historical_settings_the_code_no_longer_implements_are_refused[model.thinking-True]
+PASSED tests/test_config.py::test_historical_settings_the_code_no_longer_implements_are_refused[lora.dropout-0.1]
+PASSED tests/test_config.py::test_historical_settings_the_code_no_longer_implements_are_refused[training.temperature-0.7]
+PASSED tests/test_config.py::test_historical_settings_the_code_no_longer_implements_are_refused[evaluation.bootstrap_seed-7]
+PASSED tests/test_config.py::test_historical_settings_the_code_no_longer_implements_are_refused[verification.merge_subset-16]
+PASSED tests/test_config.py::test_historical_settings_the_code_no_longer_implements_are_refused[verification.statistics.seed-0]
+PASSED tests/test_config.py::test_historical_settings_the_code_no_longer_implements_are_refused[model.thinking-0]
+PASSED tests/test_config.py::test_historical_keys_move_to_their_current_names
+PASSED tests/test_config.py::test_historical_batch_modes_stay_readable_and_distinct_but_cannot_be_trained[balanced-2]
+PASSED tests/test_config.py::test_historical_batch_modes_stay_readable_and_distinct_but_cannot_be_trained[cycle-1]
+PASSED tests/test_config.py::test_shuffled_sampler_is_the_historical_unconstrained_stream[512-5-42]
+PASSED tests/test_config.py::test_shuffled_sampler_is_the_historical_unconstrained_stream[4-3-0]
+PASSED tests/test_config.py::test_shuffled_sampler_is_the_historical_unconstrained_stream[6-1-7]
+PASSED tests/test_config.py::test_shuffled_sampler_is_the_historical_unconstrained_stream[10-10-1]
+PASSED tests/test_config.py::test_shuffled_sampler_replay_lands_where_an_uninterrupted_stream_is
+PASSED tests/test_config.py::test_reference_run_rollout_prompts_follow_the_shuffled_sampler
+PASSED tests/test_config.py::test_cli_parsing_and_dispatch
+PASSED tests/test_config.py::test_verification_settings_load
+PASSED tests/test_config.py::test_verify_and_report_dispatch
+PASSED tests/test_config.py::test_control_checkpoint_is_none_unless_configured_and_rejects_bad_provenance
+PASSED tests/test_config.py::test_checkpoint_must_match_config
+PASSED tests/test_config.py::test_targets_follow_the_model_depth[2]
+PASSED tests/test_config.py::test_targets_follow_the_model_depth[5]
+PASSED tests/test_config.py::test_targets_follow_the_model_depth[36]
+PASSED tests/test_config.py::test_bad_targets_are_rejected[modules0-1-no Linear module]
+PASSED tests/test_config.py::test_bad_targets_are_rejected[modules1-6-decoder layers]
+PASSED tests/test_config.py::test_bad_targets_are_rejected[modules2-1-no Linear module]
+PASSED tests/test_config.py::test_preset_lists_give_the_same_adapter_as_the_historical_regexes[last-o-proj]
+PASSED tests/test_config.py::test_preset_lists_give_the_same_adapter_as_the_historical_regexes[last2-attention]
+PASSED tests/test_config.py::test_custom_targets_load_and_omitted_keys_get_the_documented_defaults
+PASSED tests/test_config.py::test_evaluation_settings_reach_generation
+PASSED tests/test_config.py::test_only_the_required_keys_give_the_reference_config
+PASSED tests/test_config.py::test_the_full_and_the_minimal_reference_yaml_resolve_identically
+PASSED tests/test_config.py::test_extends_merges_recursively_and_overrides_replace
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files0-is not a YAML file]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files1-is not a YAML file]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files2-is not a YAML file]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files3-circular extends: c.yaml -> d.yaml -> c.yaml]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files4-circular extends]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files5-must set its own run.name]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files6-must set its own run.name]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files7-unknown keys ['lr']]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files8-micro_batch_size]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files9-historical config schema]
+PASSED tests/test_config.py::test_bad_inheritance_is_rejected[files10-expected a mapping]
+PASSED tests/test_config.py::test_config_hash_is_order_independent
+PASSED tests/test_config.py::test_differences_lists_dotted_keys
+PASSED tests/test_config.py::test_cli_loads_configs_that_extend_the_reference
+PASSED tests/test_fixtures.py::test_rebuilt_fixture_equals_the_saved_one_bitwise[0.6b-like]
+PASSED tests/test_fixtures.py::test_rebuilt_fixture_equals_the_saved_one_bitwise[4b-like]
+PASSED tests/test_fixtures.py::test_resident_code_reproduces_the_saved_reference_bitwise[0.6b-like]
+PASSED tests/test_fixtures.py::test_resident_code_reproduces_the_saved_reference_bitwise[4b-like]
+PASSED tests/test_fixtures.py::test_fixture_exercises_masks_grouping_gradients_and_clipping[0.6b-like]
+PASSED tests/test_fixtures.py::test_fixture_exercises_masks_grouping_gradients_and_clipping[4b-like]
+PASSED tests/test_fixtures.py::test_small_base_weight_change_is_detected_but_one_ulp_is_invisible
+PASSED tests/test_fixtures.py::test_loading_overwrites_every_tensor_and_keeps_adapters_active
+PASSED tests/test_fixtures.py::test_isolated_restores_global_state
+PASSED tests/test_grpo.py::test_advantages_hand_computed
+PASSED tests/test_grpo.py::test_advantages_equal_rewards_are_zero_not_nan
+PASSED tests/test_grpo.py::test_advantages_normalized_per_group
+PASSED tests/test_grpo.py::test_response_mask[ids0-expected0]
+PASSED tests/test_grpo.py::test_response_mask[ids1-expected1]
+PASSED tests/test_grpo.py::test_response_mask[ids2-expected2]
+PASSED tests/test_grpo.py::test_response_mask[ids3-expected3]
+PASSED tests/test_grpo.py::test_response_logprobs_matches_explicit_loop
+PASSED tests/test_grpo.py::test_response_logprobs_picks_previous_position
+PASSED tests/test_grpo.py::test_reinforce_form_at_ratio_one_and_per_sequence_weights
+PASSED tests/test_grpo.py::test_masked_positions_ignored_even_if_nonfinite
+PASSED tests/test_grpo.py::test_zero_advantages_give_zero_loss_and_gradient
+PASSED tests/test_grpo.py::test_loss_gradient_matches_finite_differences
+PASSED tests/test_grpo.py::test_empty_response_raises
+PASSED tests/test_grpo.py::test_no_gradient_through_old_logp
+PASSED tests/test_grpo.py::test_clipping_cases[A>0-rho<1-eps]
+PASSED tests/test_grpo.py::test_clipping_cases[A>0-inside]
+PASSED tests/test_grpo.py::test_clipping_cases[A>0-rho>1+eps]
+PASSED tests/test_grpo.py::test_clipping_cases[A<0-rho<1-eps]
+PASSED tests/test_grpo.py::test_clipping_cases[A<0-inside]
+PASSED tests/test_grpo.py::test_clipping_cases[A<0-rho>1+eps]
+PASSED tests/test_grpo.py::test_clipped_gradient_and_diagnostics_hand_computed
+PASSED tests/test_grpo.py::test_clip_eps_changes_gradients_only_when_ratios_reach_the_boundary
+PASSED tests/test_grpo.py::test_clip_stats_at_ratio_one
+PASSED tests/test_historical.py::test_saved_validation_baseline_numbers
+PASSED tests/test_historical.py::test_reference_run_results_are_the_reported_numbers
+PASSED tests/test_historical.py::test_saved_log_passes_the_provenance_check
+PASSED tests/test_historical.py::test_presets_resolve_to_the_historical_0_6b_modules[last-o-proj]
+PASSED tests/test_historical.py::test_presets_resolve_to_the_historical_0_6b_modules[last2-attention]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step0]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step10]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step20]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step30]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step40]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step50]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step60]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step70]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step80]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step90]
+PASSED tests/test_historical.py::test_committed_checkpoints_match_the_reference_config_and_its_tensor_names[step100]
+PASSED tests/test_historical.py::test_other_targets_are_rejected_for_committed_checkpoints
+PASSED tests/test_multistep.py::test_training_subset_balanced_and_fixed
+PASSED tests/test_multistep.py::test_rewards_follow_rollout_grouping
+PASSED tests/test_multistep.py::test_zero_signal_group_skips_step
+PASSED tests/test_multistep.py::test_nonfinite_gradient_blocks_step
+PASSED tests/test_multistep.py::test_step_updates_and_logs_plain_scalars
+PASSED tests/test_multistep.py::test_predictions_keep_baseline_schema
+PASSED tests/test_multistep.py::test_metrics_reproduce_baseline_confusion
+PASSED tests/test_multistep.py::test_paired_bootstrap_identical_models_has_zero_interval
+PASSED tests/test_multistep.py::test_original_target_unchanged
+PASSED tests/test_multistep.py::test_peft_attaches_exactly_the_requested_projections[last-o-proj]
+PASSED tests/test_multistep.py::test_peft_attaches_exactly_the_requested_projections[last2-attention]
+PASSED tests/test_multistep.py::test_trainable_parameter_count
+PASSED tests/test_multistep.py::test_first_lora_step_updates_only_B_and_leaves_base_bitwise_unchanged
+PASSED tests/test_multistep.py::test_paired_compare_rejects_misaligned_examples
+PASSED tests/test_multistep.py::test_bootstrap_pairs_examples
+PASSED tests/test_multistep.py::test_check_grouping_accepts_prompt_major_rows_only
+PASSED tests/test_multistep.py::test_b2_rewards_scored_against_own_prompt_label
+PASSED tests/test_multistep.py::test_advantages_normalized_per_group_not_jointly
+PASSED tests/test_multistep.py::test_one_zero_signal_group_still_steps_and_contributes_nothing
+PASSED tests/test_multistep.py::test_both_groups_zero_signal_skip_step
+PASSED tests/test_multistep.py::test_frozen_parameters_not_updated
+PASSED tests/test_multistep.py::test_shuffled_batches_cover_the_subset_each_pass_without_forcing_labels_apart
+PASSED tests/test_multistep.py::test_flips_by_direction
+PASSED tests/test_multistep.py::test_label_score_sums_full_label_tokenization_and_eos
+PASSED tests/test_multistep.py::test_auc_from_scores_and_paired_bootstrap
+PASSED tests/test_multistep.py::test_b2_opposite_labels_hand_rewards_and_independent_reference_gradient
+PASSED tests/test_multistep.py::test_reused_batch_keeps_the_sampling_time_old_logp
+PASSED tests/test_multistep.py::test_one_iteration_equals_the_first_update_of_three
+PASSED tests/test_multistep.py::test_micro_batched_updates_equal_the_full_batch_updates[1]
+PASSED tests/test_multistep.py::test_micro_batched_updates_equal_the_full_batch_updates[5]
+PASSED tests/test_multistep.py::test_micro_batched_updates_equal_the_full_batch_updates[7]
+PASSED tests/test_multistep.py::test_micro_batched_updates_equal_the_full_batch_updates[12]
+PASSED tests/test_multistep.py::test_micro_batched_old_logprobs_keep_the_first_ratio_exactly_one_in_bf16
+PASSED tests/test_multistep.py::test_micro_batches_cover_every_row_once_in_order
+PASSED tests/test_policy.py::test_shapes
+PASSED tests/test_policy.py::test_prompt_grouping
+PASSED tests/test_policy.py::test_eos_included_and_padding_excluded
+PASSED tests/test_policy.py::test_logprobs_shape
+PASSED tests/test_policy.py::test_logprobs_repeatable
+PASSED tests/test_policy.py::test_logprobs_keep_autograd
+PASSED tests/test_policy.py::test_left_padded_teacher_forcing_matches_generate_and_unpadded
+PASSED tests/test_policy.py::test_selective_logits_match_the_full_logit_reference[dtype0-1e-12]
+PASSED tests/test_policy.py::test_selective_logits_match_the_full_logit_reference[dtype1-2e-06]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[False-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[False-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[False-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[False-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[True-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[True-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[True-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_explicit_forward_equals_hf_logits[True-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_padded_rows_match_unpadded_sequences[False-eager]
+PASSED tests/test_qwen3_forward.py::test_padded_rows_match_unpadded_sequences[False-sdpa]
+PASSED tests/test_qwen3_forward.py::test_padded_rows_match_unpadded_sequences[True-eager]
+PASSED tests/test_qwen3_forward.py::test_padded_rows_match_unpadded_sequences[True-sdpa]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[False-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[False-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[False-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[False-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[True-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[True-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[True-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_selected_token_logprobs_equal_compute_logprobs[True-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-False-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-False-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-False-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-False-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-True-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-True-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-True-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[0.6b-like-True-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-False-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-False-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-False-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-False-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-True-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-True-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-True-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_default_executor_reproduces_pre_executor_forward_and_hf[4b-like-True-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[0.6b-like-False-eager]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[0.6b-like-False-sdpa]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[0.6b-like-True-eager]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[0.6b-like-True-sdpa]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[4b-like-False-eager]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[4b-like-False-sdpa]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[4b-like-True-eager]
+PASSED tests/test_qwen3_forward.py::test_custom_executor_runs_every_layer_once_in_order[4b-like-True-sdpa]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[0.6b-like-False-eager]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[0.6b-like-False-sdpa]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[0.6b-like-True-eager]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[0.6b-like-True-sdpa]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[4b-like-False-eager]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[4b-like-False-sdpa]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[4b-like-True-eager]
+PASSED tests/test_qwen3_forward.py::test_callback_sees_each_layer_output[4b-like-True-sdpa]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[0.6b-like-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[0.6b-like-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[0.6b-like-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[0.6b-like-dtype1-sdpa]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[4b-like-dtype0-eager]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[4b-like-dtype0-sdpa]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[4b-like-dtype1-eager]
+PASSED tests/test_qwen3_forward.py::test_lora_gradients_match_hf[4b-like-dtype1-sdpa]
+PASSED tests/test_runs.py::test_checkpoint_paths_in_both_layouts
+PASSED tests/test_runs.py::test_latest_checkpoint_and_resolve
+PASSED tests/test_runs.py::test_legacy_outputs_match_names_in_full
+PASSED tests/test_runs.py::test_new_run_identity_and_name_collisions
+PASSED tests/test_runs.py::test_a_run_killed_without_cleanup_reads_as_interrupted
+PASSED tests/test_runs.py::test_report_is_rebuilt_from_saved_files_without_a_model
+PASSED tests/test_runs.py::test_cli_accepts_run_names_and_the_older_paths
+PASSED tests/test_runs.py::test_summary_paths_resolve_inside_the_run
+PASSED tests/test_runs.py::test_full_validation_sections_from_a_real_final_block
+PASSED tests/test_runs.py::test_report_of_a_run_that_failed_before_its_first_checkpoint
+PASSED tests/test_sentiment.py::test_reward[POSITIVE-POSITIVE-1.0]
+PASSED tests/test_sentiment.py::test_reward[NEGATIVE-NEGATIVE-1.0]
+PASSED tests/test_sentiment.py::test_reward[Positive-POSITIVE-1.0]
+PASSED tests/test_sentiment.py::test_reward[ positive \n-POSITIVE-1.0]
+PASSED tests/test_sentiment.py::test_reward[negative-NEGATIVE-1.0]
+PASSED tests/test_sentiment.py::test_reward[POSITIVE-NEGATIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[NEGATIVE-POSITIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[positif-POSITIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[NEGATIVE.-NEGATIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[**POSITIVE**-POSITIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[The sentiment is POSITIVE-POSITIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[POSITIVE NEGATIVE-POSITIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[-NEGATIVE-0.0]
+PASSED tests/test_sentiment.py::test_reward[   -POSITIVE-0.0]
+PASSED tests/test_sentiment.py::test_parse_label_invalid_is_none
+PASSED tests/test_sentiment.py::test_splits_are_balanced_and_sized
+PASSED tests/test_sentiment.py::test_no_near_duplicates_within_or_across_splits
+PASSED tests/test_sentiment.py::test_dedup_removes_taken_keys_and_internal_repeats
+PASSED tests/test_sentiment.py::test_original_labels_preserved
+PASSED tests/test_sentiment.py::test_splits_deterministic_in_seed
+PASSED tests/test_trainer.py::test_resumed_run_equals_uninterrupted_run_bitwise
+PASSED tests/test_trainer.py::test_resume_inside_a_reused_rollout_batch_equals_uninterrupted_run_bitwise
+PASSED tests/test_trainer.py::test_the_evaluation_interval_does_not_change_the_trajectory
+PASSED tests/test_trainer.py::test_num_iterations_must_be_positive
+PASSED tests/test_trainer.py::test_resume_refuses_other_configs_later_checkpoints_and_adapter_only_checkpoints
+PASSED tests/test_trainer.py::test_resume_from_the_final_checkpoint_only_reruns_the_closing_steps
+PASSED tests/test_trainer.py::test_exhausted_attempt_budget_saves_and_reports_the_last_step
+PASSED tests/test_trainer.py::test_training_log_records_provenance
+PASSED tests/test_trainer.py::test_one_grpo_step_decreases_the_grpo_loss_through_both_lora_factors
+PASSED tests/test_trainer.py::test_overwrite_deletes_earlier_outputs_only_when_enabled
+PASSED tests/test_verification.py::test_f1_bootstrap_observed_value_reproducible_and_zero_for_identical_models
+PASSED tests/test_verification.py::test_compare_is_paired_and_flags_intervals_excluding_zero
+PASSED tests/test_verification.py::test_invalid_predictions_count_as_wrong_and_stay_in_denominators
+PASSED tests/test_verification.py::test_policy_change_by_hand
+PASSED tests/test_verification.py::test_parameter_updates_raw_and_effective_by_hand
+PASSED tests/test_verification.py::test_initial_adapter_prefers_saved_step0_on_cpu_and_reports_validation
+PASSED tests/test_verification.py::test_merge_equivalence_fp32_passes_with_power
+PASSED tests/test_verification.py::test_wrong_merge_fails_and_dropped_adapter_is_not_a_pass
+PASSED tests/test_verification.py::test_adapter_loading_takes_effect_and_rejects_other_targets
+PASSED tests/test_verification.py::test_reward_probes_and_independent_check
+PASSED tests/test_verification.py::test_training_rollouts_rescored_from_the_log
+PASSED tests/test_verification.py::test_control_provenance[run]
+PASSED tests/test_verification.py::test_control_provenance[legacy]
+PASSED tests/test_verification.py::test_control_provenance_reads_historical_logs_without_reinterpreting_them
+PASSED tests/test_verification.py::test_saved_baseline_reused_only_when_compatible
+PASSED tests/test_verification.py::test_report_without_training_log_marks_missing_plots_and_models
+PASSED tests/test_verification.py::test_report_with_training_log_plots_recorded_values
+ERROR tests/test_trl_reference.py
+FAILED tests/test_config.py::test_new_runs_reject_the_historical_schema_with_the_offending_keys
+FAILED tests/test_config.py::test_historical_configs_in_the_repository_still_load_as_records
+FAILED tests/test_config.py::test_current_configs_load_with_distinct_run_names
+FAILED tests/test_historical.py::test_saved_log_and_checkpoint_configs_are_the_reference_yaml
+FAILED tests/test_historical.py::test_reference_run_resumes_under_the_current_code
+5 failed, 374 passed, 1 error in 133.47s (0:02:13)
