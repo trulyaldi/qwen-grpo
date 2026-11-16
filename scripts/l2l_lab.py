@@ -25,13 +25,17 @@ def main(argv=None):
     r.add_argument("--trials", type=int, default=20)
     r.add_argument("--warmup", type=int, default=3)
     r.add_argument("--device", default="cpu")
+    r.add_argument("--depths", type=lambda v: tuple(int(x) for x in v.split(",")), help="store_depth: e.g. 2,4,8,16,32")
+    r.add_argument("--capacity-gib", type=float, default=0.0, help="pinned_transfer: page-lock up to this much (0: skip)")
     p = sub.add_parser("report")
     p.add_argument("--run", required=True)
     a = ap.parse_args(argv)
     if a.command == "report":
         print(lab.report(a.run, root=lab.RESULTS))
         return
-    opts = {"trials": a.trials, "warmup": a.warmup, "device": a.device} if a.case == "fixture_timing" else {}
+    opts = {"fixture_timing": {"trials": a.trials, "warmup": a.warmup, "device": a.device},
+            "pinned_transfer": {"trials": a.trials, "warmup": a.warmup, "capacity_gib": a.capacity_gib},
+            "store_depth": {"depths": a.depths} if a.depths else {}}.get(a.case, {})
     result = lab.run(a.case, a.config, a.name, root=lab.RESULTS, perturbation=a.perturb,
                      hypothesis_id=a.hypothesis, **opts)
     print(lab.markdown(result))

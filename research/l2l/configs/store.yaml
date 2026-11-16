@@ -1,0 +1,6 @@
+# L2L lab, Ticket 02: synchronous L2L layout with a pinned store and a fixed pool of 2 GPU weight buffers (fp32 fixtures).
+extends: l2l_sync.yaml
+run:
+  name: l2l_lab_store
+execution:
+  weight_buffers: 2

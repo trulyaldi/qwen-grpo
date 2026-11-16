@@ -258,3 +258,59 @@ def test_evidence_grade_never_upgrades_wsl_or_incomplete_readings():
     assert lab.evidence_grade(diag, "6.8.0-generic") == "diagnostic"
     assert lab.evidence_grade(full, "6.18.58.1-microsoft-standard-WSL2") == "diagnostic"
     assert lab.evidence_grade(full, "6.8.0-generic") == "assignment"
+
+
+# --- Ticket 02: weight-store cases ------------------------------------------------------------------------------------
+
+STORE = lab.ROOT / "research" / "l2l" / "configs" / "store.yaml"
+needs_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="page-locking and GPU memory need a CUDA device")
+
+
+def pageable(tmp_path):
+    path = tmp_path / "pageable.yaml"
+    path.write_text(f"extends: {STORE}\nrun: {{name: pageable}}\nexecution: {{weight_storage: pageable}}\n")
+    return path
+
+
+def test_store_equivalence_passes_bitwise_and_a_perturbed_weight_fails_alone(tmp_path):
+    r = lab.run("store_equivalence", pageable(tmp_path), "ok", root=tmp_path)
+    assert (r["status"], r["execution_status"]) == ("PASS", "PASS")
+    weights = [c for c in r["comparisons"] if c["quantity"] == "weights"]
+    assert len(weights) == 44 + 66 and all(c["max_abs"] == 0 for c in r["comparisons"])  # 11 per layer: 4 + 6 layers
+    bad = lab.run("store_equivalence", pageable(tmp_path), "bad", root=tmp_path,
+                  perturbation="weights.3.mlp.down_proj.weight=1e-3")
+    assert bad["status"] == "FAIL" and bad["execution_status"] == "PASS"
+    assert [c["name"] for c in bad["comparisons"] if not c["pass"]] == ["weights.3.mlp.down_proj.weight"]
+
+
+def test_store_cases_are_gated_on_their_own_requirements_not_on_l2l_execution(tmp_path, monkeypatch):
+    assert lab.run("store_equivalence", RESIDENT, "r", root=tmp_path)["status"] == "BLOCKED"   # no storage settings
+    assert lab.run("fixture_equivalence", STORE, "f", root=tmp_path)["status"] == "BLOCKED"   # l2l execution: not yet
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    r = lab.run("store_equivalence", STORE, "nocuda", root=tmp_path)
+    assert r["status"] == "BLOCKED" and "page-locking needs a CUDA device" in r["reasons"][0]
+
+
+def depth_result(streamed, resident):
+    rows = [{"depth": d, "streamed_peak_allocated": s, "resident_peak_allocated": q}
+            for d, s, q in zip((2, 4, 8), streamed, resident)]
+    return base_result("memory", measurements={"depths": rows},
+                       hypothesis={"id": "H07", "kind": "memory", "prediction": "streamed_constant_resident_increasing"})
+
+
+@pytest.mark.parametrize("streamed, resident, expected", [
+    ([100, 100, 100], [10, 20, 40], "SUPPORTED"), ([100, 100, 101], [10, 20, 40], "NOT_SUPPORTED"),
+    ([100, 100, 100], [10, 20, 20], "INCONCLUSIVE")])
+def test_h07_rule_is_the_one_written_in_hypotheses_yaml(streamed, resident, expected):
+    assert lab.hypothesis_result(depth_result(streamed, resident))[0] == expected
+
+
+def test_a_memory_case_without_measurements_cannot_pass():
+    assert lab.execution_check(base_result("memory"))[0] == "FAIL"
+
+
+@needs_cuda
+def test_store_depth_keeps_streamed_gpu_memory_constant_on_a_small_scan(tmp_path):
+    r = lab.run("store_depth", STORE, "d", root=tmp_path, depths=(2, 4), hypothesis_id="H07")
+    assert (r["execution_status"], r["hypothesis_result"]) == ("PASS", "SUPPORTED"), r["reasons"]
+    assert all(d["streamed_peak_allocated"] == d["planned_buffer_bytes"] for d in r["measurements"]["depths"])

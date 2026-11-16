@@ -43,7 +43,14 @@ H06:
 H07:
   statement: Bounded layer residency reduces GPU weight-memory dependence on total model depth.  # Ticket 02
   statement_ticket11: GPU weight residency remains bounded as model depth increases.
-  kind: performance  # a memory measurement: GPU weight memory vs depth at a fixed number of buffers
+  kind: memory  # GPU weight memory vs depth at a fixed layer shape and number of buffers
+  prediction: streamed_constant_resident_increasing
+  criterion: >-
+    Written before the Ticket 02 run. SUPPORTED iff, over every measured depth, the streamed peak of PyTorch-allocated
+    GPU memory (store build + every layer copied through the fixed buffer pool) is identical to the byte, and the
+    peak with the same decoder layers resident on the GPU strictly increases with depth. NOT_SUPPORTED if the streamed
+    peak differs between any two depths. INCONCLUSIVE otherwise. Allocator statistics only (diagnostic grade): this
+    is a statement about PyTorch allocations, not about process-level or device-level memory.
   tickets: ["02", "11"]
   status: untested
   evidence: []

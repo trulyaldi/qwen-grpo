@@ -38,6 +38,7 @@ from qwen_grpo import config
 from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution.qwen3_forward import explicit_logprobs
 from qwen_grpo.grpo import grpo_loss
+from qwen_grpo import store_lab as store_cases  # Ticket 02 cases; store_lab reads lab at call time
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
@@ -237,6 +238,9 @@ def execution_check(result):
             reasons.append("reference integrity was not checked")
         elif result["reference_integrity"]:
             reasons.append(f"fresh reference differs from the saved one: {result['reference_integrity'][:5]}")
+    elif result["kind"] == "memory":
+        if not result.get("measurements"):
+            reasons.append("no measurements were produced")
     else:
         for side, t in result.get("timing", {}).items():
             trials = t.get("trials_s", [])
@@ -283,6 +287,14 @@ def hypothesis_result(result):
         return ("NOT_SUPPORTED", f"{len(bad)} comparisons exceed their thresholds") if bad else \
                ("SUPPORTED", f"all {len(result['comparisons'])} comparisons within predefined thresholds")
     prediction = h.get("prediction")
+    if prediction == "streamed_constant_resident_increasing":
+        rows = result["measurements"]["depths"]
+        streamed, resident = [r["streamed_peak_allocated"] for r in rows], [r["resident_peak_allocated"] for r in rows]
+        if len(set(streamed)) > 1:
+            return "NOT_SUPPORTED", f"streamed peak allocated differs across depths: {streamed}"
+        if len(rows) >= 2 and all(a < b for a, b in zip(resident, resident[1:])):
+            return "SUPPORTED", f"streamed peak {streamed[0]} B at every depth; resident peak {resident}"
+        return "INCONCLUSIVE", f"streamed constant but resident peaks not strictly increasing: {resident}"
     lo, hi = result["conclusion"]["ci95"]
     if prediction == "candidate_faster":
         return ("SUPPORTED", f"ratio CI {[lo, hi]} < 1") if hi < 1 else ("NOT_SUPPORTED", f"ratio CI {[lo, hi]} >= 1") \
@@ -387,16 +399,33 @@ def fixture_timing(cfg, result, trials=20, warmup=3, device="cpu", **_):
         result["required_measurements"] = ["gpu_memory"]
 
 
+def needs_store(cfg):
+    """Blocked reasons of the weight-store cases: they need l2l storage settings, and page-locking needs CUDA. They
+    do not execute layers, so the unimplemented l2l execution itself does not block them."""
+    x = cfg.execution
+    if x.weight_storage is None:
+        return ["execution.weight_storage is not set (the store cases need an l2l execution section)"]
+    return ["page-locking needs a CUDA device; none is available"] * (x.weight_storage == "pinned" and not torch.cuda.is_available())
+
+
 @dataclass(frozen=True)
 class Case:
     kind: str
     run: object
     uses: tuple  # config fields the case reads; every other section is recorded but unused
+    blocked_by: object = config.unimplemented  # cfg -> reasons the case cannot run with this code base
 
 
 CASES = {
     "fixture_equivalence": Case("correctness", fixture_equivalence, ("model.dtype", "execution")),
     "fixture_timing": Case("performance", fixture_timing, ("model.dtype", "execution")),
+    "store_equivalence": Case("correctness", lambda *a, **k: store_cases.store_equivalence(*a, **k),
+                              ("model.dtype", "execution"), needs_store),
+    "store_depth": Case("memory", lambda *a, **k: store_cases.store_depth(*a, **k), ("execution",), needs_store),
+    "store_build": Case("memory", lambda *a, **k: store_cases.store_build(*a, **k),
+                        ("model.name", "model.dtype", "lora", "execution"), needs_store),
+    "pinned_transfer": Case("performance", lambda *a, **k: store_cases.pinned_transfer(*a, **k), ("execution",),
+                            needs_store),
 }
 
 
@@ -454,8 +483,8 @@ def run(case, config_path, name=None, root=RESULTS, perturbation=None, hypothesi
     result["identity"]["input_sha256"] = hashlib.sha256(json.dumps(result["identity"]["fixtures_sha256"],
                                                                    sort_keys=True).encode()).hexdigest()
     try:
-        if missing := config.unimplemented(cfg):
-            raise Blocked(f"unimplemented settings {missing}")
+        if missing := spec.blocked_by(cfg):
+            raise Blocked(f"unimplemented settings {missing}" if spec.blocked_by is config.unimplemented else "; ".join(missing))
         spec.run(cfg, result, perturbation=perturbation, **options)
     except Blocked as e:
         result["blocked"] = str(e)
@@ -545,6 +574,15 @@ def markdown(r):
             lines.append(f"| {side} | {t.get('n')} | {t.get('median_s', 0):.3e} | {t.get('iqr_s')} | {t.get('median_ci95_s')} |")
         if c := r.get("conclusion"):
             lines.append(f"\ncandidate / reference median ratio {c['ratio']:.3f}, 95% CI {c['ci95']}: {c['statement']}")
+    m = r.get("measurements") or {}
+    if m.get("depths"):
+        lines += ["", "| depth | max slab B | planned buffers B | streamed peak allocated B | resident peak allocated B | "
+                      "build alloc delta B | view problems |", "|---|---|---|---|---|---|---|"]
+        lines += [f"| {d['depth']} | {d['max_slab_bytes']} | {d['planned_buffer_bytes']} | {d['streamed_peak_allocated']} | "
+                  f"{d['resident_peak_allocated']} | {d['build_allocated_delta']} | {d['view_problems']} |" for d in m["depths"]]
+    elif m:
+        text = json.dumps(m, default=str)
+        lines += ["", "measurements: `" + (text if len(text) < 4000 else text[:4000] + " ...` (truncated; see result.json)`") + "`"]
     if r.get("memory"):
         lines += ["", *memory_lines(r["memory"])]
     return "\n".join(lines) + "\n"

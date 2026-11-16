@@ -1,0 +1,7 @@
+# L2L lab, Ticket 02: the real Qwen3-0.6B (bf16 base, LoRA rank 32 on last2-attention from default.yaml) in the pinned store.
+extends: store.yaml
+run:
+  name: l2l_lab_store_qwen3_0.6b
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: bfloat16

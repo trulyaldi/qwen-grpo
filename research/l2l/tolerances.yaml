@@ -21,3 +21,20 @@ fixture_equivalence:
         optimizer: {atol: 0.0, rtol: 0.0}
         updates: {atol: 0.0, rtol: 0.0}
   # l2l_sync / l2l_async thresholds are added by Tickets 03-08, each with its numerical justification.
+
+store_equivalence:
+  l2l_sync:
+    float32:
+      why: >-
+        The weight store copies bytes and re-points parameters; it performs no arithmetic. Stored tensors must equal
+        the fixture's bitwise, and the unchanged resident code on store-backed parameters (CPU, same kernels and
+        thread count) must reproduce the saved reference bitwise.
+      quantities:
+        weights: {atol: 0.0, rtol: 0.0}
+        logits: {atol: 0.0, rtol: 0.0}
+        logp: {atol: 0.0, rtol: 0.0}
+        loss: {atol: 0.0, rtol: 0.0}
+        grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
+        final_lora: {atol: 0.0, rtol: 0.0}
+        optimizer: {atol: 0.0, rtol: 0.0}
+        updates: {atol: 0.0, rtol: 0.0}
