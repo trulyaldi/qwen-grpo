@@ -1,0 +1,1728 @@
+{
+  "run_name": "qwen3-0.6b_4gb",
+  "config": {
+    "run_name": "qwen3-0.6b_4gb",
+    "model": {
+      "id": "Qwen/Qwen3-0.6B",
+      "weight_dtype": "bfloat16"
+    },
+    "hardware": {
+      "gpu_vram_gib": 4.0,
+      "cpu_ram_gib": 6.7,
+      "cpu_ram_source": "measured: WSL2 MemTotal of the development host (free -b); ~3.1 GiB was available at the time",
+      "pcie_gb_per_s": 12.0,
+      "pcie_source": "assumption, unmeasured: effective pinned host-to-device copy rate (PCIe 4.0 x16 peak is ~31.5 GB/s; laptop links and WSL2 are typically far lower)",
+      "copy_compute_overlap": true
+    },
+    "runtime": {
+      "cuda_context_gib": 0.5,
+      "allocator_overhead": 0.1,
+      "cpu_process_gib": 2.0,
+      "safety_margin": 0.1
+    },
+    "grpo": {
+      "prompt_batch_size": 5,
+      "group_size": 6,
+      "rollout_batch_size": 30,
+      "micro_batch_size": 6,
+      "prompt_tokens": 100,
+      "generation_tokens": 4,
+      "num_iterations": 1,
+      "reference_logprobs": false
+    },
+    "lora": {
+      "rank": 32,
+      "targets": "last2-attention",
+      "dtype": "float32",
+      "optimizer": "adamw"
+    },
+    "streaming": {
+      "resident_decoder_layers": 0,
+      "gpu_layer_buffers": 2,
+      "weight_placement": "pinned_cpu",
+      "pinned_allocation": "per_layer",
+      "non_decoder_placement": "gpu",
+      "loading_copy": "shard",
+      "schedule": "layer_major",
+      "activation_checkpoints": "gpu",
+      "kv_cache": "gpu",
+      "logits": "response_only"
+    },
+    "evaluation": {
+      "examples": 512,
+      "batch_size": 32,
+      "score_batch_size": 8,
+      "generation_tokens": 4,
+      "during_training": true
+    },
+    "merge": {
+      "strategy": "tensorwise",
+      "device": "gpu"
+    },
+    "dflash": {
+      "enabled": false,
+      "estimate": false,
+      "draft_model_id": "none"
+    }
+  },
+  "overall_verdict": "PASS",
+  "model": {
+    "id": "Qwen/Qwen3-0.6B",
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "source": "local safetensors headers",
+    "config": {
+      "hidden_size": 1024,
+      "intermediate_size": 3072,
+      "num_hidden_layers": 28,
+      "num_attention_heads": 16,
+      "num_key_value_heads": 8,
+      "head_dim": 128,
+      "vocab_size": 151936,
+      "tie_word_embeddings": true
+    },
+    "live_parameters": 596049920,
+    "embedding": {
+      "shape": [
+        151936,
+        1024
+      ],
+      "bytes": 311164928
+    },
+    "final_norm": {
+      "shape": [
+        1024
+      ],
+      "bytes": 2048
+    },
+    "lm_head": "tied to embedding",
+    "tied_duplicates_in_checkpoint": [
+      {
+        "name": "lm_head.weight",
+        "shape": [
+          151936,
+          1024
+        ],
+        "stored_bytes": 311164928
+      }
+    ],
+    "decoder_layer_bytes": [
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888,
+      31461888
+    ],
+    "decoder_bytes_total": 880932864,
+    "checkpoint_shards": {
+      "model.safetensors": 1503264768
+    },
+    "checkpoint_bytes": 1503264768,
+    "lora_targets": [
+      {
+        "name": "model.layers.26.self_attn.o_proj.weight",
+        "shape": [
+          1024,
+          2048
+        ]
+      },
+      {
+        "name": "model.layers.26.self_attn.q_proj.weight",
+        "shape": [
+          2048,
+          1024
+        ]
+      },
+      {
+        "name": "model.layers.26.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          1024
+        ]
+      },
+      {
+        "name": "model.layers.27.self_attn.o_proj.weight",
+        "shape": [
+          1024,
+          2048
+        ]
+      },
+      {
+        "name": "model.layers.27.self_attn.q_proj.weight",
+        "shape": [
+          2048,
+          1024
+        ]
+      },
+      {
+        "name": "model.layers.27.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          1024
+        ]
+      }
+    ],
+    "lora_parameters": 524288,
+    "first_adapted_layer": 26
+  },
+  "phases": [
+    {
+      "phase": "initialization",
+      "gpu_peak_moment": "weights loaded, before the first forward",
+      "cpu_peak_moment": "weights loaded, before the first forward",
+      "gpu_peak": {
+        "gpu_exact": 376187904,
+        "gpu_allocated": 376187904,
+        "gpu_reserved": 413806694,
+        "gpu_device": 950677606,
+        "cpu": 4590272512,
+        "critical_unknowns": []
+      },
+      "cpu_peak_bytes": 4590272512,
+      "gpu_headroom_bytes": 3344289690,
+      "cpu_headroom_bytes": 2603797709,
+      "gpu_verdict": "PASS",
+      "cpu_verdict": "PASS",
+      "verdict": "PASS",
+      "moment_totals": [
+        {
+          "gpu_exact": 376187904,
+          "gpu_allocated": 376187904,
+          "gpu_reserved": 413806694,
+          "gpu_device": 950677606,
+          "cpu": 4590272512,
+          "critical_unknowns": []
+        }
+      ],
+      "notes": [
+        "safetensors are memory-mapped: page cache is not counted as process memory"
+      ],
+      "moments": [
+        {
+          "name": "weights loaded, before the first forward",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            },
+            {
+              "name": "temporary loading copy (shard)",
+              "bytes": 1503264768,
+              "kind": "estimate",
+              "note": "pageable tensors read from safetensors before pinning / GPU upload",
+              "critical": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "rollout",
+      "gpu_peak_moment": "rollout: prefill, last layer",
+      "cpu_peak_moment": "rollout: prefill, last layer",
+      "gpu_peak": {
+        "gpu_exact": 724496128,
+        "gpu_allocated": 828544768,
+        "gpu_reserved": 911399245,
+        "gpu_device": 1448270157,
+        "cpu": 3087007744,
+        "critical_unknowns": []
+      },
+      "cpu_peak_bytes": 3087007744,
+      "gpu_headroom_bytes": 2846697139,
+      "cpu_headroom_bytes": 4107062477,
+      "gpu_verdict": "PASS",
+      "cpu_verdict": "PASS",
+      "verdict": "PASS",
+      "moment_totals": [
+        {
+          "gpu_exact": 724496128,
+          "gpu_allocated": 828544768,
+          "gpu_reserved": 911399245,
+          "gpu_device": 1448270157,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        },
+        {
+          "gpu_exact": 738258688,
+          "gpu_allocated": 787502848,
+          "gpu_reserved": 866253133,
+          "gpu_device": 1403124045,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        }
+      ],
+      "notes": [
+        "30 sequences per generate() call, 1 call(s) per rollout batch",
+        "LoRA grads were freed by zero_grad(set_to_none=True); AdamW states persist across steps"
+      ],
+      "moments": [
+        {
+          "name": "rollout: prefill, last layer",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "KV cache [30 seq x 100 tok x 28 layers]",
+              "bytes": 344064000,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "token ids + attention mask (int64)",
+              "bytes": 49920,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "hidden state in/out",
+              "bytes": 12288000,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer intermediates (no grad)",
+              "bytes": 55296000,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "next-token logits + sampling probs (fp32)",
+              "bytes": 36464640,
+              "kind": "estimate",
+              "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        },
+        {
+          "name": "rollout: last decode step",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "KV cache [30 seq x 104 tok x 28 layers]",
+              "bytes": 357826560,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "token ids + attention mask (int64)",
+              "bytes": 49920,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "KV append copy of one layer (DynamicCache torch.cat)",
+              "bytes": 12779520,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "next-token logits + sampling probs (fp32)",
+              "bytes": 36464640,
+              "kind": "estimate",
+              "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "training",
+      "gpu_peak_moment": "backward: recompute + backward of the last decoder layer",
+      "cpu_peak_moment": "old log-probs forward (no grad)",
+      "gpu_peak": {
+        "gpu_exact": 408089040,
+        "gpu_allocated": 463280592,
+        "gpu_reserved": 509608651,
+        "gpu_device": 1046479563,
+        "cpu": 3087007744,
+        "critical_unknowns": []
+      },
+      "cpu_peak_bytes": 3087007744,
+      "gpu_headroom_bytes": 3248487733,
+      "cpu_headroom_bytes": 4107062477,
+      "gpu_verdict": "PASS",
+      "cpu_verdict": "PASS",
+      "verdict": "PASS",
+      "moment_totals": [
+        {
+          "gpu_exact": 418720720,
+          "gpu_allocated": 443001808,
+          "gpu_reserved": 487301989,
+          "gpu_device": 1024172901,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        },
+        {
+          "gpu_exact": 439987152,
+          "gpu_allocated": 439987152,
+          "gpu_reserved": 483985867,
+          "gpu_device": 1020856779,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        },
+        {
+          "gpu_exact": 401699280,
+          "gpu_allocated": 454573008,
+          "gpu_reserved": 500030309,
+          "gpu_device": 1036901221,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        },
+        {
+          "gpu_exact": 408089040,
+          "gpu_allocated": 463280592,
+          "gpu_reserved": 509608651,
+          "gpu_device": 1046479563,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        }
+      ],
+      "notes": [
+        "N = 30 sequences of T = 104 tokens, micro-batches of 6; schedule layer_major",
+        "layers 0..25 hold no LoRA targets: no-grad forward, no checkpoints, no backward sweep; layers 26..27 are checkpointed and swept backward",
+        "no reference-model forward: the loss has beta = 0 (qwen_grpo/grpo.py)"
+      ],
+      "moments": [
+        {
+          "name": "old log-probs forward (no grad)",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "rollout ids/masks + old log-probs + advantages",
+              "bytes": 50640,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "hidden state in/out",
+              "bytes": 12779520,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer intermediates (no grad)",
+              "bytes": 11501568,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "logits + fp32 copy + log_softmax",
+              "bytes": 38287872,
+              "kind": "exact",
+              "note": "response_only: [m, R+1, V=151936]",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        },
+        {
+          "name": "forward: LM head of a micro-batch",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "rollout ids/masks + old log-probs + advantages",
+              "bytes": 50640,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "LoRA gradients",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
+              "bytes": 19169280,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "logits + fp32 copy + log_softmax",
+              "bytes": 38287872,
+              "kind": "exact",
+              "note": "response_only: [m, R+1, V=151936]",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        },
+        {
+          "name": "backward: log_softmax / LM head",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "rollout ids/masks + old log-probs + advantages",
+              "bytes": 50640,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "LoRA gradients",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
+              "bytes": 19169280,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "log_softmax backward (saved out, grad out, grad in) + logits grad",
+              "bytes": 52873728,
+              "kind": "estimate",
+              "note": "response_only: [m, R+1, V=151936]",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        },
+        {
+          "name": "backward: recompute + backward of the last decoder layer",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "rollout ids/masks + old log-probs + advantages",
+              "bytes": 50640,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "LoRA gradients",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
+              "bytes": 19169280,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "hidden-state grads of all 30 seq at the boundary",
+              "bytes": 6389760,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "recomputed layer activations (autograd-saved)",
+              "bytes": 44967936,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "grad of hidden state in/out + MLP grads",
+              "bytes": 10223616,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "evaluation",
+      "gpu_peak_moment": "greedy generation: prefill, last layer",
+      "cpu_peak_moment": "greedy generation: prefill, last layer",
+      "gpu_peak": {
+        "gpu_exact": 747437056,
+        "gpu_allocated": 858422272,
+        "gpu_reserved": 944264499,
+        "gpu_device": 1481135411,
+        "cpu": 3087007744,
+        "critical_unknowns": []
+      },
+      "cpu_peak_bytes": 3087007744,
+      "gpu_headroom_bytes": 2813831885,
+      "cpu_headroom_bytes": 4107062477,
+      "gpu_verdict": "PASS",
+      "cpu_verdict": "PASS",
+      "verdict": "PASS",
+      "moment_totals": [
+        {
+          "gpu_exact": 747437056,
+          "gpu_allocated": 858422272,
+          "gpu_reserved": 944264499,
+          "gpu_device": 1481135411,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        },
+        {
+          "gpu_exact": 762117120,
+          "gpu_allocated": 814644224,
+          "gpu_reserved": 896108646,
+          "gpu_device": 1432979558,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        },
+        {
+          "gpu_exact": 431432704,
+          "gpu_allocated": 450176000,
+          "gpu_reserved": 495193600,
+          "gpu_device": 1032064512,
+          "cpu": 3087007744,
+          "critical_unknowns": []
+        }
+      ],
+      "notes": [
+        "greedy, batches of 32, 4 new tokens; optimizer state kept"
+      ],
+      "moments": [
+        {
+          "name": "greedy generation: prefill, last layer",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "KV cache [32 seq x 100 tok x 28 layers]",
+              "bytes": 367001600,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "token ids + attention mask (int64)",
+              "bytes": 53248,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "hidden state in/out",
+              "bytes": 13107200,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer intermediates (no grad)",
+              "bytes": 58982400,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "next-token logits + sampling probs (fp32)",
+              "bytes": 38895616,
+              "kind": "estimate",
+              "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        },
+        {
+          "name": "greedy generation: last decode step",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "KV cache [32 seq x 104 tok x 28 layers]",
+              "bytes": 381681664,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "token ids + attention mask (int64)",
+              "bytes": 53248,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "KV append copy of one layer (DynamicCache torch.cat)",
+              "bytes": 13631488,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "next-token logits + sampling probs (fp32)",
+              "bytes": 38895616,
+              "kind": "estimate",
+              "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        },
+        {
+          "name": "label scoring forward (no grad)",
+          "gpu": [
+            {
+              "name": "embedding (= tied LM head)",
+              "bytes": 311164928,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "final norm",
+              "bytes": 2048,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "resident decoder layers x0",
+              "bytes": 0,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer buffers x2",
+              "bytes": 62923776,
+              "kind": "exact",
+              "note": "each sized for the largest streamed layer",
+              "critical": false
+            },
+            {
+              "name": "LoRA parameters (float32)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "AdamW exp_avg + exp_avg_sq",
+              "bytes": 4194304,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "hidden state in/out",
+              "bytes": 3407872,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "layer intermediates (no grad)",
+              "bytes": 15335424,
+              "kind": "estimate",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "logits + fp32 copy + log_softmax",
+              "bytes": 51050496,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "frozen streamed layers x28 (pinned)",
+              "bytes": 880932864,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "pinned allocator power-of-two rounding",
+              "bytes": 58591232,
+              "kind": "estimate",
+              "note": "torch CachingHostAllocator rounds each pin_memory() block (per_layer)",
+              "critical": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "merge",
+      "gpu_peak_moment": "tensorwise merge on gpu",
+      "cpu_peak_moment": "tensorwise merge on gpu",
+      "gpu_peak": {
+        "gpu_exact": 27262976,
+        "gpu_allocated": 27262976,
+        "gpu_reserved": 29989274,
+        "gpu_device": 566860186,
+        "cpu": 2151677952,
+        "critical_unknowns": []
+      },
+      "cpu_peak_bytes": 2151677952,
+      "gpu_headroom_bytes": 3728107110,
+      "cpu_headroom_bytes": 5042392269,
+      "gpu_verdict": "PASS",
+      "cpu_verdict": "PASS",
+      "verdict": "PASS",
+      "moment_totals": [
+        {
+          "gpu_exact": 27262976,
+          "gpu_allocated": 27262976,
+          "gpu_reserved": 29989274,
+          "gpu_device": 566860186,
+          "cpu": 2151677952,
+          "critical_unknowns": []
+        }
+      ],
+      "notes": [
+        "assumes a standalone merge (training state and streamed weights released)"
+      ],
+      "moments": [
+        {
+          "name": "tensorwise merge on gpu",
+          "gpu": [
+            {
+              "name": "LoRA A, B (all targets)",
+              "bytes": 2097152,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            },
+            {
+              "name": "W (native) + W fp32 + B@A fp32 + W' (native), largest target",
+              "bytes": 25165824,
+              "kind": "exact",
+              "note": "",
+              "critical": false
+            }
+          ],
+          "cpu": [
+            {
+              "name": "tensorwise read/write buffers",
+              "bytes": 4194304,
+              "kind": "estimate",
+              "note": "one tensor",
+              "critical": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "residency": {
+    "configured_resident": 0,
+    "streamed": 28,
+    "resident_layers": [],
+    "gpu_buffer_bytes": 62923776,
+    "cpu_weight_bytes": 939524096,
+    "non_decoder_placement": "GPU-resident: embedding (tied LM head), final norm",
+    "sweep": [
+      {
+        "resident": 0,
+        "streamed": 28,
+        "gpu_peak_bytes": 1481135411,
+        "cpu_peak_bytes": 4590272512,
+        "sweep_bytes": 880932864,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 1,
+        "streamed": 27,
+        "gpu_peak_bytes": 1515743488,
+        "cpu_peak_bytes": 4556718080,
+        "sweep_bytes": 849470976,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 2,
+        "streamed": 26,
+        "gpu_peak_bytes": 1550351565,
+        "cpu_peak_bytes": 4523163648,
+        "sweep_bytes": 818009088,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 3,
+        "streamed": 25,
+        "gpu_peak_bytes": 1584959642,
+        "cpu_peak_bytes": 4489609216,
+        "sweep_bytes": 786547200,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 4,
+        "streamed": 24,
+        "gpu_peak_bytes": 1619567718,
+        "cpu_peak_bytes": 4456054784,
+        "sweep_bytes": 755085312,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 5,
+        "streamed": 23,
+        "gpu_peak_bytes": 1654175795,
+        "cpu_peak_bytes": 4422500352,
+        "sweep_bytes": 723623424,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 6,
+        "streamed": 22,
+        "gpu_peak_bytes": 1688783872,
+        "cpu_peak_bytes": 4388945920,
+        "sweep_bytes": 692161536,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 7,
+        "streamed": 21,
+        "gpu_peak_bytes": 1723391949,
+        "cpu_peak_bytes": 4355391488,
+        "sweep_bytes": 660699648,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 8,
+        "streamed": 20,
+        "gpu_peak_bytes": 1758000026,
+        "cpu_peak_bytes": 4321837056,
+        "sweep_bytes": 629237760,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 9,
+        "streamed": 19,
+        "gpu_peak_bytes": 1792608102,
+        "cpu_peak_bytes": 4288282624,
+        "sweep_bytes": 597775872,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 10,
+        "streamed": 18,
+        "gpu_peak_bytes": 1827216179,
+        "cpu_peak_bytes": 4254728192,
+        "sweep_bytes": 566313984,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 11,
+        "streamed": 17,
+        "gpu_peak_bytes": 1861824256,
+        "cpu_peak_bytes": 4221173760,
+        "sweep_bytes": 534852096,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 12,
+        "streamed": 16,
+        "gpu_peak_bytes": 1896432333,
+        "cpu_peak_bytes": 4187619328,
+        "sweep_bytes": 503390208,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 13,
+        "streamed": 15,
+        "gpu_peak_bytes": 1931040410,
+        "cpu_peak_bytes": 4154064896,
+        "sweep_bytes": 471928320,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 14,
+        "streamed": 14,
+        "gpu_peak_bytes": 1965648486,
+        "cpu_peak_bytes": 4120510464,
+        "sweep_bytes": 440466432,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 15,
+        "streamed": 13,
+        "gpu_peak_bytes": 2000256563,
+        "cpu_peak_bytes": 4086956032,
+        "sweep_bytes": 409004544,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 16,
+        "streamed": 12,
+        "gpu_peak_bytes": 2034864640,
+        "cpu_peak_bytes": 4053401600,
+        "sweep_bytes": 377542656,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 17,
+        "streamed": 11,
+        "gpu_peak_bytes": 2069472717,
+        "cpu_peak_bytes": 4019847168,
+        "sweep_bytes": 346080768,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 18,
+        "streamed": 10,
+        "gpu_peak_bytes": 2104080794,
+        "cpu_peak_bytes": 3986292736,
+        "sweep_bytes": 314618880,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 19,
+        "streamed": 9,
+        "gpu_peak_bytes": 2138688870,
+        "cpu_peak_bytes": 3952738304,
+        "sweep_bytes": 283156992,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 20,
+        "streamed": 8,
+        "gpu_peak_bytes": 2173296947,
+        "cpu_peak_bytes": 3919183872,
+        "sweep_bytes": 251695104,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 21,
+        "streamed": 7,
+        "gpu_peak_bytes": 2207905024,
+        "cpu_peak_bytes": 3885629440,
+        "sweep_bytes": 220233216,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 22,
+        "streamed": 6,
+        "gpu_peak_bytes": 2242513101,
+        "cpu_peak_bytes": 3852075008,
+        "sweep_bytes": 188771328,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 23,
+        "streamed": 5,
+        "gpu_peak_bytes": 2277121178,
+        "cpu_peak_bytes": 3818520576,
+        "sweep_bytes": 157309440,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 24,
+        "streamed": 4,
+        "gpu_peak_bytes": 2311729254,
+        "cpu_peak_bytes": 3784966144,
+        "sweep_bytes": 125847552,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 25,
+        "streamed": 3,
+        "gpu_peak_bytes": 2346337331,
+        "cpu_peak_bytes": 3751411712,
+        "sweep_bytes": 94385664,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 26,
+        "streamed": 2,
+        "gpu_peak_bytes": 2380945408,
+        "cpu_peak_bytes": 3717857280,
+        "sweep_bytes": 62923776,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 27,
+        "streamed": 1,
+        "gpu_peak_bytes": 2415553485,
+        "cpu_peak_bytes": 3684302848,
+        "sweep_bytes": 31461888,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      },
+      {
+        "resident": 28,
+        "streamed": 0,
+        "gpu_peak_bytes": 2380945408,
+        "cpu_peak_bytes": 3650748416,
+        "sweep_bytes": 0,
+        "gpu_verdict": "PASS",
+        "cpu_verdict": "PASS"
+      }
+    ],
+    "recommendation": {
+      "max_resident_gpu_pass": 28,
+      "min_resident_cpu_pass": 0,
+      "feasible": true,
+      "recommended_resident": 28
+    }
+  },
+  "transfers": [
+    {
+      "name": "rollout prefill",
+      "sweeps": 1,
+      "weight_bytes": 880932864,
+      "activation_bytes": 0,
+      "tokens_per_sweep": 3000,
+      "note": "",
+      "bytes": 880932864,
+      "transfer_s": 0.073411072,
+      "compute_s": null,
+      "critical_path": ">= 0.073 s (max(T_transfer, T_compute); compute unknown)"
+    },
+    {
+      "name": "rollout decode",
+      "sweeps": 3,
+      "weight_bytes": 2642798592,
+      "activation_bytes": 0,
+      "tokens_per_sweep": 30,
+      "note": "one weight sweep per generated token after the first",
+      "bytes": 2642798592,
+      "transfer_s": 0.220233216,
+      "compute_s": null,
+      "critical_path": ">= 0.220 s (max(T_transfer, T_compute); compute unknown)"
+    },
+    {
+      "name": "old log-probs forward",
+      "sweeps": 1,
+      "weight_bytes": 880932864,
+      "activation_bytes": 0,
+      "tokens_per_sweep": 3120,
+      "note": "",
+      "bytes": 880932864,
+      "transfer_s": 0.073411072,
+      "compute_s": null,
+      "critical_path": ">= 0.073 s (max(T_transfer, T_compute); compute unknown)"
+    },
+    {
+      "name": "training forward (x1 iterations)",
+      "sweeps": 1,
+      "weight_bytes": 880932864,
+      "activation_bytes": 0,
+      "tokens_per_sweep": 3120,
+      "note": "",
+      "bytes": 880932864,
+      "transfer_s": 0.073411072,
+      "compute_s": null,
+      "critical_path": ">= 0.073 s (max(T_transfer, T_compute); compute unknown)"
+    },
+    {
+      "name": "backward recomputation (x1, layers >= 26)",
+      "sweeps": 1,
+      "weight_bytes": 62923776,
+      "activation_bytes": 0,
+      "tokens_per_sweep": 3120,
+      "note": "recompute and backward of a layer share one load",
+      "bytes": 62923776,
+      "transfer_s": 0.005243648,
+      "compute_s": null,
+      "critical_path": ">= 0.005 s (max(T_transfer, T_compute); compute unknown)"
+    },
+    {
+      "name": "evaluation (512 examples)",
+      "sweeps": 128,
+      "weight_bytes": 112759406592,
+      "activation_bytes": 0,
+      "tokens_per_sweep": 32,
+      "note": "16 generate batches x 4 sweeps + 64 scoring passes",
+      "bytes": 112759406592,
+      "transfer_s": 9.396617216,
+      "compute_s": null,
+      "critical_path": ">= 9.397 s (max(T_transfer, T_compute); compute unknown)"
+    },
+    {
+      "name": "merge (gpu)",
+      "sweeps": 0,
+      "weight_bytes": 44040192,
+      "activation_bytes": 0,
+      "tokens_per_sweep": 0,
+      "note": "adapted weights to the device and back",
+      "bytes": 44040192,
+      "transfer_s": 0.003670016,
+      "compute_s": null,
+      "critical_path": ">= 0.004 s (max(T_transfer, T_compute); compute unknown)"
+    }
+  ],
+  "transfers_per_grpo_step": {
+    "bytes": 5348520960,
+    "transfer_s": 0.44571008
+  },
+  "uncertainties": [
+    "PCIe bandwidth 12.0 GB/s: assumption, unmeasured: effective pinned host-to-device copy rate (PCIe 4.0 x16 peak is ~31.5 GB/s; laptop links and WSL2 are typically far lower)",
+    "CPU RAM limit 6.7 GiB: measured: WSL2 MemTotal of the development host (free -b); ~3.1 GiB was available at the time",
+    "CUDA context 0.5 GiB, allocator overhead 10%, CPU process baseline 2.0 GiB: estimates, to be replaced by measurements",
+    "layer intermediates assume SDPA attention (no [T, T] score matrix); eager attention adds n_heads * T^2 * 4 B per sequence",
+    "pinned host memory may be capped below physical RAM (NVIDIA's CUDA-on-WSL known limitations list limited pinned system memory); the pinnable amount on this host is unmeasured",
+    "the CPU limit is total RAM; other processes' usage at run time is not subtracted",
+    "compute time is not estimated: critical paths are lower bounds from transfer time alone",
+    "HF generate() internals beyond KV cache and next-token logits are covered only by the safety margin"
+  ],
+  "provenance": {
+    "created": "2026-11-16T14:32:29+00:00",
+    "config": "configs/budget/qwen3-0.6b.yaml",
+    "config_sha256": "49d3d3b9e3ebbd8d3f8c946d08782519843323c4c51a049e6245263c313d1e9f",
+    "git_commit": "f373e8d8785ab8e4701769d7c6cd0b054efc9bbd",
+    "kind": "theoretical prediction (no measurement)"
+  }
+}

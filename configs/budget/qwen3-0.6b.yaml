@@ -1,0 +1,66 @@
+# Step 0 budget: Qwen3-0.6B on the development host (RTX 3050 Ti Laptop, 4 GB). Architecture sizes are NOT written here:
+# they are read from config.json and the safetensors headers. Every runtime number below is an assumption until measured.
+run_name: qwen3-0.6b_4gb
+
+model:
+  id: Qwen/Qwen3-0.6B
+  weight_dtype: bfloat16
+
+hardware:
+  gpu_vram_gib: 4.0                # nvidia-smi: 4096 MiB
+  cpu_ram_gib: 6.7                 # 7194042368 B
+  cpu_ram_source: "measured: WSL2 MemTotal of the development host (free -b); ~3.1 GiB was available at the time"
+  pcie_gb_per_s: 12.0
+  pcie_source: "assumption, unmeasured: effective pinned host-to-device copy rate (PCIe 4.0 x16 peak is ~31.5 GB/s;
+    laptop links and WSL2 are typically far lower)"
+  copy_compute_overlap: true       # copy stream prefetches layer i+1 while layer i computes (2 buffers)
+
+runtime:
+  cuda_context_gib: 0.5            # estimate: CUDA context + cuBLAS workspace, outside the PyTorch allocator
+  allocator_overhead: 0.10         # estimate: max_memory_reserved / max_memory_allocated - 1
+  cpu_process_gib: 2.0             # estimate: Python + torch/CUDA host libraries + transformers + tokenizer + data
+  safety_margin: 0.10              # fraction of each limit kept for unquantified allocations
+
+grpo:                              # configs/default.yaml values, except micro_batch_size
+  prompt_batch_size: 5             # B
+  group_size: 6                    # G
+  rollout_batch_size: 30           # sequences per generate() call (B*G: one call per rollout batch)
+  micro_batch_size: 6              # chosen for L2L; the repo default (null) runs all B*G = 30 at once
+  prompt_tokens: 100               # longest tokenized prompt over train/validation/test (data/sentiment.json)
+  generation_tokens: 4             # max_new_tokens
+  num_iterations: 1                # K updates per rollout batch
+  reference_logprobs: false        # beta = 0: no reference-model forward
+
+lora:
+  rank: 32
+  targets: last2-attention         # resolved with qwen_grpo.model.target_modules on a meta-device skeleton
+  dtype: float32
+  optimizer: adamw
+
+streaming:
+  resident_decoder_layers: 0       # baseline: everything streamed
+  gpu_layer_buffers: 2             # current + prefetched layer
+  weight_placement: pinned_cpu     # pinned_cpu | pageable_cpu
+  pinned_allocation: per_layer     # one pinned block per layer (per_layer) or per tensor (per_tensor)
+  non_decoder_placement: gpu       # embedding (= tied LM head) and final norm stay on GPU
+  loading_copy: shard              # tensor | shard | model: largest pageable copy alive while filling pinned memory
+  schedule: layer_major            # layer_major: all micro-batches through a layer per load | microbatch_major
+  activation_checkpoints: gpu      # gpu | cpu
+  kv_cache: gpu                    # gpu | cpu
+  logits: response_only            # response_only (logits_to_keep = R+1) | full_sequence
+
+evaluation:
+  examples: 512                    # data.val_subset
+  batch_size: 32
+  score_batch_size: 8
+  generation_tokens: 4
+  during_training: true            # AdamW state stays allocated
+
+merge:
+  strategy: tensorwise             # tensorwise | shardwise
+  device: gpu                      # gpu | cpu
+
+dflash:
+  enabled: false                   # not implemented
+  estimate: false
+  draft_model_id: none
