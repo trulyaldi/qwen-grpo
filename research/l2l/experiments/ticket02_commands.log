@@ -1,0 +1,141 @@
+$ python scripts/l2l_lab.py run --case store_equivalence --config research/l2l/configs/store.yaml --name t02_store_equivalence
+# t02_store_equivalence: store_equivalence (correctness)
+
+**Status: PASS** (execution PASS; hypothesis -: NOT_EVALUATED, no hypothesis declared for this run)
+
+
+- commit `721d064a5ac5a87045dfec1ff2608c9381aecac9` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3050 Ti Laptop GPU
+- config `research/l2l/configs/store.yaml` sha256 `e84db9dd6c03770e`; fields used: ['model.dtype', 'execution']; backend `l2l_sync`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `0e4e29d6b58b6f1a`
+
+| fixture | quantity | tensors | pass | worst max_abs | worst rel | bound |
+|---|---|---|---|---|---|---|
+| 0.6b-like | logits | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | logp | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | loss | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | grads | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | final_lora | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | optimizer | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | updates | 21 | 21/21 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | weights | 44 | 44/44 | 0.0 | 0.0 | 0.0 |
+| 4b-like | logits | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | logp | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | loss | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | grads | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 4b-like | final_lora | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 4b-like | optimizer | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like | updates | 21 | 21/21 | 0.0 | 0.0 | 0.0 |
+| 4b-like | weights | 66 | 66/66 | 0.0 | 0.0 | 0.0 |
+
+
+measurements: `{"0.6b-like": {"store": {"storage": "pinned", "layers": 4, "slab_bytes": [50176, 50176, 50176, 50176], "store_bytes": 200704, "max_slab_bytes": 50176, "registered_bytes": 217088, "tensors": 44, "dtype": "torch.float32"}, "verify_problems": [], "build_delta": {"allocated": 0, "device_used": 0}, "pinned_views": 44}, "4b-like": {"store": {"storage": "pinned", "layers": 6, "slab_bytes": [72704, 72704, 72704, 72704, 72704, 72704], "store_bytes": 436224, "max_slab_bytes": 72704, "registered_bytes": 460800, "tensors": 66, "dtype": "torch.float32"}, "verify_problems": [], "build_delta": {"allocated": 0, "device_used": 0}, "pinned_views": 66}}`
+
+exit 0
+$ python scripts/l2l_lab.py run --case store_equivalence --config research/l2l/configs/store.yaml --name t02_store_equivalence_perturbed_weight --perturb weights.1=1e-3
+**FAULT INJECTION RUN** (weights.1=1e-3): a FAIL is the expected outcome.
+
+# t02_store_equivalence_perturbed_weight: store_equivalence (correctness)
+
+**Status: FAIL** (execution PASS; hypothesis -: NOT_EVALUATED, no hypothesis declared for this run)
+
+- weights.1.self_attn.q_proj.weight: max_abs 3.859e-07 > bound 0.000e+00
+
+- commit `721d064a5ac5a87045dfec1ff2608c9381aecac9` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3050 Ti Laptop GPU
+- config `research/l2l/configs/store.yaml` sha256 `e84db9dd6c03770e`; fields used: ['model.dtype', 'execution']; backend `l2l_sync`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `0e4e29d6b58b6f1a`
+
+| fixture | quantity | tensors | pass | worst max_abs | worst rel | bound |
+|---|---|---|---|---|---|---|
+| 0.6b-like | logits | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | logp | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | loss | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | grads | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | final_lora | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | optimizer | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | updates | 21 | 21/21 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | weights | 44 | 43/44 | 3.8594589568674564e-07 | 5.5834415782491366e-06 | 0.0 |
+| 4b-like | logits | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | logp | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | loss | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | grads | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 4b-like | final_lora | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 4b-like | optimizer | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like | updates | 21 | 21/21 | 0.0 | 0.0 | 0.0 |
+| 4b-like | weights | 66 | 66/66 | 0.0 | 0.0 | 0.0 |
+
+
+measurements: `{"0.6b-like": {"store": {"storage": "pinned", "layers": 4, "slab_bytes": [50176, 50176, 50176, 50176], "store_bytes": 200704, "max_slab_bytes": 50176, "registered_bytes": 217088, "tensors": 44, "dtype": "torch.float32"}, "verify_problems": [], "build_delta": {"allocated": 0, "device_used": 0}, "pinned_views": 44}, "4b-like": {"store": {"storage": "pinned", "layers": 6, "slab_bytes": [72704, 72704, 72704, 72704, 72704, 72704], "store_bytes": 436224, "max_slab_bytes": 72704, "registered_bytes": 460800, "tensors": 66, "dtype": "torch.float32"}, "verify_problems": [], "build_delta": {"allocated": 0, "device_used": 0}, "pinned_views": 66}}`
+
+exit 0
+$ python scripts/l2l_lab.py run --case store_depth --config research/l2l/configs/store.yaml --name t02_store_depth --hypothesis H07 --depths 2,4,8,16,32
+# t02_store_depth: store_depth (memory)
+
+**Status: PASS** (execution PASS; hypothesis H07: SUPPORTED, streamed peak 3148800 B at every depth; resident peak [3239936, 6389760, 12689408, 25288704, 50487296])
+
+
+- commit `721d064a5ac5a87045dfec1ff2608c9381aecac9` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3050 Ti Laptop GPU
+- config `research/l2l/configs/store.yaml` sha256 `e84db9dd6c03770e`; fields used: ['execution']; backend `l2l_sync`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `0e4e29d6b58b6f1a`
+
+
+| depth | max slab B | planned buffers B | streamed peak allocated B | resident peak allocated B | build alloc delta B | view problems |
+|---|---|---|---|---|---|---|
+| 2 | 1574400 | 3148800 | 3148800 | 3239936 | 0 | 0 |
+| 4 | 1574400 | 3148800 | 3148800 | 6389760 | 0 | 0 |
+| 8 | 1574400 | 3148800 | 3148800 | 12689408 | 0 | 0 |
+| 16 | 1574400 | 3148800 | 3148800 | 25288704 | 0 | 0 |
+| 32 | 1574400 | 3148800 | 3148800 | 50487296 | 0 | 0 |
+
+memory snapshot (snapshot), evidence grade **diagnostic**:
+- CPU RSS 846.2109375 MiB, high-water mark 883.90234375 MiB (this process)
+- PyTorch allocator, this process: peak allocated 48.1 MiB, peak reserved 50.0 MiB (excludes the CUDA context and non-PyTorch allocations)
+- cudaMemGetInfo total - free: 805.3 MiB, device-wide (every process and context on the GPU, not process-specific)
+- nvidia-smi raw: compute apps `247231, [N/A]`, memory.used `82` (unreliable under WSL2)
+
+exit 0
+$ python scripts/l2l_lab.py run --case pinned_transfer --config research/l2l/configs/store.yaml --name t02_pinned_transfer --trials 20 --capacity-gib 1.0
+# t02_pinned_transfer: pinned_transfer (performance)
+
+**Status: PASS** (execution PASS; hypothesis -: NOT_EVALUATED, no hypothesis declared for this run)
+
+
+- commit `721d064a5ac5a87045dfec1ff2608c9381aecac9` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3050 Ti Laptop GPU
+- config `research/l2l/configs/store.yaml` sha256 `e84db9dd6c03770e`; fields used: ['execution']; backend `l2l_sync`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `0e4e29d6b58b6f1a`
+
+| side | n | median s | IQR s | median 95% CI s |
+|---|---|---|---|---|
+| reference | 20 | 4.542e-02 | [0.04433445099675737, 0.04705557624583889] | [0.044635654499870725, 0.046776803996181116] |
+| candidate | 20 | 3.068e-02 | [0.030634719247245812, 0.030726137747478788] | [0.03063644999929238, 0.03071218149852939] |
+
+candidate / reference median ratio 0.675, 95% CI [0.6553762844606185, 0.6876816492552715]: candidate faster
+
+measurements: `{"nbytes": 201861632, "qwen3_4b_max_slab_bytes": 201861632, "pin_memory_rounding": [{"requested": 1048577, "held": 2097152}, {"requested": 31457280, "held": 33554432}, {"requested": 201861632, "held": 268435456}], "rlimit_memlock": {"soft": 67108864, "hard": 67108864}, "meminfo": {"mem_available": 1314590720, "rss": 1448071168, "peak_rss": 1680502784}, "capacity_probe": {"cap_bytes": 571400192, "chunk_bytes": 268435456, "registered_bytes": 536870912, "failed_with": null, "mem_available_while_held": 1056952320}}`
+
+memory snapshot (snapshot), evidence grade **diagnostic**:
+- CPU RSS 1380.98828125 MiB, high-water mark 1602.65234375 MiB (this process)
+- PyTorch allocator, this process: peak allocated 192.5 MiB, peak reserved 194.0 MiB (excludes the CUDA context and non-PyTorch allocations)
+- cudaMemGetInfo total - free: 999.3 MiB, device-wide (every process and context on the GPU, not process-specific)
+- nvidia-smi raw: compute apps `247323, [N/A]`, memory.used `276` (unreliable under WSL2)
+
+exit 0
+$ python scripts/l2l_lab.py run --case store_build --config research/l2l/configs/store_qwen3_0.6b.yaml --name t02_store_build_qwen3_0.6b
+# t02_store_build_qwen3_0.6b: store_build (memory)
+
+**Status: PASS** (execution PASS; hypothesis -: NOT_EVALUATED, no hypothesis declared for this run)
+
+
+- commit `721d064a5ac5a87045dfec1ff2608c9381aecac9` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3050 Ti Laptop GPU
+- config `research/l2l/configs/store_qwen3_0.6b.yaml` sha256 `66187917dcbe8321`; fields used: ['model.name', 'model.dtype', 'lora', 'execution']; backend `l2l_sync`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `0e4e29d6b58b6f1a`
+
+
+measurements: `{"start": {"mem_available": 2116481024, "rss": 728248320, "peak_rss": 728248320}, "model_bytes": 1192099840, "store_bytes_unaligned": 880932864, "projected_peak_bytes": 2028868096, "margin_mib": 768, "floor_mib": 512, "projection": "model + largest slab + margin (assumes adopted layers release storage)", "loaded": {"mem_available": 2110472192, "rss": 748720128, "peak_rss": 748720128}, "per_layer": [{"layer": 0, "mem_available": 2014375936, "rss": 899911680, "peak_rss": 899911680}, {"layer": 1, "mem_available": 1977700352, "rss": 948957184, "peak_rss": 948957184}, {"layer": 2, "mem_available": 1941864448, "rss": 1009479680, "peak_rss": 1009479680}, {"layer": 3, "mem_available": 1924120576, "rss": 1071955968, "peak_rss": 1071955968}, {"layer": 4, "mem_available": 1884274688, "rss": 1127735296, "peak_rss": 1127735296}, {"layer": 5, "mem_available": 1851486208, "rss": 1186709504, "peak_rss": 1186709504}, {"layer": 6, "mem_available": 1826799616, "rss": 1244577792, "peak_rss": 1244577792}, {"layer": 7, "mem_available": 1811021824, "rss": 1307004928, "peak_rss": 1307004928}, {"layer": 8, "mem_available": 1774592000, "rss": 1369178112, "peak_rss": 1369178112}, {"layer": 9, "mem_available": 1740427264, "rss": 1431044096, "peak_rss": 1431044096}, {"layer": 10, "mem_available": 1710055424, "rss": 1493970944, "peak_rss": 1493970944}, {"layer": 11, "mem_available": 1671426048, "rss": 1556508672, "peak_rss": 1556508672}, {"layer": 12, "mem_available": 1657892864, "rss": 1618063360, "peak_rss": 1618063360}, {"layer": 13, "mem_available": 1623277568, "rss": 1674715136, "peak_rss": 1674715136}, {"layer": 14, "mem_available": 1589551104, "rss": 1729736704, "peak_rss": 1729736704}, {"layer": 15, "mem_available": 1565511680, "rss": 1783123968, "peak_rss": 1783123968}, {"layer": 16, "mem_available": 1532936192, "rss": 1829339136, "peak_rss": 1829339136}, {"layer": 17, "mem_available": 1490984960, "rss": 1858854912, "peak_rss": 1858854912}, {"layer": 18, "mem_available": 1469956096, "rss": 1857376256, "peak_rss": 1861976064}, {"layer": 19, "mem_available": 1428914176, "rss": 1877164032, "peak_rss": 1883987968}, {"layer": 20, "mem_available": 1410666496, "rss": 1858715648, "peak_rss": 1883987968}, {"layer": 21, "mem_available": 1412075520, "rss": 1919205376, "peak_rss": 1919205376}, {"layer": 22, "mem_available": 1470570496, "rss": 1982144512, "peak_rss": 1982144512}, {"layer": 23, "mem_available": 1480290304, "rss": 2045075456, "peak_rss": 2045075456}, {"layer": 24, "mem_available": 1490878464, "rss": 2108014592, "peak_rss": 2108014592}, {"layer": 25, "mem_available": 1536692224, "rss": 2170949632, "peak_rss": 2170949632}, {"layer": 26, "mem_available": 1553903616, "rss": 2233212928, "peak_rss": 2233212928}, {"layer": 27, "mem_available": 1521942528, "rss": 2294681600, "peak_rss": 2294681600}], "end": {"mem_available": 1590190080, "rss": 2284285952, "peak_rss": 3163987968}, "store": {"storage": "pinned", "layers": 28, "slab_bytes": [31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888], "store_bytes": 880932864, "max_slab_bytes": 31461888, "registered_bytes": 881047552, "tensors": 308, "dtype": "torch.bfloat16"}, "plan": {"layers": 28, "streamed_layers": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], "resident_layers": [], "max_slab_bytes": 31461888, "frozen_bytes": [31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888], "slab_bytes": [31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 31461888, 3146 ...` (truncated; see result.json)``
+
+memory snapshot (snapshot), evidence grade **diagnostic**:
+- CPU RSS 2178.4921875 MiB, high-water mark 3017.4140625 MiB (this process)
+- PyTorch allocator, this process: peak allocated 0.0 MiB, peak reserved 0.0 MiB (excludes the CUDA context and non-PyTorch allocations)
+- cudaMemGetInfo total - free: 805.3 MiB, device-wide (every process and context on the GPU, not process-specific)
+- nvidia-smi raw: compute apps `247619, [N/A]`, memory.used `82` (unreliable under WSL2)
+
+exit 0

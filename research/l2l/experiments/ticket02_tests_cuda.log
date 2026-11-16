@@ -1,0 +1,105 @@
+.....................................................................    [100%]
+==================================== PASSES ====================================
+_ test_plan_on_the_real_skeleton_agrees_with_the_checkpoint_headers[Qwen/Qwen3-4B] _
+----------------------------- Captured stderr call -----------------------------
+Parse safetensors files:   0%|          | 0/3 [00:00<?, ?it/s]Parse safetensors files:  33%|███▎      | 1/3 [00:01<00:02,  1.17s/it]Parse safetensors files: 100%|██████████| 3/3 [00:01<00:00,  2.46it/s]
+________________________ test_cli_dispatches_to_the_lab ________________________
+----------------------------- Captured stdout call -----------------------------
+# cli: fixture_equivalence (correctness)
+
+**Status: PASS** (execution PASS; hypothesis -: NOT_EVALUATED, no hypothesis declared for this run)
+
+
+- commit `721d064a5ac5a87045dfec1ff2608c9381aecac9` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3050 Ti Laptop GPU
+- config `/home/aldiyar/qwen-grpo/research/l2l/configs/resident.yaml` sha256 `bbd460751d39cdb7`; fields used: ['model.dtype', 'execution']; backend `resident`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `0e4e29d6b58b6f1a`
+
+| fixture | quantity | tensors | pass | worst max_abs | worst rel | bound |
+|---|---|---|---|---|---|---|
+| 0.6b-like | logits | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | logp | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | loss | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | grads | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | final_lora | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | optimizer | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like | updates | 21 | 21/21 | 0.0 | 0.0 | 0.0 |
+| 4b-like | logits | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | logp | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | loss | 1 | 1/1 | 0.0 | 0.0 | 0.0 |
+| 4b-like | grads | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 4b-like | final_lora | 12 | 12/12 | 0.0 | 0.0 | 0.0 |
+| 4b-like | optimizer | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like | updates | 21 | 21/21 | 0.0 | 0.0 | 0.0 |
+
+
+=========================== short test summary info ============================
+PASSED tests/test_weight_store.py::test_store_owns_every_frozen_decoder_tensor_and_nothing_else[0.6b-like-pinned]
+PASSED tests/test_weight_store.py::test_store_owns_every_frozen_decoder_tensor_and_nothing_else[0.6b-like-pageable]
+PASSED tests/test_weight_store.py::test_store_owns_every_frozen_decoder_tensor_and_nothing_else[4b-like-pinned]
+PASSED tests/test_weight_store.py::test_store_owns_every_frozen_decoder_tensor_and_nothing_else[4b-like-pageable]
+PASSED tests/test_weight_store.py::test_store_backed_model_reproduces_the_saved_reference_bitwise[0.6b-like-pinned]
+PASSED tests/test_weight_store.py::test_store_backed_model_reproduces_the_saved_reference_bitwise[0.6b-like-pageable]
+PASSED tests/test_weight_store.py::test_store_backed_model_reproduces_the_saved_reference_bitwise[4b-like-pinned]
+PASSED tests/test_weight_store.py::test_store_backed_model_reproduces_the_saved_reference_bitwise[4b-like-pageable]
+PASSED tests/test_weight_store.py::test_pinned_store_pins_every_view_at_its_exact_size
+PASSED tests/test_weight_store.py::test_pageable_store_pins_nothing
+PASSED tests/test_weight_store.py::test_bf16_layers_store_with_fp32_adapters_left_out[pinned]
+PASSED tests/test_weight_store.py::test_bf16_layers_store_with_fp32_adapters_left_out[pageable]
+PASSED tests/test_weight_store.py::test_a_layer_with_mixed_frozen_dtypes_is_refused
+PASSED tests/test_weight_store.py::test_every_view_is_256_byte_aligned_and_slabs_start_on_a_page[pinned]
+PASSED tests/test_weight_store.py::test_every_view_is_256_byte_aligned_and_slabs_start_on_a_page[pageable]
+PASSED tests/test_weight_store.py::test_copy_to_gpu_buffers_reproduces_each_layer_and_stays_aligned
+PASSED tests/test_weight_store.py::test_verify_detects_ownership_and_content_faults[repoint]
+PASSED tests/test_weight_store.py::test_verify_detects_ownership_and_content_faults[to_dtype]
+PASSED tests/test_weight_store.py::test_verify_detects_ownership_and_content_faults[flip_byte]
+PASSED tests/test_weight_store.py::test_verify_detects_a_layer_moved_to_the_gpu
+PASSED tests/test_weight_store.py::test_check_views_detects_a_wrong_layer_and_a_corrupted_buffer
+PASSED tests/test_weight_store.py::test_pinning_without_cuda_raises_instead_of_falling_back
+PASSED tests/test_weight_store.py::test_a_failed_registration_raises_and_releases_what_was_registered
+PASSED tests/test_weight_store.py::test_building_allocates_nothing_in_the_cuda_allocator
+PASSED tests/test_weight_store.py::test_close_is_idempotent_and_a_closed_store_refuses_use
+PASSED tests/test_weight_store.py::test_layers_on_the_gpu_cannot_be_adopted
+PASSED tests/test_weight_store.py::test_plan_matches_the_built_store_exactly
+PASSED tests/test_weight_store.py::test_resident_layers_are_the_last_ones_and_leave_the_buffers_unchanged
+PASSED tests/test_weight_store.py::test_plan_on_the_real_skeleton_agrees_with_the_checkpoint_headers[Qwen/Qwen3-0.6B]
+PASSED tests/test_weight_store.py::test_plan_on_the_real_skeleton_agrees_with_the_checkpoint_headers[Qwen/Qwen3-4B]
+PASSED tests/test_lab.py::test_bound_is_inclusive_and_one_ulp_above_fails
+PASSED tests/test_lab.py::test_zero_reference_has_no_relative_error_and_require_nonzero_fails
+PASSED tests/test_lab.py::test_nonfinite_values_fail_whatever_the_tolerance[ref-nan]
+PASSED tests/test_lab.py::test_nonfinite_values_fail_whatever_the_tolerance[ref-inf]
+PASSED tests/test_lab.py::test_nonfinite_values_fail_whatever_the_tolerance[got-nan]
+PASSED tests/test_lab.py::test_nonfinite_values_fail_whatever_the_tolerance[got-inf]
+PASSED tests/test_lab.py::test_shape_dtype_mismatch_and_missing_tensor_fail_before_any_metric[got0]
+PASSED tests/test_lab.py::test_shape_dtype_mismatch_and_missing_tensor_fail_before_any_metric[got1]
+PASSED tests/test_lab.py::test_shape_dtype_mismatch_and_missing_tensor_fail_before_any_metric[None]
+PASSED tests/test_lab.py::test_missing_and_extra_candidate_tensors_fail_and_unthresholded_quantities_are_refused
+PASSED tests/test_lab.py::test_an_experiment_without_measurements_cannot_pass
+PASSED tests/test_lab.py::test_missing_gpu_memory_fails_a_case_that_requires_it
+PASSED tests/test_lab.py::test_resident_vs_resident_passes_on_real_tensors
+PASSED tests/test_lab.py::test_a_controlled_perturbation_makes_the_same_experiment_fail_and_is_recorded
+PASSED tests/test_lab.py::test_perturbing_one_lora_gradient_fails_that_parameter_only
+PASSED tests/test_lab.py::test_a_perturbation_that_rounds_away_is_refused
+PASSED tests/test_lab.py::test_an_unimplemented_backend_is_blocked_never_passed
+PASSED tests/test_lab.py::test_explicitly_blocked_candidate_inside_a_case
+PASSED tests/test_lab.py::test_missing_fixture_fails
+PASSED tests/test_lab.py::test_fixture_built_with_other_settings_or_config_dtype_mismatch_fails
+PASSED tests/test_lab.py::test_results_are_never_overwritten_and_report_rechecks_the_status
+PASSED tests/test_lab.py::test_timing_case_records_repeated_trials_with_uncertainty
+PASSED tests/test_lab.py::test_cli_dispatches_to_the_lab
+PASSED tests/test_lab.py::test_nvidia_smi_not_available_readings_are_recorded_raw_not_parsed
+PASSED tests/test_lab.py::test_threshold_violation_is_an_outcome_not_an_execution_failure
+PASSED tests/test_lab.py::test_a_valid_benchmark_supports_a_speedup_only_when_the_ci_excludes_one[ci0-SUPPORTED]
+PASSED tests/test_lab.py::test_a_valid_benchmark_supports_a_speedup_only_when_the_ci_excludes_one[ci1-INCONCLUSIVE]
+PASSED tests/test_lab.py::test_a_valid_benchmark_supports_a_speedup_only_when_the_ci_excludes_one[ci2-NOT_SUPPORTED]
+PASSED tests/test_lab.py::test_declared_hypotheses_must_exist_and_match_the_case_kind
+PASSED tests/test_lab.py::test_new_results_record_both_fields_and_report_rechecks_them
+PASSED tests/test_lab.py::test_ticket01_results_are_checked_but_never_rewritten
+PASSED tests/test_lab.py::test_evidence_grade_never_upgrades_wsl_or_incomplete_readings
+PASSED tests/test_lab.py::test_store_equivalence_passes_bitwise_and_a_perturbed_weight_fails_alone
+PASSED tests/test_lab.py::test_store_cases_are_gated_on_their_own_requirements_not_on_l2l_execution
+PASSED tests/test_lab.py::test_h07_rule_is_the_one_written_in_hypotheses_yaml[streamed0-resident0-SUPPORTED]
+PASSED tests/test_lab.py::test_h07_rule_is_the_one_written_in_hypotheses_yaml[streamed1-resident1-NOT_SUPPORTED]
+PASSED tests/test_lab.py::test_h07_rule_is_the_one_written_in_hypotheses_yaml[streamed2-resident2-INCONCLUSIVE]
+PASSED tests/test_lab.py::test_a_memory_case_without_measurements_cannot_pass
+PASSED tests/test_lab.py::test_store_depth_keeps_streamed_gpu_memory_constant_on_a_small_scan
+69 passed in 13.28s

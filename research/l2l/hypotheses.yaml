@@ -52,8 +52,8 @@ H07:
     peak differs between any two depths. INCONCLUSIVE otherwise. Allocator statistics only (diagnostic grade): this
     is a statement about PyTorch allocations, not about process-level or device-level memory.
   tickets: ["02", "11"]
-  status: untested
-  evidence: []
+  status: SUPPORTED  # Ticket 02 statement only, at diagnostic (allocator) grade; the Ticket 11 statement is untested
+  evidence: [t02_store_depth]
 H08:
   statement: An interrupted and resumed run preserves the same committed training sequence as an uninterrupted run.
   kind: correctness

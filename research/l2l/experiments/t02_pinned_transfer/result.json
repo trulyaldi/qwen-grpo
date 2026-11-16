@@ -1,0 +1,209 @@
+{
+ "schema": 2,
+ "name": "t02_pinned_transfer",
+ "case": "pinned_transfer",
+ "kind": "performance",
+ "created_utc": "20261116T213923Z",
+ "hypothesis": null,
+ "fault_injection": false,
+ "options": {
+  "trials": "20",
+  "warmup": "3",
+  "capacity_gib": "1.0"
+ },
+ "identity": {
+  "config_path": "research/l2l/configs/store.yaml",
+  "config_sha256": "e84db9dd6c03770e77c6c7ef5226cfb3ee24e2744f8f5742ad1e0297f50dd02e",
+  "config_fields_used": [
+   "execution"
+  ],
+  "execution": {
+   "backend": "l2l_sync",
+   "weight_storage": "pinned",
+   "resident_layers": 0,
+   "weight_buffers": 2,
+   "prefetch_depth": 0,
+   "activation_checkpointing": true,
+   "vocab_chunk_size": null,
+   "kv_cache": "gpu"
+  },
+  "fixtures_sha256": {
+   "0.6b-like": "3b6317b8359a40cfbd33e2c575de8d35a4fdf5648b4b8edce62fa61961dbb293",
+   "4b-like": "8f9e6fa72c0f15eadbd89cf6397ed786e8de841bee4d081679dd4e96043b438c"
+  },
+  "tolerances_sha256": "0e4e29d6b58b6f1a01c8e0b49bf4b17327245d9a4433d339f29edd4d1c8fe179",
+  "input_sha256": "cb7569af732767aef67f3de2ebb9b166a498728e2a478e01e70c7e52cd68bd36"
+ },
+ "provenance": {
+  "git_commit": "721d064a5ac5a87045dfec1ff2608c9381aecac9",
+  "git_tracked_dirty": false,
+  "python": "3.12.3",
+  "platform": "Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "packages": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "torch_cuda": "12.6",
+  "cuda_available": true,
+  "gpu": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+  "torch_threads": 6
+ },
+ "errors": [],
+ "required_measurements": [
+  "gpu_memory"
+ ],
+ "timing": {
+  "reference": {
+   "warmup": 3,
+   "trials_s": [
+    0.04359925400058273,
+    0.04736096499982523,
+    0.045790325006237254,
+    0.044509836996439844,
+    0.04808192200289341,
+    0.04526680100389058,
+    0.044761472003301606,
+    0.04659982799785212,
+    0.048341725996579044,
+    0.05089673600014066,
+    0.046953779994510114,
+    0.04640389200358186,
+    0.044852196995634586,
+    0.04346465400158195,
+    0.044944029999896884,
+    0.043786217996967025,
+    0.04376891799620353,
+    0.04380829299770994,
+    0.04850704200362088,
+    0.04558121199806919
+   ],
+   "source": "pageable",
+   "n": 20,
+   "median_s": 0.045424006500979885,
+   "iqr_s": [
+    0.04433445099675737,
+    0.04705557624583889
+   ],
+   "min_s": 0.04346465400158195,
+   "max_s": 0.05089673600014066,
+   "median_ci95_s": [
+    0.044635654499870725,
+    0.046776803996181116
+   ],
+   "median_gb_per_s": 4.443941597173852
+  },
+  "candidate": {
+   "warmup": 3,
+   "trials_s": [
+    0.030661314995086286,
+    0.030698829003085848,
+    0.030758267996134236,
+    0.030684548000863288,
+    0.030636492003395688,
+    0.030596561002312228,
+    0.03075246500520734,
+    0.030629653003416024,
+    0.03088986199873034,
+    0.030786362003709655,
+    0.030707001002156176,
+    0.03065640800195979,
+    0.030717361994902603,
+    0.030600181002228055,
+    0.030606517997512128,
+    0.030705693003255874,
+    0.030671695996716153,
+    0.03075269200053299,
+    0.030636407995189074,
+    0.030609246998210438
+   ],
+   "source": "pinned",
+   "n": 20,
+   "median_s": 0.03067812199878972,
+   "iqr_s": [
+    0.030634719247245812,
+    0.030726137747478788
+   ],
+   "min_s": 0.030596561002312228,
+   "max_s": 0.03088986199873034,
+   "median_ci95_s": [
+    0.03063644999929238,
+    0.03071218149852939
+   ],
+   "median_gb_per_s": 6.579986610913263
+  }
+ },
+ "conclusion": {
+  "ratio": 0.6753724376586625,
+  "ci95": [
+   0.6553762844606185,
+   0.6876816492552715
+  ],
+  "statement": "candidate faster"
+ },
+ "measurements": {
+  "nbytes": 201861632,
+  "qwen3_4b_max_slab_bytes": 201861632,
+  "pin_memory_rounding": [
+   {
+    "requested": 1048577,
+    "held": 2097152
+   },
+   {
+    "requested": 31457280,
+    "held": 33554432
+   },
+   {
+    "requested": 201861632,
+    "held": 268435456
+   }
+  ],
+  "rlimit_memlock": {
+   "soft": 67108864,
+   "hard": 67108864
+  },
+  "meminfo": {
+   "mem_available": 1314590720,
+   "rss": 1448071168,
+   "peak_rss": 1680502784
+  },
+  "capacity_probe": {
+   "cap_bytes": 571400192,
+   "chunk_bytes": 268435456,
+   "registered_bytes": 536870912,
+   "failed_with": null,
+   "mem_available_while_held": 1056952320
+  }
+ },
+ "memory": {
+  "kind": "snapshot",
+  "cpu": {
+   "rss_mib": 1380.98828125,
+   "peak_rss_mib": 1602.65234375
+  },
+  "gpu": {
+   "allocated_mib": 192.51025390625,
+   "reserved_mib": 194.0,
+   "peak_allocated_mib": 192.51025390625,
+   "peak_reserved_mib": 194.0,
+   "device_used_mib_mem_get_info": 999.3125,
+   "nvidia_smi_compute_apps_raw": "247323, [N/A]",
+   "nvidia_smi_memory_used_raw": "276",
+   "process_used_mib_nvidia_smi": null,
+   "device_used_mib_nvidia_smi": 276.0
+  },
+  "pinned_host": {
+   "allocated_bytes.allocated": 304087040,
+   "allocated_bytes.current": 304087040,
+   "allocated_bytes.freed": 0,
+   "allocated_bytes.peak": 304087040
+  },
+  "evidence_grade": "diagnostic"
+ },
+ "status": "PASS",
+ "reasons": [],
+ "execution_status": "PASS",
+ "execution_reasons": [],
+ "hypothesis_result": "NOT_EVALUATED",
+ "hypothesis_reason": "no hypothesis declared for this run"
+}

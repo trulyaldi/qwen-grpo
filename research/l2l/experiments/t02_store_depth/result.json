@@ -1,0 +1,163 @@
+{
+ "schema": 2,
+ "name": "t02_store_depth",
+ "case": "store_depth",
+ "kind": "memory",
+ "created_utc": "20261116T213914Z",
+ "hypothesis": {
+  "id": "H07",
+  "statement": "Bounded layer residency reduces GPU weight-memory dependence on total model depth.",
+  "statement_ticket11": "GPU weight residency remains bounded as model depth increases.",
+  "kind": "memory",
+  "prediction": "streamed_constant_resident_increasing",
+  "criterion": "Written before the Ticket 02 run. SUPPORTED iff, over every measured depth, the streamed peak of PyTorch-allocated GPU memory (store build + every layer copied through the fixed buffer pool) is identical to the byte, and the peak with the same decoder layers resident on the GPU strictly increases with depth. NOT_SUPPORTED if the streamed peak differs between any two depths. INCONCLUSIVE otherwise. Allocator statistics only (diagnostic grade): this is a statement about PyTorch allocations, not about process-level or device-level memory.",
+  "tickets": [
+   "02",
+   "11"
+  ],
+  "status": "untested",
+  "evidence": []
+ },
+ "fault_injection": false,
+ "options": {
+  "depths": "(2, 4, 8, 16, 32)"
+ },
+ "identity": {
+  "config_path": "research/l2l/configs/store.yaml",
+  "config_sha256": "e84db9dd6c03770e77c6c7ef5226cfb3ee24e2744f8f5742ad1e0297f50dd02e",
+  "config_fields_used": [
+   "execution"
+  ],
+  "execution": {
+   "backend": "l2l_sync",
+   "weight_storage": "pinned",
+   "resident_layers": 0,
+   "weight_buffers": 2,
+   "prefetch_depth": 0,
+   "activation_checkpointing": true,
+   "vocab_chunk_size": null,
+   "kv_cache": "gpu"
+  },
+  "fixtures_sha256": {
+   "0.6b-like": "3b6317b8359a40cfbd33e2c575de8d35a4fdf5648b4b8edce62fa61961dbb293",
+   "4b-like": "8f9e6fa72c0f15eadbd89cf6397ed786e8de841bee4d081679dd4e96043b438c"
+  },
+  "tolerances_sha256": "0e4e29d6b58b6f1a01c8e0b49bf4b17327245d9a4433d339f29edd4d1c8fe179",
+  "input_sha256": "cb7569af732767aef67f3de2ebb9b166a498728e2a478e01e70c7e52cd68bd36"
+ },
+ "provenance": {
+  "git_commit": "721d064a5ac5a87045dfec1ff2608c9381aecac9",
+  "git_tracked_dirty": false,
+  "python": "3.12.3",
+  "platform": "Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "packages": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "torch_cuda": "12.6",
+  "cuda_available": true,
+  "gpu": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+  "torch_threads": 6
+ },
+ "errors": [],
+ "required_measurements": [
+  "gpu_memory"
+ ],
+ "measurements": {
+  "depths": [
+   {
+    "depth": 2,
+    "max_slab_bytes": 1574400,
+    "store_bytes": 3148800,
+    "planned_buffer_bytes": 3148800,
+    "streamed_peak_allocated": 3148800,
+    "resident_peak_allocated": 3239936,
+    "build_allocated_delta": 0,
+    "view_problems": 0
+   },
+   {
+    "depth": 4,
+    "max_slab_bytes": 1574400,
+    "store_bytes": 6297600,
+    "planned_buffer_bytes": 3148800,
+    "streamed_peak_allocated": 3148800,
+    "resident_peak_allocated": 6389760,
+    "build_allocated_delta": 0,
+    "view_problems": 0
+   },
+   {
+    "depth": 8,
+    "max_slab_bytes": 1574400,
+    "store_bytes": 12595200,
+    "planned_buffer_bytes": 3148800,
+    "streamed_peak_allocated": 3148800,
+    "resident_peak_allocated": 12689408,
+    "build_allocated_delta": 0,
+    "view_problems": 0
+   },
+   {
+    "depth": 16,
+    "max_slab_bytes": 1574400,
+    "store_bytes": 25190400,
+    "planned_buffer_bytes": 3148800,
+    "streamed_peak_allocated": 3148800,
+    "resident_peak_allocated": 25288704,
+    "build_allocated_delta": 0,
+    "view_problems": 0
+   },
+   {
+    "depth": 32,
+    "max_slab_bytes": 1574400,
+    "store_bytes": 50380800,
+    "planned_buffer_bytes": 3148800,
+    "streamed_peak_allocated": 3148800,
+    "resident_peak_allocated": 50487296,
+    "build_allocated_delta": 0,
+    "view_problems": 0
+   }
+  ],
+  "layer_shape": {
+   "hidden_size": 256,
+   "intermediate_size": 768,
+   "num_attention_heads": 4,
+   "num_key_value_heads": 2,
+   "head_dim": 64
+  },
+  "dtype": "bfloat16",
+  "weight_buffers": 2,
+  "storage": "pinned",
+  "reading": "torch.cuda.max_memory_allocated() minus the allocation before the phase (PyTorch allocator only; diagnostic grade)"
+ },
+ "memory": {
+  "kind": "snapshot",
+  "cpu": {
+   "rss_mib": 846.2109375,
+   "peak_rss_mib": 883.90234375
+  },
+  "gpu": {
+   "allocated_mib": 0.0,
+   "reserved_mib": 0.0,
+   "peak_allocated_mib": 48.1484375,
+   "peak_reserved_mib": 50.0,
+   "device_used_mib_mem_get_info": 805.3125,
+   "nvidia_smi_compute_apps_raw": "247231, [N/A]",
+   "nvidia_smi_memory_used_raw": "82",
+   "process_used_mib_nvidia_smi": null,
+   "device_used_mib_nvidia_smi": 82.0
+  },
+  "pinned_host": {
+   "allocated_bytes.allocated": 0,
+   "allocated_bytes.current": 0,
+   "allocated_bytes.freed": 0,
+   "allocated_bytes.peak": 0
+  },
+  "evidence_grade": "diagnostic"
+ },
+ "status": "PASS",
+ "reasons": [],
+ "execution_status": "PASS",
+ "execution_reasons": [],
+ "hypothesis_result": "SUPPORTED",
+ "hypothesis_reason": "streamed peak 3148800 B at every depth; resident peak [3239936, 6389760, 12689408, 25288704, 50487296]"
+}

@@ -1,0 +1,482 @@
+{
+ "schema": 2,
+ "name": "t02_store_build_qwen3_0.6b",
+ "case": "store_build",
+ "kind": "memory",
+ "created_utc": "20261116T213953Z",
+ "hypothesis": null,
+ "fault_injection": false,
+ "options": {},
+ "identity": {
+  "config_path": "research/l2l/configs/store_qwen3_0.6b.yaml",
+  "config_sha256": "66187917dcbe8321696247d5ed8dd2ba4aa9337841d874b244a6053c78dd48c0",
+  "config_fields_used": [
+   "model.name",
+   "model.dtype",
+   "lora",
+   "execution"
+  ],
+  "execution": {
+   "backend": "l2l_sync",
+   "weight_storage": "pinned",
+   "resident_layers": 0,
+   "weight_buffers": 2,
+   "prefetch_depth": 0,
+   "activation_checkpointing": true,
+   "vocab_chunk_size": null,
+   "kv_cache": "gpu"
+  },
+  "fixtures_sha256": {
+   "0.6b-like": "3b6317b8359a40cfbd33e2c575de8d35a4fdf5648b4b8edce62fa61961dbb293",
+   "4b-like": "8f9e6fa72c0f15eadbd89cf6397ed786e8de841bee4d081679dd4e96043b438c"
+  },
+  "tolerances_sha256": "0e4e29d6b58b6f1a01c8e0b49bf4b17327245d9a4433d339f29edd4d1c8fe179",
+  "input_sha256": "cb7569af732767aef67f3de2ebb9b166a498728e2a478e01e70c7e52cd68bd36"
+ },
+ "provenance": {
+  "git_commit": "721d064a5ac5a87045dfec1ff2608c9381aecac9",
+  "git_tracked_dirty": false,
+  "python": "3.12.3",
+  "platform": "Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "packages": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "torch_cuda": "12.6",
+  "cuda_available": true,
+  "gpu": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+  "torch_threads": 6
+ },
+ "errors": [],
+ "required_measurements": [],
+ "measurements": {
+  "start": {
+   "mem_available": 2116481024,
+   "rss": 728248320,
+   "peak_rss": 728248320
+  },
+  "model_bytes": 1192099840,
+  "store_bytes_unaligned": 880932864,
+  "projected_peak_bytes": 2028868096,
+  "margin_mib": 768,
+  "floor_mib": 512,
+  "projection": "model + largest slab + margin (assumes adopted layers release storage)",
+  "loaded": {
+   "mem_available": 2110472192,
+   "rss": 748720128,
+   "peak_rss": 748720128
+  },
+  "per_layer": [
+   {
+    "layer": 0,
+    "mem_available": 2014375936,
+    "rss": 899911680,
+    "peak_rss": 899911680
+   },
+   {
+    "layer": 1,
+    "mem_available": 1977700352,
+    "rss": 948957184,
+    "peak_rss": 948957184
+   },
+   {
+    "layer": 2,
+    "mem_available": 1941864448,
+    "rss": 1009479680,
+    "peak_rss": 1009479680
+   },
+   {
+    "layer": 3,
+    "mem_available": 1924120576,
+    "rss": 1071955968,
+    "peak_rss": 1071955968
+   },
+   {
+    "layer": 4,
+    "mem_available": 1884274688,
+    "rss": 1127735296,
+    "peak_rss": 1127735296
+   },
+   {
+    "layer": 5,
+    "mem_available": 1851486208,
+    "rss": 1186709504,
+    "peak_rss": 1186709504
+   },
+   {
+    "layer": 6,
+    "mem_available": 1826799616,
+    "rss": 1244577792,
+    "peak_rss": 1244577792
+   },
+   {
+    "layer": 7,
+    "mem_available": 1811021824,
+    "rss": 1307004928,
+    "peak_rss": 1307004928
+   },
+   {
+    "layer": 8,
+    "mem_available": 1774592000,
+    "rss": 1369178112,
+    "peak_rss": 1369178112
+   },
+   {
+    "layer": 9,
+    "mem_available": 1740427264,
+    "rss": 1431044096,
+    "peak_rss": 1431044096
+   },
+   {
+    "layer": 10,
+    "mem_available": 1710055424,
+    "rss": 1493970944,
+    "peak_rss": 1493970944
+   },
+   {
+    "layer": 11,
+    "mem_available": 1671426048,
+    "rss": 1556508672,
+    "peak_rss": 1556508672
+   },
+   {
+    "layer": 12,
+    "mem_available": 1657892864,
+    "rss": 1618063360,
+    "peak_rss": 1618063360
+   },
+   {
+    "layer": 13,
+    "mem_available": 1623277568,
+    "rss": 1674715136,
+    "peak_rss": 1674715136
+   },
+   {
+    "layer": 14,
+    "mem_available": 1589551104,
+    "rss": 1729736704,
+    "peak_rss": 1729736704
+   },
+   {
+    "layer": 15,
+    "mem_available": 1565511680,
+    "rss": 1783123968,
+    "peak_rss": 1783123968
+   },
+   {
+    "layer": 16,
+    "mem_available": 1532936192,
+    "rss": 1829339136,
+    "peak_rss": 1829339136
+   },
+   {
+    "layer": 17,
+    "mem_available": 1490984960,
+    "rss": 1858854912,
+    "peak_rss": 1858854912
+   },
+   {
+    "layer": 18,
+    "mem_available": 1469956096,
+    "rss": 1857376256,
+    "peak_rss": 1861976064
+   },
+   {
+    "layer": 19,
+    "mem_available": 1428914176,
+    "rss": 1877164032,
+    "peak_rss": 1883987968
+   },
+   {
+    "layer": 20,
+    "mem_available": 1410666496,
+    "rss": 1858715648,
+    "peak_rss": 1883987968
+   },
+   {
+    "layer": 21,
+    "mem_available": 1412075520,
+    "rss": 1919205376,
+    "peak_rss": 1919205376
+   },
+   {
+    "layer": 22,
+    "mem_available": 1470570496,
+    "rss": 1982144512,
+    "peak_rss": 1982144512
+   },
+   {
+    "layer": 23,
+    "mem_available": 1480290304,
+    "rss": 2045075456,
+    "peak_rss": 2045075456
+   },
+   {
+    "layer": 24,
+    "mem_available": 1490878464,
+    "rss": 2108014592,
+    "peak_rss": 2108014592
+   },
+   {
+    "layer": 25,
+    "mem_available": 1536692224,
+    "rss": 2170949632,
+    "peak_rss": 2170949632
+   },
+   {
+    "layer": 26,
+    "mem_available": 1553903616,
+    "rss": 2233212928,
+    "peak_rss": 2233212928
+   },
+   {
+    "layer": 27,
+    "mem_available": 1521942528,
+    "rss": 2294681600,
+    "peak_rss": 2294681600
+   }
+  ],
+  "end": {
+   "mem_available": 1590190080,
+   "rss": 2284285952,
+   "peak_rss": 3163987968
+  },
+  "store": {
+   "storage": "pinned",
+   "layers": 28,
+   "slab_bytes": [
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888
+   ],
+   "store_bytes": 880932864,
+   "max_slab_bytes": 31461888,
+   "registered_bytes": 881047552,
+   "tensors": 308,
+   "dtype": "torch.bfloat16"
+  },
+  "plan": {
+   "layers": 28,
+   "streamed_layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27
+   ],
+   "resident_layers": [],
+   "max_slab_bytes": 31461888,
+   "frozen_bytes": [
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888
+   ],
+   "slab_bytes": [
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888,
+    31461888
+   ],
+   "tied_embeddings": true,
+   "items": {
+    "cpu.store": {
+     "bytes": 881047552,
+     "kind": "exact",
+     "note": "28 slabs, tensors aligned to 256 B, + up to one page each for alignment"
+    },
+    "cpu.pinned": {
+     "bytes": 881047552,
+     "kind": "exact",
+     "note": "cudaHostRegister of each slab allocation (exact size + one page)"
+    },
+    "cpu.pinned_if_pin_memory": {
+     "bytes": 939524096,
+     "kind": "exact",
+     "note": "what pin_memory=True would hold (CachingHostAllocator rounds to 2^k)"
+    },
+    "gpu.weight_buffers": {
+     "bytes": 62923776,
+     "kind": "exact",
+     "note": "2 x largest slab (31461888 B)"
+    },
+    "gpu.resident_layers": {
+     "bytes": 0,
+     "kind": "exact",
+     "note": "last 0 decoder layers (assumption, see module doc)"
+    },
+    "gpu.embedding_and_head": {
+     "bytes": 311164928,
+     "kind": "exact",
+     "note": "tied: one tensor"
+    },
+    "gpu.final_norm": {
+     "bytes": 2048,
+     "kind": "exact",
+     "note": ""
+    },
+    "gpu.lora": {
+     "bytes": 2097152,
+     "kind": "exact",
+     "note": "12 fp32 tensors"
+    },
+    "gpu.lora_grads": {
+     "bytes": 2097152,
+     "kind": "exact",
+     "note": "one gradient per LoRA tensor"
+    },
+    "gpu.adamw_state": {
+     "bytes": 4194304,
+     "kind": "exact",
+     "note": "exp_avg + exp_avg_sq in fp32"
+    }
+   },
+   "gpu_exact_bytes": 382479360,
+   "unmeasured": [
+    "CUDA context",
+    "allocator overhead",
+    "non-PyTorch allocations"
+   ]
+  },
+  "build_delta": {
+   "allocated": 0,
+   "device_used": 0
+  },
+  "verify_problems": [],
+  "checkpoint_tensors_compared": 308,
+  "checkpoint_mismatches": [],
+  "checkpoint_missing": [],
+  "checkpoint_layer_tensors_not_stored": [],
+  "pinned_views": 308,
+  "stored_tensors": 308,
+  "tied": true
+ },
+ "memory": {
+  "kind": "snapshot",
+  "cpu": {
+   "rss_mib": 2178.4921875,
+   "peak_rss_mib": 3017.4140625
+  },
+  "gpu": {
+   "allocated_mib": 0.0,
+   "reserved_mib": 0.0,
+   "peak_allocated_mib": 0.0,
+   "peak_reserved_mib": 0.0,
+   "device_used_mib_mem_get_info": 805.3125,
+   "nvidia_smi_compute_apps_raw": "247619, [N/A]",
+   "nvidia_smi_memory_used_raw": "82",
+   "process_used_mib_nvidia_smi": null,
+   "device_used_mib_nvidia_smi": 82.0
+  },
+  "pinned_host": {
+   "allocated_bytes.allocated": 0,
+   "allocated_bytes.current": 0,
+   "allocated_bytes.freed": 0,
+   "allocated_bytes.peak": 0
+  },
+  "evidence_grade": "diagnostic"
+ },
+ "status": "PASS",
+ "reasons": [],
+ "execution_status": "PASS",
+ "execution_reasons": [],
+ "hypothesis_result": "NOT_EVALUATED",
+ "hypothesis_reason": "no hypothesis declared for this run"
+}

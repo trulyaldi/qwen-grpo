@@ -98,4 +98,9 @@ Not yet read: Chen et al. 2016, FlexGen, DFlash. They are cited only from the ti
 
 ## Measurements of this host that the papers do not give (Ticket 02, `research/l2l/experiments/t02_*`)
 
-These are filled in from the saved results; see `docs/l2l/02_weight_store.md`.
+See `docs/l2l/02_weight_store.md` for the measured values:
+- `pin_memory=True` power-of-two rounding (+33% for one 4B slab);
+- `is_pinned()` following the storage base pointer;
+- pinned vs pageable H2D at 6.58 vs 4.44 GB/s;
+- `RLIMIT_MEMLOCK` not binding `cudaHostRegister` under WSL2;
+- the unmeasured WSL2 page-locked ceiling (≥ 512 MiB).
