@@ -21,6 +21,7 @@ def main(argv=None):
     r.add_argument("--config", required=True, type=Path)
     r.add_argument("--name")
     r.add_argument("--perturb", help="fault injection name=rel, e.g. logits=1e-6")
+    r.add_argument("--hypothesis", help="hypothesis id from research/l2l/hypotheses.yaml that this run evaluates")
     r.add_argument("--trials", type=int, default=20)
     r.add_argument("--warmup", type=int, default=3)
     r.add_argument("--device", default="cpu")
@@ -31,7 +32,8 @@ def main(argv=None):
         print(lab.report(a.run, root=lab.RESULTS))
         return
     opts = {"trials": a.trials, "warmup": a.warmup, "device": a.device} if a.case == "fixture_timing" else {}
-    result = lab.run(a.case, a.config, a.name, root=lab.RESULTS, perturbation=a.perturb, **opts)
+    result = lab.run(a.case, a.config, a.name, root=lab.RESULTS, perturbation=a.perturb,
+                     hypothesis_id=a.hypothesis, **opts)
     print(lab.markdown(result))
     return result
 

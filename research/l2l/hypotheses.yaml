@@ -1,6 +1,7 @@
 # Research hypotheses of the L2L + streaming work. kind: correctness (explicit numerical acceptance thresholds,
-# research/l2l/tolerances.yaml) or performance (repeated timings with uncertainty). status: untested | PASS | FAIL |
-# BLOCKED, updated only from saved results under research/l2l/experiments/ (cite the run names in `evidence`).
+# research/l2l/tolerances.yaml) or performance (repeated timings with uncertainty). status: untested | SUPPORTED |
+# NOT_SUPPORTED | INCONCLUSIVE (lab.hypothesis_result), updated only from saved results under research/l2l/experiments/
+# whose execution_status is PASS (cite the run names in `evidence`). A completed experiment is not a supported hypothesis.
 
 H01:
   statement: Synchronous L2L produces the same logits as resident Qwen3 execution.
@@ -35,6 +36,7 @@ H05:
 H06:
   statement: Double-buffered asynchronous prefetching reduces execution time without changing numerical results.
   kind: performance  # with a correctness precondition: every equivalence test still passes under l2l_async
+  prediction: candidate_faster  # candidate l2l_async vs reference l2l_sync: median-ratio 95% CI entirely below 1
   tickets: ["08"]
   status: untested
   evidence: []

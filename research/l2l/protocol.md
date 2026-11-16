@@ -4,7 +4,7 @@ How an L2L hypothesis (`hypotheses.yaml`) is tested and how its outcome is recor
 `scripts/l2l_lab.py` (logic in `qwen_grpo/lab.py`).
 
 ```
-python scripts/l2l_lab.py run --case <case> --config <yaml> [--name N] [--perturb name=rel] [--trials k] [--device d]
+python scripts/l2l_lab.py run --case <case> --config <yaml> [--name N] [--hypothesis H..] [--perturb name=rel] [--trials k] [--device d]
 python scripts/l2l_lab.py report --run <name>
 ```
 
@@ -42,38 +42,49 @@ A run that produces no measurements cannot pass.
 
 ## Memory evidence
 
-`lab.memory` takes a **snapshot**, not a peak trace. Peak sampling is Ticket 11. It records:
-- CPU RSS and its high-water mark;
-- on CUDA, the allocator's current and peak allocated/reserved bytes, `cudaMemGetInfo` (total − free), `nvidia-smi`
-  `memory.used`, the per-process `nvidia-smi` query, and the pinned host allocator statistics.
+`lab.memory` takes a **snapshot**, not a peak trace. Peak sampling is Ticket 11. Each reading keeps its own meaning, and
+none is combined with another into one number:
 
-`cudaMemGetInfo` includes the CUDA context and every other process on the GPU, so it is an upper bound for this
-process. On this host (WSL2), `nvidia-smi` lists the process with `[N/A]` memory, and its `memory.used` reads below this
-process's own usage (see below). Its values are therefore recorded raw and do not count as evidence. GPU memory
-evidence counts as complete when the allocator statistics and the `cudaMemGetInfo` reading are present. The pinned
-host allocator statistics are recorded raw; their meaning has not been verified, and they are not evidence of pinning. A case on CUDA requires it,
-and the run fails without it. An allocator limit is never treated as proof of a budget.
+| reading | scope | meaning |
+|---|---|---|
+| PyTorch peak allocated | this process, PyTorch allocator | bytes in live tensors; excludes the CUDA context, the allocator's cache and non-PyTorch allocations |
+| PyTorch peak reserved | this process, PyTorch allocator | allocated plus cached blocks; still excludes the CUDA context and non-PyTorch allocations |
+| `cudaMemGetInfo` total − free | **device-wide** | every process and CUDA context on the GPU (and, under WSL2, whatever the Windows host holds); not process-specific |
+| `nvidia-smi` raw | device / per process | `memory.used` and the per-process query, stored verbatim |
+| CPU RSS and high-water mark | this process | `/proc/self/status` |
+| pinned host allocator statistics | this process | recorded raw; their meaning is unverified, and they are not evidence that memory is pinned (Ticket 02 checks `is_pinned()` directly) |
 
-**Open (Ticket 11).** On this host the device-level readings disagree (`t01_timing_cuda`):
-- `cudaMemGetInfo`: 857 MiB used;
-- `nvidia-smi memory.used`: 134 MiB;
-- the process's allocator: 22 MiB reserved.
+**Evidence grades** (`lab.evidence_grade`, stored in every snapshot):
 
-The process is listed by `nvidia-smi`, but with `[N/A]` memory. The `nvidia-smi` figure is below what this process
-holds (reserved memory plus the CUDA context), so it cannot be an upper bound here. Until this is resolved, budget
-claims use `cudaMemGetInfo` and say so. Whether "complete evidence" should require it specifically is a decision for
-the owner.
+| grade | condition | use |
+|---|---|---|
+| `none` | no GPU reading | — |
+| `incomplete` | the allocator statistics or `cudaMemGetInfo` are missing | a CUDA case that requires GPU memory fails |
+| `diagnostic` | allocator statistics + `cudaMemGetInfo` | local development on this WSL2 host |
+| `assignment` | also a numeric per-process `nvidia-smi` reading, outside WSL2 | the only grade that may support a claim that the 8 GB budget was respected |
+
+On this host (WSL2) `nvidia-smi` lists the process with `[N/A]` memory, and its `memory.used` read 134 MiB while
+`cudaMemGetInfo` read 857 MiB and the allocator held 22 MiB reserved (`t01_timing_cuda`). That reading is below what the
+process itself must hold (reserved memory plus the CUDA context), so `nvidia-smi` is unreliable here. Its output is kept
+raw and is not counted. Local measurements are therefore at most `diagnostic`. **No 8 GB compliance is claimed without
+`assignment`-grade evidence from the target Linux environment**, and an allocator limit is never treated as proof of a
+budget.
 
 ## Statuses
 
-| status | meaning |
-|---|---|
-| PASS | the acceptance rule above holds on the recorded raw data |
-| FAIL | it does not, or the experiment was ill-posed: missing fixture, fixture built with other settings or package versions, config dtype ≠ fixture dtype, a quantity without a threshold, an unrepresentable perturbation, or an exception |
-| BLOCKED | the candidate cannot run with this code base yet (an `unimplemented` setting); never a PASS |
+Each result (schema 2) records three fields, all derived from the raw data and re-checked by `report`:
 
-The status is derived from the raw data by `lab.decide`. `report` re-derives it and refuses a result whose recorded
-status disagrees with its data.
+| field | values | meaning |
+|---|---|---|
+| `execution_status` | PASS / FAIL / BLOCKED | did the experiment run validly? FAIL: an exception, an ill-posed setup (missing fixture, fixture built with other settings or package versions, config dtype ≠ fixture dtype, a quantity without a threshold, an unrepresentable perturbation), missing required measurements, no data, a drifted reference, or too few trials. BLOCKED: the candidate cannot run with this code base yet. |
+| `hypothesis_result` | SUPPORTED / NOT_SUPPORTED / INCONCLUSIVE / NOT_EVALUATED | the outcome for the hypothesis the run declares (`--hypothesis H..`). Correctness: SUPPORTED iff every comparison meets its predefined threshold, NOT_SUPPORTED otherwise; no significance test. Performance: from the median-ratio bootstrap CI against the declared `prediction`; a CI containing 1 is INCONCLUSIVE. NOT_EVALUATED: no hypothesis declared, a fault-injection run, or an execution that is not PASS. |
+| `status` | PASS / FAIL / BLOCKED | the Ticket 01 acceptance status, unchanged in meaning: PASS iff execution PASS and, for correctness, every comparison is within its threshold |
+
+A benchmark can therefore execute (`execution_status` PASS) without supporting a speedup (`INCONCLUSIVE`). A completed
+experiment is never by itself a supported hypothesis.
+
+Ticket 01 results (no `schema` field) record `status` only. `report` checks them and derives the other two fields for
+display, without rewriting their files.
 
 ## Records
 

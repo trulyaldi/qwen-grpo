@@ -70,7 +70,7 @@ qwen_grpo/          implementation (no experiment hyperparameters)
   cleanup.py        `remove`: deletes a run's artifacts only when ownership is certain
 configs/            default.yaml (parent of every experiment), experiments/*.yaml (small overrides)
 scripts/run.py      the command line: train | validate | test | verify | report | remove
-research/           historical experiments (baseline.py writes the shared results/baseline/), TRL reference
+research/           historical experiments (baseline.py writes the shared results/baseline/); the TRL reference was removed in 4424e0f (git history)
 tests/              unit and integration tests; tests/conftest.py forbids loading weights and touching runs/, results/, checkpoints/
 docs/architecture.md  one GRPO + LoRA step tensor by tensor: shapes, objective, gradient flow, precision
 ```
@@ -167,6 +167,6 @@ They cannot be resumed into `runs/`. The shared base-model baseline is `results/
 | Base model metrics and AUC | `results/benchmarks/baseline.{json,md}`; raw predictions `results/baseline/{validation,test}.json` |
 | Earlier multi-step runs | `results/benchmarks/<run>.{json,md}`, `results/<run>/`, `results/verification/<run>_step<N>/report.md` |
 | Implementation audit and the POSITIVE-drift analysis | `results/grpo_lora_audit.md` |
-| Independent TRL reference | `research/trl_reference/findings.md` and `research/trl_reference/results/` |
+| Independent TRL reference | removed in `4424e0f`; recover with `git show 4424e0f^:research/trl_reference/findings.md` |
 
 `results/grpo_lora_audit.md` and `research/trl_reference/findings.md` cite file paths and line numbers from before the `qwen_grpo/` + `research/` reorganization. Read them against tag `pre-refactor` (commit `a038e17`). The code they describe was moved, not changed.

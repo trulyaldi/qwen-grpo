@@ -163,7 +163,7 @@ def test_results_are_never_overwritten_and_report_rechecks_the_status(tmp_path):
     r = json.loads(path.read_text())
     r["comparisons"][0]["pass"] = False                                     # tampered raw data, recorded status PASS
     path.write_text(json.dumps(r))
-    with pytest.raises(SystemExit, match="disagrees with its raw data"):
+    with pytest.raises(SystemExit, match="disagree with the raw data"):
         lab.report("once", root=tmp_path)
 
 
@@ -192,3 +192,69 @@ def test_nvidia_smi_not_available_readings_are_recorded_raw_not_parsed(monkeypat
     smi = lab._nvidia_smi()
     assert smi["process_used_mib_nvidia_smi"] is None and smi["device_used_mib_nvidia_smi"] is None
     assert smi["nvidia_smi_compute_apps_raw"].endswith("[N/A]")
+
+
+# --- execution status vs hypothesis result (schema 2) -----------------------------------------------------------------
+
+def correctness_result(passes, **kw):
+    rows = [{"name": f"t{i}", "pass": p, "reason": None if p else "over"} for i, p in enumerate(passes)]
+    return base_result(comparisons=rows, reference_integrity=[], hypothesis={"id": "H01", "kind": "correctness"}, **kw)
+
+
+def test_threshold_violation_is_an_outcome_not_an_execution_failure():
+    ok, bad = correctness_result([True, True]), correctness_result([True, False])
+    assert lab.execution_check(bad)[0] == "PASS" and lab.decide(bad)[0] == "FAIL"
+    assert lab.hypothesis_result(ok)[0] == "SUPPORTED" and lab.hypothesis_result(bad)[0] == "NOT_SUPPORTED"
+    assert lab.hypothesis_result(correctness_result([True], fault_injection=True))[0] == "NOT_EVALUATED"
+    assert lab.hypothesis_result(correctness_result([True], blocked="no GPU"))[0] == "NOT_EVALUATED"
+    assert lab.hypothesis_result(correctness_result([True], errors=["setup: x"]))[0] == "NOT_EVALUATED"
+    assert lab.hypothesis_result({**ok, "hypothesis": None})[0] == "NOT_EVALUATED"
+
+
+@pytest.mark.parametrize("ci, expected", [([0.8, 0.95], "SUPPORTED"), ([0.9, 1.1], "INCONCLUSIVE"),
+                                          ([1.0, 1.2], "NOT_SUPPORTED")])
+def test_a_valid_benchmark_supports_a_speedup_only_when_the_ci_excludes_one(ci, expected):
+    trials = {"trials_s": [0.1] * lab.MIN_TRIALS}
+    r = base_result("performance", timing={"reference": trials, "candidate": trials}, conclusion={"ci95": ci},
+                    hypothesis={"id": "H06", "kind": "performance", "prediction": "candidate_faster"})
+    assert lab.execution_check(r)[0] == "PASS" and lab.hypothesis_result(r)[0] == expected
+
+
+def test_declared_hypotheses_must_exist_and_match_the_case_kind(tmp_path):
+    with pytest.raises(SystemExit, match="unknown hypothesis"):
+        lab.run("fixture_equivalence", RESIDENT, "h", root=tmp_path, hypothesis_id="H99")
+    with pytest.raises(SystemExit, match="H06 is a performance hypothesis"):
+        lab.run("fixture_equivalence", RESIDENT, "h", root=tmp_path, hypothesis_id="H06")
+
+
+def test_new_results_record_both_fields_and_report_rechecks_them(tmp_path):
+    r = lab.run("fixture_equivalence", RESIDENT, "s2", root=tmp_path)
+    assert (r["schema"], r["execution_status"], r["hypothesis_result"]) == (2, "PASS", "NOT_EVALUATED")
+    path = tmp_path / "s2" / "result.json"
+    saved = json.loads(path.read_text())
+    saved["hypothesis_result"] = "SUPPORTED"
+    path.write_text(json.dumps(saved))
+    with pytest.raises(SystemExit, match="disagree with the raw data"):
+        lab.report("s2", root=tmp_path)
+
+
+def test_ticket01_results_are_checked_but_never_rewritten(tmp_path):
+    import shutil
+
+    src = lab.RESULTS / "t01_timing_cuda"
+    shutil.copytree(src, tmp_path / "t01_timing_cuda")
+    before = {f: (tmp_path / "t01_timing_cuda" / f).read_bytes() for f in ("result.json", "summary.md")}
+    text = lab.report("t01_timing_cuda", root=tmp_path)
+    assert "derived by report, not recorded: execution_status PASS, hypothesis_result NOT_EVALUATED" in text
+    assert before == {f: (tmp_path / "t01_timing_cuda" / f).read_bytes() for f in before}
+
+
+def test_evidence_grade_never_upgrades_wsl_or_incomplete_readings():
+    allocator = {"allocated_mib": 1, "reserved_mib": 1, "peak_allocated_mib": 1, "peak_reserved_mib": 1}
+    diag = {"gpu": {**allocator, "device_used_mib_mem_get_info": 900.0, "process_used_mib_nvidia_smi": None}}
+    full = {"gpu": {**diag["gpu"], "process_used_mib_nvidia_smi": 700.0}}
+    assert lab.evidence_grade({"gpu": None}) == "none"
+    assert lab.evidence_grade({"gpu": allocator}) == "incomplete"
+    assert lab.evidence_grade(diag, "6.8.0-generic") == "diagnostic"
+    assert lab.evidence_grade(full, "6.18.58.1-microsoft-standard-WSL2") == "diagnostic"
+    assert lab.evidence_grade(full, "6.8.0-generic") == "assignment"

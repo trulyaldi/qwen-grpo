@@ -94,3 +94,71 @@ None of the failures involves code changed by Ticket 00:
 | `test_historical::test_reference_run_resumes_under_the_current_code` | same cause. **Not run with a GPU.** |
 
 `scripts/l2l_baseline.py` refuses to report PASS if any failure lacks a documented cause.
+
+### Classification of the six baseline failures (after Ticket 01)
+
+`python -m pytest -q tests/test_historical.py -rA` **with CUDA visible**: 19 passed, including both tests that failed
+in the CPU baseline. Their cause is therefore confirmed: `torch.load` without `map_location` on CUDA-saved state when
+CUDA is hidden. No production code was changed.
+
+| # | Test | Class | Cause |
+|---|---|---|---|
+| 1 | `test_historical::test_saved_log_and_checkpoint_configs_are_the_reference_yaml` | environment | passes with CUDA visible; fails on a CPU-only run (row 17 of `architecture.md`) |
+| 2 | `test_historical::test_reference_run_resumes_under_the_current_code` | environment | same |
+| 3 | `test_config::test_new_runs_reject_the_historical_schema_with_the_offending_keys` | stale assumption, **real finding** | see below |
+| 4 | `test_config::test_historical_configs_in_the_repository_still_load_as_records` | stale assumption | see below |
+| 5 | `test_config::test_current_configs_load_with_distinct_run_names` | stale assumption (older than `48b2028`) | see below |
+| 6 | `tests/test_trl_reference.py` (collection error) | obsolete | imports the deleted `research/trl_reference` |
+
+None was caused by Ticket 00 or Ticket 01 code.
+
+### Stale tests
+
+No test was changed or deleted. Recommendations for the owner:
+
+**3. `test_new_runs_reject_the_historical_schema_with_the_offending_keys`**
+- *Purpose:* `config.load` must refuse historical-schema configs for new runs. The test checks this on
+  `runs/qwen/config.yaml`, on `configs/default.yaml`, and on `configs/experiments/grpo_clip_k3.yaml`, which inherits from
+  it.
+- *Why it fails:* `48b2028` rewrote `default.yaml` in the current schema, so it and `grpo_clip_k3.yaml` now load as
+  current configs.
+- *Finding:* the four experiment configs that inherit from `default.yaml` without historical keys of their own
+  (`grpo_32`, `grpo_clip_k3`, `grpo_low_lr`, `qwen3_4b`) now resolve to **different experiments**. They inherit rank 32,
+  B = 5, 512 samples, lr 5e-4 instead of the historical rank 8, B = 2 balanced, 32 samples, lr 1e-4. `grpo_1000.yaml` is
+  rejected because of its own `training.eval_every`. The test detected this. Whether the change was intended is the
+  owner's decision.
+- *Recommendation:* update, don't delete. Keep the `runs/qwen/config.yaml` case and the `batch_mode` /
+  `legacy_batch_mode` cases unchanged. Replace the two repository files with a historical-schema YAML written in
+  `tmp_path` (or with `runs/qwen/config.yaml` alone).
+- *Still covering the behaviour:* `test_historical_settings_the_code_no_longer_implements_are_refused`,
+  `test_historical_keys_move_to_their_current_names`, `test_historical_batch_modes_stay_readable_and_distinct_but_cannot_be_trained`,
+  `test_the_saved_config_of_the_reference_run_upgrades_to_the_reference_yaml`.
+
+**4. `test_historical_configs_in_the_repository_still_load_as_records`**
+- *Purpose:* the historical configs kept in the repository still load (with `historical=True`) with their recorded
+  values. Their run names stay stable. `grpo_clip_k3` differs from its parent only in `num_iterations`.
+- *Why it fails:* it asserts the old `default.yaml` values (balanced, B = 2, rank 8).
+- *Recommendation:* update once the owner decides what `configs/experiments/` should mean. Either restore the historical
+  parent under another name (for example `configs/historical_default.yaml`) and point the experiments at it, or accept
+  the rebasing and assert the new values. The `grpo_clip_k3`-differs-only-in-`num_iterations` assertion still holds and
+  is worth keeping.
+- *Still covering it:* the runs' own saved `config.yaml` files and `test_historical` (with CUDA) pin the recorded run
+  configs.
+
+**5. `test_current_configs_load_with_distinct_run_names`**
+- *Purpose:* every current config in `configs/` loads, and no two share a `run.name`, so their outputs cannot collide.
+- *Why it fails:* it excludes `default.yaml` (as historical) and requires at least 2 other configs; only `qwen.yaml`
+  remains. It failed before `48b2028` too.
+- *Recommendation:* update. Include `default.yaml` now that it is current. `default` and `qwen` are distinct, so the
+  test would pass. Drop the `>= 2` count, which encodes how many files existed rather than a property.
+- *Still covering it:* nothing else checks run-name uniqueness across files.
+
+**6. `tests/test_trl_reference.py`**
+- *Purpose:* the manual pipeline agrees with TRL's GRPO on rewards, data stream, prompts, LoRA targets and fp32
+  gradients (equal after TRL's Bessel correction), plus the saved TRL evaluation.
+- *Why it fails:* its subject, `research/trl_reference/`, was removed in `4424e0f`, and `trl` is no longer a dependency.
+- *Recommendation:* remove it, together with the reference if that stays deleted, or restore both from
+  `git show 4424e0f^:research/trl_reference/...` if an external reference is wanted again. It cannot be updated on its own.
+- *Still covering the numerical part:* `test_multistep::test_b2_opposite_labels_hand_rewards_and_independent_reference_gradient`
+  (an independent gradient), `test_grpo::test_loss_gradient_matches_finite_differences`, `test_audit::test_end_to_end_loss_by_hand_with_padding_eos_truncation_and_clipping`.
+  The TRL-specific agreement (prompt rendering and data order identical to TRL's) is no longer covered.

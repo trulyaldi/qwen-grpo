@@ -42,6 +42,8 @@ from qwen_grpo.grpo import grpo_loss
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
 TOLERANCES = ROOT / "research" / "l2l" / "tolerances.yaml"
+HYPOTHESES = ROOT / "research" / "l2l" / "hypotheses.yaml"
+SCHEMA = 2  # 2: execution_status and hypothesis_result next to status (Ticket 01 results have no schema field)
 MIN_TRIALS = 5
 BOOTSTRAP, BOOTSTRAP_SEED = 2000, 0
 
@@ -145,7 +147,21 @@ def memory(device):
                       "peak_reserved_mib": torch.cuda.max_memory_reserved() / mib,
                       "device_used_mib_mem_get_info": (total - free) / mib, **smi}
         out["pinned_host"] = {k: v for k, v in torch.cuda.host_memory_stats().items() if "allocated_bytes" in k}
+    out["evidence_grade"] = evidence_grade(out)
     return out
+
+
+def evidence_grade(mem, release=None):
+    """none (no GPU reading) | incomplete | diagnostic (allocator + cudaMemGetInfo: enough for local development) |
+    assignment (also a numeric per-process nvidia-smi reading outside WSL2). Only `assignment` may support a claim
+    that a GPU-memory budget (the 8 GB cap) was respected; nothing here combines readings into one number."""
+    g = (mem or {}).get("gpu")
+    if not g:
+        return "none"
+    if not gpu_memory_complete(mem):
+        return "incomplete"
+    wsl = "microsoft" in (release or platform.release()).lower()
+    return "assignment" if g.get("process_used_mib_nvidia_smi") is not None and not wsl else "diagnostic"
 
 
 def _nvidia_smi():
@@ -205,8 +221,9 @@ def ratio_ci(a, b):
 
 # --- status ----------------------------------------------------------------------------------------------------------
 
-def decide(result):
-    """Status and reasons from the raw data in a result (also used by `report` to re-check a saved result)."""
+def execution_check(result):
+    """Did the experiment run validly? BLOCKED, FAIL (errors, missing required measurements, no data, a drifted
+    reference, too few trials) or PASS. Threshold violations are not execution failures: they are the outcome."""
     if result.get("blocked"):
         return "BLOCKED", [result["blocked"]]
     reasons = list(result.get("errors", []))
@@ -214,10 +231,8 @@ def decide(result):
         if req == "gpu_memory" and not gpu_memory_complete(result.get("memory")):
             reasons.append("required measurement missing: gpu_memory")
     if result["kind"] == "correctness":
-        rows = result.get("comparisons", [])
-        if not rows:
+        if not result.get("comparisons"):
             reasons.append("no comparisons were produced")
-        reasons += [f"{r['name']}: {r['reason']}" for r in rows if not r["pass"]]
         if result.get("reference_integrity") is None:
             reasons.append("reference integrity was not checked")
         elif result["reference_integrity"]:
@@ -232,6 +247,57 @@ def decide(result):
         if not result.get("timing"):
             reasons.append("no timings were produced")
     return ("FAIL" if reasons else "PASS"), reasons
+
+
+def decide(result):
+    """Overall acceptance `status` (the Ticket 01 field, unchanged in meaning): BLOCKED, or PASS only if the experiment
+    executed validly and, for correctness, every comparison is within its threshold."""
+    execution, reasons = execution_check(result)
+    if execution == "BLOCKED":
+        return execution, reasons
+    failed = [f"{r['name']}: {r['reason']}" for r in result.get("comparisons", []) if not r["pass"]]
+    if result["kind"] == "correctness":  # the Ticket 01 reason order: errors, measurements, data, comparisons, integrity
+        integrity = [x for x in reasons if x.startswith(("reference integrity", "fresh reference"))]
+        reasons = [x for x in reasons if x not in integrity] + failed + integrity
+    return ("FAIL" if reasons else "PASS"), reasons
+
+
+HYPOTHESIS_RESULTS = ("SUPPORTED", "NOT_SUPPORTED", "INCONCLUSIVE", "NOT_EVALUATED")
+
+
+def hypothesis_result(result):
+    """(result, reason) for the hypothesis the run declares. Correctness: SUPPORTED iff every comparison meets its
+    predefined threshold, NOT_SUPPORTED iff any exceeds it (no significance test). Performance: from the bootstrap CI of
+    the candidate/reference median ratio against the declared prediction; a CI containing 1 is INCONCLUSIVE.
+    NOT_EVALUATED: no hypothesis declared, a fault-injection run, or the experiment did not execute validly."""
+    h = result.get("hypothesis")
+    if not h:
+        return "NOT_EVALUATED", "no hypothesis declared for this run"
+    if result.get("fault_injection"):
+        return "NOT_EVALUATED", "fault-injection run: it tests the test's power, not the hypothesis"
+    execution, _ = execution_check(result)
+    if execution != "PASS":
+        return "NOT_EVALUATED", f"execution {execution}"
+    if result["kind"] == "correctness":
+        bad = [r["name"] for r in result["comparisons"] if not r["pass"]]
+        return ("NOT_SUPPORTED", f"{len(bad)} comparisons exceed their thresholds") if bad else \
+               ("SUPPORTED", f"all {len(result['comparisons'])} comparisons within predefined thresholds")
+    prediction = h.get("prediction")
+    lo, hi = result["conclusion"]["ci95"]
+    if prediction == "candidate_faster":
+        return ("SUPPORTED", f"ratio CI {[lo, hi]} < 1") if hi < 1 else ("NOT_SUPPORTED", f"ratio CI {[lo, hi]} >= 1") \
+            if lo >= 1 else ("INCONCLUSIVE", f"ratio CI {[lo, hi]} contains 1")
+    return "NOT_EVALUATED", f"no rule for prediction {prediction!r}"
+
+
+def hypothesis(hid, kind):
+    """The declared hypothesis from research/l2l/hypotheses.yaml; its kind must match the case's."""
+    table = yaml.safe_load(HYPOTHESES.read_text())
+    if hid not in table:
+        raise SystemExit(f"unknown hypothesis {hid!r}: one of {list(table)}")
+    if table[hid]["kind"] != kind:
+        raise SystemExit(f"{hid} is a {table[hid]['kind']} hypothesis; this case is {kind}")
+    return {"id": hid, **table[hid]}
 
 
 # --- cases -----------------------------------------------------------------------------------------------------------
@@ -364,7 +430,7 @@ def provenance():
             "torch_threads": torch.get_num_threads()}
 
 
-def run(case, config_path, name=None, root=RESULTS, perturbation=None, **options):
+def run(case, config_path, name=None, root=RESULTS, perturbation=None, hypothesis_id=None, **options):
     """Run `case`, write <root>/<name>/{result.json, summary.md} whatever happens, and return the result."""
     if case not in CASES:
         raise SystemExit(f"unknown case {case!r}: one of {list(CASES)}")
@@ -377,7 +443,8 @@ def run(case, config_path, name=None, root=RESULTS, perturbation=None, **options
         raise SystemExit(f"{out} exists: experiment results are never overwritten")
     cfg = config.load(config_path)
     spec = CASES[case]
-    result = {"name": name, "case": case, "kind": spec.kind, "created_utc": stamp,
+    declared = hypothesis(hypothesis_id, spec.kind) if hypothesis_id else None
+    result = {"schema": SCHEMA, "name": name, "case": case, "kind": spec.kind, "created_utc": stamp, "hypothesis": declared,
               "fault_injection": perturbation is not None, "options": {k: str(v) for k, v in options.items()},
               "identity": {"config_path": str(config_path), "config_sha256": config.sha256(cfg),
                            "config_fields_used": list(spec.uses), "execution": config.as_dict(cfg)["execution"],
@@ -403,16 +470,29 @@ def run(case, config_path, name=None, root=RESULTS, perturbation=None, **options
     return result
 
 
+def derived(result):
+    """Every field `report` re-derives from the raw data."""
+    status, reasons = decide(result)
+    out = {"status": status, "reasons": reasons}
+    if result.get("schema", 1) >= 2:
+        execution, execution_reasons = execution_check(result)
+        h, why = hypothesis_result(result)
+        out.update(execution_status=execution, execution_reasons=execution_reasons, hypothesis_result=h,
+                   hypothesis_reason=why)
+    return out
+
+
 def _write(out, result):
-    result["status"], result["reasons"] = decide(result)
+    result.update(derived(result))
     out.mkdir(parents=True, exist_ok=False)
     (out / "result.json").write_text(json.dumps(result, indent=1, default=str) + "\n")
     (out / "summary.md").write_text(markdown(result))
 
 
 def report(name, root=RESULTS):
-    """Re-derive the status from the saved raw data, refuse a result whose recorded status disagrees, rewrite
-    summary.md."""
+    """Re-derive every status field from the saved raw data and refuse a result whose recorded fields disagree.
+    Rewrites summary.md for current-schema results only; a Ticket 01 (schema 1) result is checked and printed with its
+    hypothesis outcome derived on the fly, and its files are left exactly as recorded."""
     path = Path(root) / name / "result.json"
     if not path.exists():
         raise SystemExit(f"no experiment {name!r} under {root}")
@@ -420,12 +500,17 @@ def report(name, root=RESULTS):
     for key in ("config_sha256", "input_sha256", "tolerances_sha256"):
         if not result.get("identity", {}).get(key):
             raise SystemExit(f"{path}: identity.{key} is missing")
-    status, reasons = decide(result)
-    if (status, reasons) != (result["status"], result["reasons"]):
-        raise SystemExit(f"{path}: recorded status {result['status']} disagrees with its raw data ({status}: {reasons})")
-    text = markdown(result)
-    (path.parent / "summary.md").write_text(text)
-    return text
+    expected = derived(result)
+    if bad := {k: (result.get(k), v) for k, v in expected.items() if result.get(k) != v}:
+        raise SystemExit(f"{path}: recorded fields disagree with the raw data: {bad}")
+    if result.get("schema", 1) >= 2:
+        text = markdown(result)
+        (path.parent / "summary.md").write_text(text)
+        return text
+    execution, _ = execution_check(result)
+    h, why = hypothesis_result(result)
+    return ((path.parent / "summary.md").read_text() + f"\n(derived by report, not recorded: execution_status {execution}, "
+            f"hypothesis_result {h}: {why})\n")
 
 
 def markdown(r):
@@ -434,7 +519,9 @@ def markdown(r):
         lines.append(f"**FAULT INJECTION RUN** ({r.get('perturbation', {}).get('spec')}): a FAIL is the expected outcome.\n")
     ident = r["identity"]
     lines += [f"# {r['name']}: {r['case']} ({r['kind']})", "",
-              f"**Status: {r['status']}**", ""]
+              f"**Status: {r['status']}**" + (f" (execution {r['execution_status']}; hypothesis "
+              f"{(r.get('hypothesis') or {}).get('id', '-')}: {r['hypothesis_result']}, {r['hypothesis_reason']})"
+              if "execution_status" in r else ""), ""]
     lines += [f"- {x}" for x in r["reasons"][:20]] + ([f"- ... {len(r['reasons']) - 20} more"] if len(r["reasons"]) > 20 else [])
     p = r["provenance"]
     lines += ["", f"- commit `{p['git_commit']}` (tracked tree dirty: {p['git_tracked_dirty']}), torch {p['packages']['torch']}, "
@@ -459,5 +546,20 @@ def markdown(r):
         if c := r.get("conclusion"):
             lines.append(f"\ncandidate / reference median ratio {c['ratio']:.3f}, 95% CI {c['ci95']}: {c['statement']}")
     if r.get("memory"):
-        lines += ["", "memory snapshot: `" + json.dumps(r["memory"], default=str) + "`"]
+        lines += ["", *memory_lines(r["memory"])]
     return "\n".join(lines) + "\n"
+
+
+def memory_lines(m):
+    """The memory snapshot with each reading's meaning; never combined into one number."""
+    g, cpu = m.get("gpu"), m.get("cpu", {})
+    out = [f"memory snapshot ({m.get('kind')}), evidence grade **{m.get('evidence_grade', 'not recorded')}**:",
+           f"- CPU RSS {cpu.get('rss_mib')} MiB, high-water mark {cpu.get('peak_rss_mib')} MiB (this process)"]
+    if g:
+        out += [f"- PyTorch allocator, this process: peak allocated {g['peak_allocated_mib']:.1f} MiB, peak reserved "
+                f"{g['peak_reserved_mib']:.1f} MiB (excludes the CUDA context and non-PyTorch allocations)",
+                f"- cudaMemGetInfo total - free: {g['device_used_mib_mem_get_info']:.1f} MiB, device-wide (every process "
+                "and context on the GPU, not process-specific)",
+                f"- nvidia-smi raw: compute apps `{g['nvidia_smi_compute_apps_raw']}`, memory.used "
+                f"`{g['nvidia_smi_memory_used_raw']}` (unreliable under WSL2)"]
+    return out
