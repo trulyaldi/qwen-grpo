@@ -8,6 +8,9 @@ Two kinds of comparison, two tolerances:
   catching a wrong mask or position (those change logits by O(0.1)).
 Relative error is max|a - b| / max|b| (elementwise ratios are meaningless for logits near 0).
 
+The layer executor and callback (sections 4-5) add no arithmetic, so everything they touch is held to tolerance 0 too,
+including LoRA gradients of the GRPO loss: same graph, same kernels, same reduction order on CPU.
+
 `python -m tests.test_qwen3_forward` measures the same quantities on the real Qwen3-0.6B (GPU, fp32 and bf16); pytest
 never loads pretrained weights (tests/conftest.py).
 """
@@ -16,7 +19,9 @@ import torch
 from peft import get_peft_model
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
-from qwen_grpo.execution.qwen3_forward import explicit_forward, explicit_logprobs
+from qwen_grpo.execution.qwen3_forward import (ResidentLayerExecutor, attention_masks, explicit_forward,
+                                               explicit_logprobs, unwrap)
+from qwen_grpo.grpo import grpo_loss, response_logprobs
 from qwen_grpo.model import PRESETS, lora_config, lora_modules, target_modules
 from qwen_grpo.policy import compute_logprobs
 
@@ -25,11 +30,22 @@ VOCAB = 64
 ATTN = ["eager", "sdpa"]
 
 
-def tiny(attn, dtype=torch.float32, lora=False):
+# Two tiny shapes with the structural ratios of the real models: Qwen3-0.6B (28 layers, 16 heads / 8 KV heads = GQA 2:1,
+# 16 x 128 = 2048 attention width > H = 1024) and Qwen3-4B (36 layers, 32 / 8 = GQA 4:1, 4096 > H = 2560).
+SHAPES = {
+    "0.6b-like": dict(hidden_size=32, intermediate_size=64, num_hidden_layers=4, num_attention_heads=4,
+                      num_key_value_heads=2, head_dim=16),
+    "4b-like": dict(hidden_size=40, intermediate_size=96, num_hidden_layers=6, num_attention_heads=8,
+                    num_key_value_heads=2, head_dim=8),
+}
+
+
+def tiny(attn, dtype=torch.float32, lora=False, shape=None):
     torch.manual_seed(0)
-    model = Qwen3ForCausalLM(Qwen3Config(vocab_size=VOCAB, hidden_size=32, intermediate_size=64, num_hidden_layers=4,
-                                         num_attention_heads=4, num_key_value_heads=2, head_dim=8,
-                                         tie_word_embeddings=True, attn_implementation=attn)).to(dtype).eval()
+    dims = SHAPES[shape] if shape else dict(hidden_size=32, intermediate_size=64, num_hidden_layers=4,
+                                            num_attention_heads=4, num_key_value_heads=2, head_dim=8)
+    model = Qwen3ForCausalLM(Qwen3Config(vocab_size=VOCAB, tie_word_embeddings=True, attn_implementation=attn,
+                                         **dims)).to(dtype).eval()
     if lora:
         model = get_peft_model(model, lora_config(target_modules(model, *PRESETS["last2-attention"]))).eval()
         for _, m in lora_modules(model):  # a trained-looking adapter: B != 0, so LoRA changes the output
@@ -51,6 +67,16 @@ def left_padded(lengths, T, seed=1):
     mask = torch.stack([torch.arange(T) >= T - n for n in lengths]).long()
     ids = ids.masked_fill(mask == 0, 0)
     return ids, mask, (mask.cumsum(1) - 1).clamp(min=0)
+
+
+def rollout_batch(P=6, R=4):
+    """Hand-built rollout batch: left-padded prompts of P columns, responses of R columns with a post-EOS padded tail."""
+    prompt_ids, prompt_mask, _ = left_padded([6, 3, 4], T=P)
+    response_ids = torch.randint(0, VOCAB, (3, R), generator=torch.Generator().manual_seed(2))
+    completion_mask = torch.tensor([[1, 1, 1, 1], [1, 1, 0, 0], [1, 0, 0, 0]])
+    return {"input_ids": torch.cat([prompt_ids, response_ids], 1),
+            "attention_mask": torch.cat([prompt_mask, completion_mask], 1), "prompt_len": P,
+            "response_ids": response_ids, "completion_mask": completion_mask.bool()}
 
 
 def hf_logits(model, ids, mask=None, position_ids=None, logits_to_keep=0):
@@ -124,11 +150,8 @@ def test_selected_token_logprobs_equal_compute_logprobs(attn, dtype, lora):
     GEMM shape, so that agreement is up to rounding (PAD_TOL), not bitwise."""
     model = tiny(attn, dtype, lora)
     P, R = 6, 4
-    prompt_ids, prompt_mask, _ = left_padded([6, 3, 4], T=P)
-    response_ids = torch.randint(0, VOCAB, (3, R), generator=torch.Generator().manual_seed(2))
-    completion_mask = torch.tensor([[1, 1, 1, 1], [1, 1, 0, 0], [1, 0, 0, 0]])
-    rollouts = {"input_ids": torch.cat([prompt_ids, response_ids], 1),
-                "attention_mask": torch.cat([prompt_mask, completion_mask], 1), "prompt_len": P}
+    rollouts = rollout_batch(P, R)
+    response_ids = rollouts["response_ids"]
 
     explicit = explicit_logprobs(model, rollouts)                                      # [N, R]
     reference = compute_logprobs(model, rollouts)
@@ -143,10 +166,137 @@ def test_selected_token_logprobs_equal_compute_logprobs(attn, dtype, lora):
     assert errors(explicit, gathered)[0] < PAD_TOL, errors(explicit, gathered)
 
 
+# --- 4. layer executor and per-layer callback ------------------------------------------------------------------------
+
+def pre_executor_forward(model, ids, mask, pos):
+    """explicit_forward as committed in Step 1 (8685c91), before the executor: decoder layers called directly."""
+    decoder, lm_head = unwrap(model)
+    hidden = decoder.embed_tokens(ids)
+    masks = attention_masks(decoder, hidden, mask, pos)
+    position_embeddings = decoder.rotary_emb(hidden, pos)
+    for layer in decoder.layers[: decoder.config.num_hidden_layers]:
+        hidden = layer(hidden, attention_mask=masks[layer.attention_type], position_ids=pos,
+                       position_embeddings=position_embeddings)
+    return lm_head(decoder.norm(hidden))
+
+
+class RecordingExecutor(ResidentLayerExecutor):
+    """The shape of a future weight-placement executor: sees (index, layer, hidden, kwargs) around every layer call."""
+
+    def __init__(self):
+        self.calls = []
+
+    def execute(self, index, layer, hidden, **kwargs):
+        self.calls.append((index, layer, hidden, sorted(kwargs)))
+        return super().execute(index, layer, hidden, **kwargs)
+
+
+@pytest.mark.parametrize("attn", ATTN)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("lora", [False, True])
+@pytest.mark.parametrize("shape", SHAPES)
+@torch.no_grad()
+def test_default_executor_reproduces_pre_executor_forward_and_hf(attn, dtype, lora, shape):
+    """Default executor == explicit ResidentLayerExecutor() == the Step 1 loop == HF, bitwise, unpadded and padded."""
+    model = tiny(attn, dtype, lora, shape)
+    ids, mask, pos = left_padded([9, 5, 9, 2], T=9)
+    for m, p in [(None, torch.arange(9)[None]), (mask, pos)]:
+        reference = hf_logits(model, ids, m, p)
+        for logits in (explicit_forward(model, ids, m, p), explicit_forward(model, ids, m, p, 0, ResidentLayerExecutor()),
+                       pre_executor_forward(model, ids, m, p)):
+            assert torch.equal(logits, reference), errors(logits, reference)
+
+
+@pytest.mark.parametrize("attn", ATTN)
+@pytest.mark.parametrize("lora", [False, True])
+@pytest.mark.parametrize("shape", SHAPES)
+@torch.no_grad()
+def test_custom_executor_runs_every_layer_once_in_order(attn, lora, shape):
+    model = tiny(attn, lora=lora, shape=shape)
+    layers = list(unwrap(model)[0].layers)
+    assert len(layers) == SHAPES[shape]["num_hidden_layers"]
+    ids, mask, pos = left_padded([9, 5, 9, 2], T=9)
+    executor = RecordingExecutor()
+    logits = explicit_forward(model, ids, mask, pos, layer_executor=executor)
+
+    assert [i for i, *_ in executor.calls] == list(range(len(layers)))
+    assert all(layer is layers[i] for i, layer, *_ in executor.calls)               # the model's own modules, in order
+    assert all(kw == ["attention_mask", "position_embeddings", "position_ids"] for *_, kw in executor.calls)
+    assert all(h.shape == (4, 9, SHAPES[shape]["hidden_size"]) for _, _, h, _ in executor.calls)
+    assert torch.equal(logits, hf_logits(model, ids, mask, pos))                     # observing changes nothing
+
+
+@pytest.mark.parametrize("attn", ATTN)
+@pytest.mark.parametrize("lora", [False, True])
+@pytest.mark.parametrize("shape", SHAPES)
+def test_callback_sees_each_layer_output(attn, lora, shape):
+    """callback(index, hidden) after every layer: [N, T, H], equal to HF's output_hidden_states (whose last entry is
+    after the final norm), and handed over as is: the very tensor the next layer receives, still in the autograd graph."""
+    model = tiny(attn, lora=lora, shape=shape)
+    L, H = SHAPES[shape]["num_hidden_layers"], SHAPES[shape]["hidden_size"]
+    ids, mask, pos = left_padded([9, 5, 9, 2], T=9)
+    captured, executor = [], RecordingExecutor()
+    explicit_forward(model, ids, mask, pos, layer_executor=executor, layer_callback=lambda i, h: captured.append((i, h)))
+
+    assert [i for i, _ in captured] == list(range(L))
+    assert all(h.shape == (4, 9, H) for _, h in captured)
+    assert all(captured[i][1] is executor.calls[i + 1][2] for i in range(L - 1))   # no clone between layers
+    assert captured[-1][1].grad_fn is not None                                      # not detached: still in the graph
+
+    with torch.no_grad():
+        hf = model(input_ids=ids, attention_mask=mask, position_ids=pos, use_cache=False,
+                   output_hidden_states=True).hidden_states                          # embeddings + L entries
+        assert len(hf) == L + 1
+        for i, h in captured[:-1]:
+            assert torch.equal(h, hf[i + 1]), (i, errors(h, hf[i + 1]))
+        assert torch.equal(unwrap(model)[0].norm(captured[-1][1]), hf[L])
+
+
+# --- 5. LoRA gradients -----------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("attn", ATTN)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("shape", SHAPES)
+def test_lora_gradients_match_hf(attn, dtype, shape):
+    """Gradients of the GRPO loss w.r.t. the LoRA parameters (fp32 adapters, base in `dtype` as in training), through
+    policy.compute_logprobs (HF forward) vs explicit_logprobs and vs explicit_forward with a custom executor + a
+    capturing callback. old_logp is offset so some ratios fall outside the clip range: the gradient is not trivial."""
+    model = tiny(attn, dtype, lora=True, shape=shape)
+    params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+    assert params and all("lora_" in n and p.dtype == torch.float32 for n, p in params.items())
+    rollouts = rollout_batch()
+    mask = rollouts["completion_mask"]
+    advantages = torch.tensor([1.0, -0.5, 0.8])
+    offset = torch.tensor([[0.3, -0.3, 0.05, 0.0], [-0.4, 0.1, 0.0, 0.0], [0.25, 0.0, 0.0, 0.0]])
+
+    def grads(score):
+        model.zero_grad(set_to_none=True)
+        logp = score()
+        grpo_loss(logp, logp.detach() + offset, advantages, mask).backward()
+        return {n: p.grad.clone() for n, p in params.items()}
+
+    def through_executor():
+        ids, m = rollouts["input_ids"], rollouts["attention_mask"]
+        logits = explicit_forward(model, ids, m, (m.cumsum(1) - 1).clamp(min=0), 5, RecordingExecutor(),
+                                  lambda i, h: kept.append(h.detach()))
+        return response_logprobs(logits, ids, rollouts["prompt_len"])
+
+    kept = []
+    reference = grads(lambda: compute_logprobs(model, rollouts))
+    assert all(g.abs().max() > 0 for g in reference.values())                       # A and B both get gradient
+    for got in (grads(lambda: explicit_logprobs(model, rollouts)), grads(through_executor)):
+        for n in params:
+            assert torch.equal(got[n], reference[n]), (n, errors(got[n], reference[n]))
+    assert len(kept) == SHAPES[shape]["num_hidden_layers"] and not any(h.requires_grad for h in kept)
+
+
 # --- real Qwen3-0.6B measurement (not collected by pytest) -----------------------------------------------------------
 
 def measure_real(name="Qwen/Qwen3-0.6B", device="cuda"):
+    """Qwen3-0.6B only: in fp32 it needs ~2.4 GB of weights, the most a 4 GB GPU holds. Qwen3-4B would not fit."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    from qwen_grpo.model import lora_model
 
     tok = AutoTokenizer.from_pretrained(name, padding_side="left")
     texts = ["The movie was a delight from start to finish.", "Dull.", "I expected more, but the ending saved it.",
@@ -160,6 +310,8 @@ def measure_real(name="Qwen/Qwen3-0.6B", device="cuda"):
     T = ids.shape[1]
     R = 4
     rollouts = {"input_ids": ids, "attention_mask": mask, "prompt_len": T - R}  # last R prompt tokens as "response"
+    completion_mask = torch.ones(len(texts), R, dtype=torch.bool, device=device)
+    advantages = torch.tensor([1.0, -0.5, 0.8, -1.0], device=device)
 
     print(f"{name}: N={len(texts)} T={T} row lengths={lengths}")
     for dtype, attn in [(d, a) for d in (torch.float32, torch.bfloat16) for a in ATTN]:
@@ -167,13 +319,42 @@ def measure_real(name="Qwen/Qwen3-0.6B", device="cuda"):
         with torch.no_grad():
             explicit, reference = explicit_forward(model, ids, mask, pos), hf_logits(model, ids, mask, pos)
             a, r = errors(explicit[mask.bool()], reference[mask.bool()])
+            executor, captured = RecordingExecutor(), []
+            via = explicit_forward(model, ids, mask, pos, layer_executor=executor,
+                                   layer_callback=lambda i, h: captured.append(tuple(h.shape)))
+            ex_a, _ = errors(via, reference)
             lp_a, lp_r = errors(explicit_logprobs(model, rollouts), compute_logprobs(model, rollouts))
             pad_a, pad_r = max(errors(explicit[i, T - n :], explicit_forward(model, ids[i : i + 1, T - n :])[0])
                                for i, n in enumerate(lengths))
         print(f"  {str(dtype):15s} {attn:5s}: explicit-vs-HF logits abs {a:.3g} rel {r:.3g} bitwise "
-              f"{torch.equal(explicit, reference)} | logprobs abs {lp_a:.3g} rel {lp_r:.3g} | "
-              f"padded-vs-unpadded logits abs {pad_a:.3g} rel {pad_r:.3g}")
+              f"{torch.equal(explicit, reference)} | executor+callback abs {ex_a:.3g}, "
+              f"{[i for i, *_ in executor.calls] == list(range(28))} order, hidden {captured[0]} x{len(captured)} | "
+              f"logprobs abs {lp_a:.3g} rel {lp_r:.3g} | padded-vs-unpadded logits abs {pad_a:.3g} rel {pad_r:.3g}")
         del model
+        torch.cuda.empty_cache()
+
+        # LoRA gradients of the GRPO loss as in training (base in dtype, fp32 adapters, rank 32, last2-attention)
+        torch.manual_seed(0)
+        model = lora_model(dtype, device, PRESETS["last2-attention"], 32, 64, name)
+        model.base_model.model.config._attn_implementation = attn
+        for _, m in lora_modules(model):
+            torch.nn.init.normal_(m.lora_B["default"].weight, std=0.02)
+        params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+
+        def grads(score):
+            model.zero_grad(set_to_none=True)
+            logp = score()
+            grpo_loss(logp, logp.detach() + 0.1, advantages, completion_mask).backward()
+            return {n: p.grad.clone() for n, p in params.items()}
+
+        ref = grads(lambda: compute_logprobs(model, rollouts))
+        got = grads(lambda: explicit_logprobs(model, rollouts))
+        g_a = max(errors(got[n], ref[n])[0] for n in params)
+        g_r = max(errors(got[n], ref[n])[0] for n in params) / max(g.abs().max().item() for g in ref.values())
+        print(f"  {'':15s} {attn:5s}  LoRA grads ({len(params)} tensors) explicit-vs-HF abs {g_a:.3g} rel {g_r:.3g} "
+              f"bitwise {all(torch.equal(got[n], ref[n]) for n in params)} | max |grad| "
+              f"{max(g.abs().max().item() for g in ref.values()):.3g}")
+        del model, ref, got
         torch.cuda.empty_cache()
 
 

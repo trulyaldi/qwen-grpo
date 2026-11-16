@@ -4,12 +4,22 @@ Reproduces Qwen3ForCausalLM.forward (transformers 4.57, no KV cache) step by ste
 later step can decide where each layer's weights live before it runs. No transformer arithmetic is reimplemented: every
 operation is an existing module or HF helper, and LoRA runs because PEFT's adapters sit inside the decoder layers.
 
+The decoder-layer call goes through a layer executor (`execute(index, layer, hidden, **layer_kwargs) -> hidden`), so a
+later executor can manage where a layer's weights live around the call without changing this loop.
+
 Shapes: N rows, T columns, H hidden size, V vocabulary, K = kept logit columns.
 """
 import torch
 from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
 
 from qwen_grpo.grpo import response_logprobs
+
+
+class ResidentLayerExecutor:
+    """Runs a decoder layer whose weights are already where its inputs are: a plain call, i.e. the HF forward."""
+
+    def execute(self, index, layer, hidden, **kwargs):
+        return layer(hidden, **kwargs)
 
 
 def unwrap(model):
@@ -30,15 +40,23 @@ def attention_masks(decoder, embeds, attention_mask, position_ids):
     return masks
 
 
-def explicit_forward(model, input_ids, attention_mask=None, position_ids=None, logits_to_keep=0):
+def explicit_forward(model, input_ids, attention_mask=None, position_ids=None, logits_to_keep=0, layer_executor=None,
+                     layer_callback=None):
     """Logits [N, K, V] of model(input_ids, attention_mask, position_ids, use_cache=False, logits_to_keep=...).
 
     input_ids      [N, T]
     attention_mask [N, T] 1 = token, 0 = padding (None: no padding)
     position_ids   [N, T] or None for 0..T-1 (HF's default); left-padded rows need cumsum(mask) - 1 as generate() uses
     logits_to_keep int (0 = all T columns, k = last k) or index tensor, sliced as Qwen3ForCausalLM does
+    layer_executor object with execute(index, layer, hidden, **layer_kwargs) -> hidden, called once per decoder layer
+                   in order; None = ResidentLayerExecutor()
+    layer_callback callable(index, hidden) run after decoder layer `index` with its output [N, T, H] (before the final
+                   norm, also for the last layer). The tensor is passed as is: it is part of the autograd graph and is
+                   the next layer's input, so a caller that keeps it must .detach() it if no gradient is needed (else
+                   it keeps the graph alive) and must not modify it in place.
     """
     decoder, lm_head = unwrap(model)
+    executor = ResidentLayerExecutor() if layer_executor is None else layer_executor
     T = input_ids.shape[1]
 
     hidden = decoder.embed_tokens(input_ids)                                     # [N, T, H]
@@ -47,9 +65,12 @@ def explicit_forward(model, input_ids, attention_mask=None, position_ids=None, l
     masks = attention_masks(decoder, hidden, attention_mask, position_ids)        # None or [N, 1, T, T]
     position_embeddings = decoder.rotary_emb(hidden, position_ids)                # (cos, sin), each [N|1, T, head_dim]
 
-    for layer in decoder.layers[: decoder.config.num_hidden_layers]:             # the explicit layer loop
-        hidden = layer(hidden, attention_mask=masks[layer.attention_type], position_ids=position_ids,
-                       position_embeddings=position_embeddings)                   # [N, T, H] -> [N, T, H]
+    for index, layer in enumerate(decoder.layers[: decoder.config.num_hidden_layers]):  # the explicit layer loop
+        layer_kwargs = dict(attention_mask=masks[layer.attention_type], position_ids=position_ids,
+                            position_embeddings=position_embeddings)
+        hidden = executor.execute(index, layer, hidden, **layer_kwargs)           # [N, T, H] -> [N, T, H]
+        if layer_callback is not None:
+            layer_callback(index, hidden)
 
     hidden = decoder.norm(hidden)                                                 # [N, T, H]
     keep = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
