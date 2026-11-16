@@ -94,9 +94,8 @@ def tests(junit):
         for kind in ("failure", "error"):
             if (el := case.find(kind)) is not None:
                 cls, name = case.get("classname", ""), case.get("name", "")
-                key = f"{cls}::{name}" if name else cls
-                if cls == "" or name in ("", cls.rsplit(".", 1)[-1]):  # collection error: report the file
-                    key = cls.replace(".", "/") + ".py"
+                # a collection error has classname "" and the module as its name: report the file
+                key = f"{cls}::{name}" if cls else name.replace(".", "/") + ".py"
                 cause = KNOWN_FAILURES.get(key)
                 failed.append({"test": key, "kind": kind, "message": (el.get("message") or "").splitlines()[0][:300],
                                "cause": cause or "UNCLASSIFIED"})
