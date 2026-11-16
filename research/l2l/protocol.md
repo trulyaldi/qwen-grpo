@@ -47,9 +47,11 @@ A run that produces no measurements cannot pass.
 - on CUDA, the allocator's current and peak allocated/reserved bytes, `cudaMemGetInfo` (total − free), `nvidia-smi`
   `memory.used`, the per-process `nvidia-smi` query, and the pinned host allocator statistics.
 
-The two device-level readings include the CUDA context and every other process on the GPU, so they are upper bounds
-for this process. On this host (WSL2) the per-process `nvidia-smi` query returns nothing. GPU memory evidence counts as
-complete when the allocator statistics and at least one device-level reading are present. A case on CUDA requires it,
+`cudaMemGetInfo` includes the CUDA context and every other process on the GPU, so it is an upper bound for this
+process. On this host (WSL2), `nvidia-smi` lists the process with `[N/A]` memory, and its `memory.used` reads below this
+process's own usage (see below). Its values are therefore recorded raw and do not count as evidence. GPU memory
+evidence counts as complete when the allocator statistics and the `cudaMemGetInfo` reading are present. The pinned
+host allocator statistics are recorded raw; their meaning has not been verified, and they are not evidence of pinning. A case on CUDA requires it,
 and the run fails without it. An allocator limit is never treated as proof of a budget.
 
 **Open (Ticket 11).** On this host the device-level readings disagree (`t01_timing_cuda`):

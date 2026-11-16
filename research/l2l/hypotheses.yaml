@@ -39,7 +39,8 @@ H06:
   status: untested
   evidence: []
 H07:
-  statement: Bounded layer residency makes GPU weight memory independent of total model depth.
+  statement: Bounded layer residency reduces GPU weight-memory dependence on total model depth.  # Ticket 02
+  statement_ticket11: GPU weight residency remains bounded as model depth increases.
   kind: performance  # a memory measurement: GPU weight memory vs depth at a fixed number of buffers
   tickets: ["02", "11"]
   status: untested
@@ -69,7 +70,7 @@ H11:
   status: untested
   evidence: []
 H12:
-  statement: The trained policy has learned the intended task, not merely changed parameters or exploited the reward.
+  statement: The trained policy has meaningfully learned the intended task rather than merely changing parameters or exploiting the reward.
   kind: correctness  # scientific validation: held-out evaluation with confidence intervals and negative controls
   tickets: ["13"]
   status: untested

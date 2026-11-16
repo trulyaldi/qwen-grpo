@@ -78,8 +78,10 @@ def test_missing_gpu_memory_fails_a_case_that_requires_it():
     timing = {"reference": {"trials_s": [0.1] * lab.MIN_TRIALS}}
     cpu_only = {"kind": "snapshot", "cpu": {"rss_mib": 1.0}, "gpu": None}
     allocator_only = {"gpu": {"allocated_mib": 1, "reserved_mib": 1, "peak_allocated_mib": 1, "peak_reserved_mib": 1}}
+    smi_only = {"gpu": {**allocator_only["gpu"], "device_used_mib_nvidia_smi": 134.0, "process_used_mib_nvidia_smi": 20.0}}
     complete = {"gpu": {**allocator_only["gpu"], "device_used_mib_mem_get_info": 300.0}}
-    for mem, status in [(None, "FAIL"), (cpu_only, "FAIL"), (allocator_only, "FAIL"), (complete, "PASS")]:
+    for mem, status in [(None, "FAIL"), (cpu_only, "FAIL"), (allocator_only, "FAIL"), (smi_only, "FAIL"),
+                        (complete, "PASS")]:
         r = base_result("performance", timing=timing, memory=mem, required_measurements=["gpu_memory"])
         assert lab.decide(r)[0] == status, mem
 
@@ -108,6 +110,13 @@ def test_a_controlled_perturbation_makes_the_same_experiment_fail_and_is_recorde
     failed = [c["name"] for c in r["comparisons"] if not c["pass"]]
     assert failed == ["logits"] and r["perturbation"]["before"] != r["perturbation"]["after"]
     assert (tmp_path / "fault" / "summary.md").read_text().startswith("**FAULT INJECTION RUN**")
+
+
+def test_perturbing_one_lora_gradient_fails_that_parameter_only(tmp_path):
+    name = "grads.base_model.model.model.layers.2.self_attn.q_proj.lora_B.default.weight"
+    r = lab.run("fixture_equivalence", RESIDENT, "grad", root=tmp_path, perturbation=f"{name}=1e-4")
+    assert r["status"] == "FAIL"
+    assert [(c["fixture"], c["name"]) for c in r["comparisons"] if not c["pass"]] == [("0.6b-like", name)]
 
 
 def test_a_perturbation_that_rounds_away_is_refused(tmp_path):

@@ -103,8 +103,11 @@ without its own `run.name`. Full YAMLs with every key spelled out also load.
 | `training` | `batch_size`, `batch_mode`, `group_size`, `learning_rate`, `max_steps`, `max_attempts`, `clip_eps` (0.2), `num_iterations` (1: updates per rollout batch, `max_steps` counts updates), `temperature` (1.0), `max_new_tokens`, `seed`, `eval_every`, `full_val` | `learning_rate: 0.0` is the negative control |
 | `evaluation` | `max_new_tokens` (4), `batch_size` (32), `score_batch_size` (8), `bootstrap_samples` (10000), `bootstrap_seed` (42) | greedy evaluation in `train`, `validate`, `test`; the defaults are the saved baseline's settings |
 | `verification` | `split` (validation), `merge_subset` (8), `negative_control` (`checkpoint: null`, `train: false`), `statistics` (`confidence_level: 0.95`, `bootstrap_samples: 2000`, `seed: 42`) | `verify` only |
+| `execution` | `backend` (resident), `weight_storage`, `resident_layers`, `weight_buffers`, `prefetch_depth`, `activation_checkpointing` (all null), `vocab_chunk_size` (null), `kv_cache` (gpu) | `resident`, `l2l_sync` or `l2l_async`; the null keys are required for `l2l_*` and must stay null under `resident`. Only `resident` runs so far: `train`/`validate`/`test`/`verify` refuse anything else (`config.unimplemented`) |
+| `streaming` | `enabled` (false), `directory` (null) | provisional (Ticket 09); not implemented |
+| `dflash` | `enabled` (false), `draft_model` (null) | provisional (Ticket 12); the drafter must target `model.name`; not implemented |
 
-Every default is the value all runs so far used. The SHA-256 of the resolved config is in `config.yaml`'s first line,
+Every default is the value all runs so far used. The SHA-256 of the resolved config (leaving out `execution`, `streaming` and `dflash` while they are at their defaults, so older configs keep their hash) is in `config.yaml`'s first line,
 `manifest.json`, `training.json`, every checkpoint's training state, and every `validate`/`test`/`verify` output.
 
 ## Resuming

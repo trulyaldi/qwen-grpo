@@ -169,15 +169,15 @@ def _nvidia_smi():
 
 
 def gpu_memory_complete(mem):
-    """GPU memory evidence: allocator statistics plus at least one device-level reading (process-level nvidia-smi is
-    empty under WSL2, so the device-wide readings stand in as upper bounds)."""
+    """GPU memory evidence: allocator statistics plus cudaMemGetInfo's device-wide reading (CUDA context and every
+    process included: an upper bound for this process). nvidia-smi is recorded raw but does not count: under WSL2 its
+    per-process memory is [N/A] and memory.used read below this process's own reserved memory + context
+    (research/l2l/protocol.md)."""
     g = (mem or {}).get("gpu")
     if not g:
         return False
     allocator = all(g.get(k) is not None for k in ("allocated_mib", "reserved_mib", "peak_allocated_mib", "peak_reserved_mib"))
-    device = any(g.get(k) is not None for k in ("process_used_mib_nvidia_smi", "device_used_mib_nvidia_smi",
-                                                "device_used_mib_mem_get_info"))
-    return allocator and device
+    return allocator and g.get("device_used_mib_mem_get_info") is not None
 
 
 def summarize(seconds):
