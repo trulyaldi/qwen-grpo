@@ -1,0 +1,54 @@
+{
+ "name": "t01_l2l_sync_blocked",
+ "case": "fixture_equivalence",
+ "kind": "correctness",
+ "created_utc": "20261116T210209Z",
+ "fault_injection": false,
+ "options": {},
+ "identity": {
+  "config_path": "research/l2l/configs/l2l_sync.yaml",
+  "config_sha256": "1e0d414ba355528d652dfaa43a3a7e595e884c83fe10be374997accbbee0da26",
+  "config_fields_used": [
+   "model.dtype",
+   "execution"
+  ],
+  "execution": {
+   "backend": "l2l_sync",
+   "weight_storage": "pinned",
+   "resident_layers": 0,
+   "weight_buffers": 1,
+   "prefetch_depth": 0,
+   "activation_checkpointing": true,
+   "vocab_chunk_size": null,
+   "kv_cache": "gpu"
+  },
+  "fixtures_sha256": {
+   "0.6b-like": "3b6317b8359a40cfbd33e2c575de8d35a4fdf5648b4b8edce62fa61961dbb293",
+   "4b-like": "8f9e6fa72c0f15eadbd89cf6397ed786e8de841bee4d081679dd4e96043b438c"
+  },
+  "tolerances_sha256": "b722e3c70069a4f8e5779ec76092da2b43734d9a90883058742014c5883c84b2",
+  "input_sha256": "cb7569af732767aef67f3de2ebb9b166a498728e2a478e01e70c7e52cd68bd36"
+ },
+ "provenance": {
+  "git_commit": "59c68974b553c9ddd84ef42767ca866888f5299e",
+  "git_tracked_dirty": false,
+  "python": "3.12.3",
+  "platform": "Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "packages": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "torch_cuda": "12.6",
+  "cuda_available": false,
+  "gpu": null,
+  "torch_threads": 6
+ },
+ "errors": [],
+ "required_measurements": [],
+ "blocked": "unimplemented settings [\"execution.backend 'l2l_sync'\"]",
+ "status": "BLOCKED",
+ "reasons": [
+  "unimplemented settings [\"execution.backend 'l2l_sync'\"]"
+ ]
+}

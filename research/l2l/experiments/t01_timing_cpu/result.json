@@ -1,0 +1,147 @@
+{
+ "name": "t01_timing_cpu",
+ "case": "fixture_timing",
+ "kind": "performance",
+ "created_utc": "20261116T210216Z",
+ "fault_injection": false,
+ "options": {
+  "trials": "20",
+  "warmup": "3",
+  "device": "cpu"
+ },
+ "identity": {
+  "config_path": "research/l2l/configs/resident.yaml",
+  "config_sha256": "bbd460751d39cdb733a73ce6c2dac47d64922974d0a65d6869a1f21aa2bd4299",
+  "config_fields_used": [
+   "model.dtype",
+   "execution"
+  ],
+  "execution": {
+   "backend": "resident",
+   "weight_storage": null,
+   "resident_layers": null,
+   "weight_buffers": null,
+   "prefetch_depth": null,
+   "activation_checkpointing": null,
+   "vocab_chunk_size": null,
+   "kv_cache": "gpu"
+  },
+  "fixtures_sha256": {
+   "0.6b-like": "3b6317b8359a40cfbd33e2c575de8d35a4fdf5648b4b8edce62fa61961dbb293",
+   "4b-like": "8f9e6fa72c0f15eadbd89cf6397ed786e8de841bee4d081679dd4e96043b438c"
+  },
+  "tolerances_sha256": "b722e3c70069a4f8e5779ec76092da2b43734d9a90883058742014c5883c84b2",
+  "input_sha256": "cb7569af732767aef67f3de2ebb9b166a498728e2a478e01e70c7e52cd68bd36"
+ },
+ "provenance": {
+  "git_commit": "59c68974b553c9ddd84ef42767ca866888f5299e",
+  "git_tracked_dirty": false,
+  "python": "3.12.3",
+  "platform": "Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "packages": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "torch_cuda": "12.6",
+  "cuda_available": false,
+  "gpu": null,
+  "torch_threads": 6
+ },
+ "errors": [],
+ "required_measurements": [],
+ "timing": {
+  "reference": {
+   "warmup": 3,
+   "trials_s": [
+    0.198510588001227,
+    0.0176193970037275,
+    0.014469333997112699,
+    0.016006443998776376,
+    0.013799359003314748,
+    0.015372663998277858,
+    0.01498791699850699,
+    0.015820628999790642,
+    0.01480289200117113,
+    0.017110084001615178,
+    0.011829472998215351,
+    0.011287711997283623,
+    0.015176986998994835,
+    0.011750767997000366,
+    0.01180392800597474,
+    0.009955353998520877,
+    0.014370115997735411,
+    0.01928728399798274,
+    0.015027762994577643,
+    0.012530023996077944
+   ],
+   "n": 20,
+   "median_s": 0.01489540449983906,
+   "iqr_s": [
+    0.012354886246612296,
+    0.015867082749537076
+   ],
+   "min_s": 0.009955353998520877,
+   "max_s": 0.198510588001227,
+   "median_ci95_s": [
+    0.013164691499696346,
+    0.01559664649903425
+   ]
+  },
+  "candidate": {
+   "warmup": 3,
+   "trials_s": [
+    0.033237543000723235,
+    0.015454818996659014,
+    0.012768603002768941,
+    0.015010108996648341,
+    0.014093268000578973,
+    0.015585205997922458,
+    0.014017718996910844,
+    0.014822617995378096,
+    0.014720439998200163,
+    0.014850134997686837,
+    0.010673065997252706,
+    0.014312615996459499,
+    0.014631084006396122,
+    0.012097245999029838,
+    0.010504808000405319,
+    0.012596696004038677,
+    0.014710477997141425,
+    0.014928445001714863,
+    0.01393447800364811,
+    0.011595825002586935
+   ],
+   "n": 20,
+   "median_s": 0.01447185000142781,
+   "iqr_s": [
+    0.012725626253086375,
+    0.014869712498693843
+   ],
+   "min_s": 0.010504808000405319,
+   "max_s": 0.033237543000723235,
+   "median_ci95_s": [
+    0.013351540503208525,
+    0.014836376496532466
+   ]
+  }
+ },
+ "conclusion": {
+  "ratio": 0.9715647535173801,
+  "ci95": [
+   0.8864657406936042,
+   1.1181758416852914
+  ],
+  "statement": "no detectable difference"
+ },
+ "memory": {
+  "kind": "snapshot",
+  "cpu": {
+   "rss_mib": 704.56640625,
+   "peak_rss_mib": 704.56640625
+  },
+  "gpu": null
+ },
+ "status": "PASS",
+ "reasons": []
+}

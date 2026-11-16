@@ -1,0 +1,165 @@
+{
+ "name": "t01_timing_cuda",
+ "case": "fixture_timing",
+ "kind": "performance",
+ "created_utc": "20261116T210222Z",
+ "fault_injection": false,
+ "options": {
+  "trials": "20",
+  "warmup": "3",
+  "device": "cuda"
+ },
+ "identity": {
+  "config_path": "research/l2l/configs/resident.yaml",
+  "config_sha256": "bbd460751d39cdb733a73ce6c2dac47d64922974d0a65d6869a1f21aa2bd4299",
+  "config_fields_used": [
+   "model.dtype",
+   "execution"
+  ],
+  "execution": {
+   "backend": "resident",
+   "weight_storage": null,
+   "resident_layers": null,
+   "weight_buffers": null,
+   "prefetch_depth": null,
+   "activation_checkpointing": null,
+   "vocab_chunk_size": null,
+   "kv_cache": "gpu"
+  },
+  "fixtures_sha256": {
+   "0.6b-like": "3b6317b8359a40cfbd33e2c575de8d35a4fdf5648b4b8edce62fa61961dbb293",
+   "4b-like": "8f9e6fa72c0f15eadbd89cf6397ed786e8de841bee4d081679dd4e96043b438c"
+  },
+  "tolerances_sha256": "b722e3c70069a4f8e5779ec76092da2b43734d9a90883058742014c5883c84b2",
+  "input_sha256": "cb7569af732767aef67f3de2ebb9b166a498728e2a478e01e70c7e52cd68bd36"
+ },
+ "provenance": {
+  "git_commit": "59c68974b553c9ddd84ef42767ca866888f5299e",
+  "git_tracked_dirty": false,
+  "python": "3.12.3",
+  "platform": "Linux-6.18.58.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "packages": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "torch_cuda": "12.6",
+  "cuda_available": true,
+  "gpu": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+  "torch_threads": 6
+ },
+ "errors": [],
+ "required_measurements": [
+  "gpu_memory"
+ ],
+ "timing": {
+  "reference": {
+   "warmup": 3,
+   "trials_s": [
+    0.024717806998523884,
+    0.023496460999012925,
+    0.023239078000187874,
+    0.02114362699649064,
+    0.02132334500493016,
+    0.023044366003887262,
+    0.021835712999745738,
+    0.023021520995825995,
+    0.022452243996667676,
+    0.02230948500073282,
+    0.022808091998740565,
+    0.022308184001303744,
+    0.024497996004356537,
+    0.02276397399691632,
+    0.026032833993667737,
+    0.023189350999018643,
+    0.02122923500428442,
+    0.022859112999867648,
+    0.02434673199604731,
+    0.02737549299490638
+   ],
+   "n": 20,
+   "median_s": 0.02294031699784682,
+   "iqr_s": [
+    0.02230915975087555,
+    0.02370902874827152
+   ],
+   "min_s": 0.02114362699649064,
+   "max_s": 0.02737549299490638,
+   "median_ci95_s": [
+    0.022380864498700248,
+    0.0233677694996004
+   ]
+  },
+  "candidate": {
+   "warmup": 3,
+   "trials_s": [
+    0.024310791995958425,
+    0.022539594996487722,
+    0.02374524900369579,
+    0.02207500399526907,
+    0.022914424000191502,
+    0.021598619998258073,
+    0.021257973996398505,
+    0.02460473999963142,
+    0.022466950002126396,
+    0.024704180999833625,
+    0.019869169002049603,
+    0.020352669998828787,
+    0.02245014299842296,
+    0.022790185001213104,
+    0.025910182994266506,
+    0.021479339004145004,
+    0.024842737999279052,
+    0.023756287002470344,
+    0.024321322001924273,
+    0.022038472001440823
+   ],
+   "n": 20,
+   "median_s": 0.022664889998850413,
+   "iqr_s": [
+    0.021928509000645136,
+    0.024313424497449887
+   ],
+   "min_s": 0.019869169002049603,
+   "max_s": 0.025910182994266506,
+   "median_ci95_s": [
+    0.022056737998354947,
+    0.024033539499214385
+   ]
+  }
+ },
+ "conclusion": {
+  "ratio": 0.9879937579318429,
+  "ci95": [
+   0.9505620011633801,
+   1.0537286284421112
+  ],
+  "statement": "no detectable difference"
+ },
+ "memory": {
+  "kind": "snapshot",
+  "cpu": {
+   "rss_mib": 1447.53125,
+   "peak_rss_mib": 1447.53125
+  },
+  "gpu": {
+   "allocated_mib": 16.720703125,
+   "reserved_mib": 22.0,
+   "peak_allocated_mib": 17.15185546875,
+   "peak_reserved_mib": 22.0,
+   "device_used_mib_mem_get_info": 857.3125,
+   "nvidia_smi_compute_apps_raw": "227238, [N/A]",
+   "nvidia_smi_memory_used_raw": "134",
+   "process_used_mib_nvidia_smi": null,
+   "device_used_mib_nvidia_smi": 134.0
+  },
+  "pinned_host": {
+   "allocated_bytes.allocated": 1,
+   "allocated_bytes.current": 1,
+   "allocated_bytes.freed": 0,
+   "allocated_bytes.peak": 1
+  }
+ },
+ "status": "PASS",
+ "reasons": []
+}

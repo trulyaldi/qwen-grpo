@@ -52,6 +52,16 @@ for this process. On this host (WSL2) the per-process `nvidia-smi` query returns
 complete when the allocator statistics and at least one device-level reading are present. A case on CUDA requires it,
 and the run fails without it. An allocator limit is never treated as proof of a budget.
 
+**Open (Ticket 11).** On this host the device-level readings disagree (`t01_timing_cuda`):
+- `cudaMemGetInfo`: 857 MiB used;
+- `nvidia-smi memory.used`: 134 MiB;
+- the process's allocator: 22 MiB reserved.
+
+The process is listed by `nvidia-smi`, but with `[N/A]` memory. The `nvidia-smi` figure is below what this process
+holds (reserved memory plus the CUDA context), so it cannot be an upper bound here. Until this is resolved, budget
+claims use `cudaMemGetInfo` and say so. Whether "complete evidence" should require it specifically is a decision for
+the owner.
+
 ## Statuses
 
 | status | meaning |
