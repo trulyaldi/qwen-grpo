@@ -1,0 +1,131 @@
+LoRA modules (6): ['model.layers.26.self_attn.q_proj', 'model.layers.26.self_attn.v_proj', 'model.layers.26.self_attn.o_proj', 'model.layers.27.self_attn.q_proj', 'model.layers.27.self_attn.v_proj', 'model.layers.27.self_attn.o_proj']
+trainable parameters: 524,288 of 596,574,208 (0.0879%)
+base full validation (in-process): acc 0.7486  F1 0.7493  rec POS 0.7148 NEG 0.7824  invalid 0.0028  pred POS 0.4662  (n=1066)
+  mismatches vs validation.json: 0
+  [val subset, step 0] acc 0.7363  F1 0.7383  rec POS 0.7070 NEG 0.7656  invalid 0.0059  pred POS 0.4688  (n=512)
+step  1 (attempt   1) 1439N,482P,1178N,151N,190N mixed 4  R 0.53  loss -0.0000  |g| 9.169e-01 (A 0.00e+00, B 9.17e-01)  |dtheta| 2.56e-01  |(a/r)BA| 2.983e-01  alloc 1.13  peak res 2.45 GiB
+step  2 (attempt   2) 1190P,1267N,1233P,1159N,39P mixed 4  R 0.53  loss -0.0000  |g| 1.024e+00 (A 4.25e-01, B 9.32e-01)  |dtheta| 2.45e-01  |(a/r)BA| 3.880e-01  alloc 1.13  peak res 2.45 GiB
+step  3 (attempt   3) 14N,1182P,1495N,999N,1030P mixed 5  R 0.53  loss +0.0000  |g| 4.989e-01 (A 2.11e-01, B 4.52e-01)  |dtheta| 1.77e-01  |(a/r)BA| 4.845e-01  alloc 1.13  peak res 2.45 GiB
+step  4 (attempt   4) 1219P,419N,101P,1157P,778N mixed 4  R 0.70  loss -0.0000  |g| 2.663e-01 (A 1.18e-01, B 2.39e-01)  |dtheta| 1.57e-01  |(a/r)BA| 5.774e-01  alloc 1.13  peak res 2.45 GiB
+step  5 (attempt   5) 1442P,1032P,703P,759N,967P mixed 3  R 0.77  loss -0.0000  |g| 1.317e+00 (A 7.77e-01, B 1.06e+00)  |dtheta| 1.66e-01  |(a/r)BA| 6.585e-01  alloc 1.13  peak res 2.45 GiB
+step  6 (attempt   6) 883N,1069P,906N,1074N,26N mixed 3  R 0.60  loss -0.0000  |g| 8.039e-01 (A 5.12e-01, B 6.19e-01)  |dtheta| 1.21e-01  |(a/r)BA| 7.187e-01  alloc 1.13  peak res 2.59 GiB
+step  7 (attempt   7) 1054N,746P,717P,1384N,1027N mixed 4  R 0.60  loss +0.0000  |g| 1.138e+00 (A 8.24e-01, B 7.85e-01)  |dtheta| 1.17e-01  |(a/r)BA| 7.613e-01  alloc 1.13  peak res 2.59 GiB
+step  8 (attempt   8) 1491P,1299N,1441P,17P,187N mixed 3  R 0.70  loss -0.0000  |g| 4.723e-01 (A 3.35e-01, B 3.33e-01)  |dtheta| 1.05e-01  |(a/r)BA| 8.110e-01  alloc 1.13  peak res 3.23 GiB
+step  9 (attempt   9) 227N,988N,656N,414P,1487N mixed 5  R 0.77  loss -0.0000  |g| 1.152e+00 (A 7.69e-01, B 8.57e-01)  |dtheta| 1.22e-01  |(a/r)BA| 8.515e-01  alloc 1.13  peak res 3.23 GiB
+step 10 (attempt  10) 638N,514N,1330P,92N,130P mixed 3  R 0.70  loss +0.0000  |g| 5.885e-01 (A 4.28e-01, B 4.04e-01)  |dtheta| 1.26e-01  |(a/r)BA| 8.967e-01  alloc 1.13  peak res 3.94 GiB
+  [val subset, step 10] acc 0.7383  F1 0.7337  rec POS 0.5977 NEG 0.8789  invalid 0.0020  pred POS 0.3594  (n=512)
+step 11 (attempt  11) 585P,1281P,153N,655N,902N mixed 3  R 0.83  loss -0.0000  |g| 3.342e-01 (A 1.88e-01, B 2.76e-01)  |dtheta| 1.16e-01  |(a/r)BA| 9.457e-01  alloc 1.13  peak res 3.94 GiB
+step 12 (attempt  12) 201P,314P,462N,1450N,389P mixed 3  R 0.60  loss -0.0000  |g| 6.034e-01 (A 4.42e-01, B 4.11e-01)  |dtheta| 9.62e-02  |(a/r)BA| 9.932e-01  alloc 1.13  peak res 3.94 GiB
+step 13 (attempt  13) 1454P,126N,983P,1192P,1399P mixed 4  R 0.53  loss +0.0000  |g| 2.378e+00 (A 1.74e+00, B 1.62e+00)  |dtheta| 1.10e-01  |(a/r)BA| 1.023e+00  alloc 1.13  peak res 3.94 GiB
+step 14 (attempt  14) 422N,370N,888P,578N,617N mixed 2  R 0.67  loss +0.0000  |g| 1.119e+00 (A 8.05e-01, B 7.77e-01)  |dtheta| 7.63e-02  |(a/r)BA| 1.058e+00  alloc 1.13  peak res 3.94 GiB
+step 15 (attempt  15) 214N,1145P,934P,1034N,1071P mixed 3  R 0.67  loss -0.0000  |g| 5.747e-01 (A 4.08e-01, B 4.05e-01)  |dtheta| 8.30e-02  |(a/r)BA| 1.096e+00  alloc 1.13  peak res 3.94 GiB
+step 16 (attempt  16) 298N,228N,1357N,374P,180N mixed 4  R 0.73  loss -0.0000  |g| 1.506e+00 (A 1.02e+00, B 1.11e+00)  |dtheta| 7.04e-02  |(a/r)BA| 1.128e+00  alloc 1.13  peak res 3.94 GiB
+step 17 (attempt  17) 1127P,1201N,418N,1240N,593P mixed 4  R 0.77  loss -0.0000  |g| 9.444e-01 (A 6.59e-01, B 6.77e-01)  |dtheta| 8.19e-02  |(a/r)BA| 1.163e+00  alloc 1.13  peak res 3.94 GiB
+step 18 (attempt  18) 1366P,1264N,763N,408P,5N mixed 3  R 0.77  loss -0.0000  |g| 4.467e-01 (A 3.21e-01, B 3.10e-01)  |dtheta| 6.96e-02  |(a/r)BA| 1.196e+00  alloc 1.13  peak res 4.65 GiB
+step 19 (attempt  19) 594P,371P,1398P,235P,535P mixed 5  R 0.20  loss -0.0000  |g| 2.326e+00 (A 1.73e+00, B 1.56e+00)  |dtheta| 8.05e-02  |(a/r)BA| 1.227e+00  alloc 1.13  peak res 4.65 GiB
+step 20 (attempt  20) 1109N,1421N,552N,1370P,59N mixed 4  R 0.57  loss -0.0000  |g| 1.017e+00 (A 7.10e-01, B 7.29e-01)  |dtheta| 6.47e-02  |(a/r)BA| 1.258e+00  alloc 1.13  peak res 4.65 GiB
+  [val subset, step 20] acc 0.7637  F1 0.7616  rec POS 0.6562 NEG 0.8711  invalid 0.0020  pred POS 0.3926  (n=512)
+step 21 (attempt  21) 711P,162P,472N,100N,748P mixed 2  R 0.87  loss +0.0000  |g| 1.158e+00 (A 8.43e-01, B 7.94e-01)  |dtheta| 7.53e-02  |(a/r)BA| 1.289e+00  alloc 1.13  peak res 4.65 GiB
+step 22 (attempt  22) 320N,1154N,283N,954P,678N mixed 5  R 0.50  loss -0.0000  |g| 1.632e+00 (A 1.19e+00, B 1.11e+00)  |dtheta| 5.56e-02  |(a/r)BA| 1.314e+00  alloc 1.13  peak res 4.65 GiB
+step 23 (attempt  23) 803P,1482P,436P,691N,132N mixed 3  R 0.83  loss -0.0000  |g| 5.071e-01 (A 3.64e-01, B 3.53e-01)  |dtheta| 5.49e-02  |(a/r)BA| 1.341e+00  alloc 1.13  peak res 5.47 GiB
+step 24 (attempt  24) 181N,1142P,1107N,1100N,677P mixed 2  R 0.93  loss -0.0000  |g| 9.919e-01 (A 7.52e-01, B 6.47e-01)  |dtheta| 6.20e-02  |(a/r)BA| 1.371e+00  alloc 1.13  peak res 5.47 GiB
+step 25 (attempt  25) 411P,165P,1152P,674P,1194N mixed 4  R 0.63  loss +0.0000  |g| 1.380e+00 (A 1.01e+00, B 9.42e-01)  |dtheta| 9.01e-02  |(a/r)BA| 1.412e+00  alloc 1.13  peak res 5.47 GiB
+step 26 (attempt  26) 1432N,1214N,342N,152P,1428N mixed 4  R 0.60  loss +0.0000  |g| 2.572e+00 (A 1.92e+00, B 1.71e+00)  |dtheta| 5.98e-02  |(a/r)BA| 1.440e+00  alloc 1.13  peak res 5.47 GiB
+step 27 (attempt  27) 1459N,136N,1350N,18P,604N mixed 4  R 0.53  loss -0.0000  |g| 2.374e+00 (A 1.81e+00, B 1.54e+00)  |dtheta| 9.15e-02  |(a/r)BA| 1.461e+00  alloc 1.13  peak res 5.47 GiB
+step 28 (attempt  28) 784P,144P,616P,891P,1498N mixed 1  R 0.93  loss +0.0000  |g| 7.039e-01 (A 5.36e-01, B 4.56e-01)  |dtheta| 7.14e-02  |(a/r)BA| 1.485e+00  alloc 1.13  peak res 5.47 GiB
+step 29 (attempt  29) 1180P,1494N,489P,383N,1323P mixed 5  R 0.73  loss -0.0000  |g| 7.092e-01 (A 4.95e-01, B 5.08e-01)  |dtheta| 6.60e-02  |(a/r)BA| 1.516e+00  alloc 1.13  peak res 5.47 GiB
+step 30 (attempt  31) 1025N,753P,477P,1079N,428P mixed 2  R 0.57  loss +0.0000  |g| 1.174e+00 (A 9.23e-01, B 7.25e-01)  |dtheta| 5.43e-02  |(a/r)BA| 1.543e+00  alloc 1.13  peak res 5.47 GiB
+  [val subset, step 30] acc 0.7676  F1 0.7654  rec POS 0.6562 NEG 0.8789  invalid 0.0020  pred POS 0.3887  (n=512)
+step 31 (attempt  32) 1254P,626N,1258N,103N,156P mixed 4  R 0.47  loss -0.0000  |g| 5.222e-01 (A 3.02e-01, B 4.26e-01)  |dtheta| 5.59e-02  |(a/r)BA| 1.571e+00  alloc 1.13  peak res 5.47 GiB
+step 32 (attempt  33) 723P,879P,1003N,1277P,1066N mixed 3  R 0.63  loss -0.0000  |g| 4.838e-01 (A 3.39e-01, B 3.45e-01)  |dtheta| 5.56e-02  |(a/r)BA| 1.602e+00  alloc 1.13  peak res 5.47 GiB
+step 33 (attempt  34) 707N,1353P,288N,636P,1479N mixed 2  R 0.73  loss -0.0000  |g| 2.878e-01 (A 1.83e-01, B 2.22e-01)  |dtheta| 5.56e-02  |(a/r)BA| 1.634e+00  alloc 1.13  peak res 5.47 GiB
+step 34 (attempt  35) 122P,598P,1186P,673N,706N mixed 2  R 0.57  loss +0.0000  |g| 2.823e-01 (A 1.92e-01, B 2.07e-01)  |dtheta| 5.46e-02  |(a/r)BA| 1.666e+00  alloc 1.13  peak res 5.47 GiB
+step 35 (attempt  36) 1291P,80P,397N,499P,1234N mixed 2  R 0.87  loss -0.0000  |g| 1.526e+00 (A 1.24e+00, B 8.95e-01)  |dtheta| 7.14e-02  |(a/r)BA| 1.699e+00  alloc 1.13  peak res 5.47 GiB
+step 36 (attempt  37) 1423N,806N,1329N,208N,1023N mixed 3  R 0.77  loss +0.0000  |g| 2.437e+00 (A 1.98e+00, B 1.43e+00)  |dtheta| 6.32e-02  |(a/r)BA| 1.734e+00  alloc 1.13  peak res 5.47 GiB
+step 37 (attempt  38) 210N,1427N,385N,286N,367P mixed 2  R 0.67  loss -0.0000  |g| 4.683e-01 (A 3.39e-01, B 3.23e-01)  |dtheta| 6.10e-02  |(a/r)BA| 1.771e+00  alloc 1.13  peak res 5.47 GiB
+step 38 (attempt  39) 437P,433P,669N,966N,981P mixed 4  R 0.77  loss -0.0000  |g| 7.829e-01 (A 5.89e-01, B 5.16e-01)  |dtheta| 6.87e-02  |(a/r)BA| 1.815e+00  alloc 1.13  peak res 5.47 GiB
+step 39 (attempt  40) 255N,357P,96N,950N,882N mixed 1  R 0.97  loss -0.0000  |g| 8.168e-01 (A 6.65e-01, B 4.75e-01)  |dtheta| 6.91e-02  |(a/r)BA| 1.859e+00  alloc 1.13  peak res 5.47 GiB
+step 40 (attempt  41) 1243N,442N,704P,72P,1065N mixed 2  R 0.70  loss -0.0000  |g| 5.145e-01 (A 3.29e-01, B 3.96e-01)  |dtheta| 6.87e-02  |(a/r)BA| 1.906e+00  alloc 1.13  peak res 5.47 GiB
+  [val subset, step 40] acc 0.7754  F1 0.7724  rec POS 0.6484 NEG 0.9023  invalid 0.0020  pred POS 0.3730  (n=512)
+step 41 (attempt  42) 1433P,771P,239P,249P,27P mixed 3  R 0.57  loss -0.0000  |g| 2.772e+00 (A 2.29e+00, B 1.56e+00)  |dtheta| 8.75e-02  |(a/r)BA| 1.943e+00  alloc 1.13  peak res 5.47 GiB
+step 42 (attempt  43) 185N,6P,1321P,1119N,142N mixed 2  R 0.47  loss -0.0000  |g| 2.175e+00 (A 1.82e+00, B 1.20e+00)  |dtheta| 6.32e-02  |(a/r)BA| 1.982e+00  alloc 1.13  peak res 5.47 GiB
+step 43 (attempt  44) 498N,1437N,497N,1383P,688P mixed 1  R 0.77  loss -0.0000  |g| 1.023e+00 (A 8.42e-01, B 5.80e-01)  |dtheta| 6.60e-02  |(a/r)BA| 2.024e+00  alloc 1.13  peak res 5.47 GiB
+step 44 (attempt  45) 67N,1393P,645P,141P,887P mixed 1  R 0.77  loss -0.0000  |g| 1.100e+00 (A 9.15e-01, B 6.11e-01)  |dtheta| 7.89e-02  |(a/r)BA| 2.068e+00  alloc 1.13  peak res 5.47 GiB
+step 45 (attempt  47) 742P,565P,1272N,681P,48N mixed 4  R 0.77  loss -0.0000  |g| 3.500e+00 (A 2.88e+00, B 1.98e+00)  |dtheta| 7.45e-02  |(a/r)BA| 2.111e+00  alloc 1.13  peak res 5.47 GiB
+step 46 (attempt  48) 243P,1058N,1376N,449P,1289P mixed 2  R 0.67  loss -0.0000  |g| 8.037e-01 (A 5.61e-01, B 5.76e-01)  |dtheta| 7.96e-02  |(a/r)BA| 2.156e+00  alloc 1.13  peak res 5.47 GiB
+step 47 (attempt  49) 292N,873N,507N,871P,207N mixed 2  R 0.70  loss +0.0000  |g| 5.068e-01 (A 3.90e-01, B 3.24e-01)  |dtheta| 7.46e-02  |(a/r)BA| 2.196e+00  alloc 1.13  peak res 5.47 GiB
+step 48 (attempt  50) 456N,348P,876P,542P,458P mixed 1  R 0.50  loss -0.0000  |g| 1.954e+00 (A 1.63e+00, B 1.08e+00)  |dtheta| 9.79e-02  |(a/r)BA| 2.241e+00  alloc 1.13  peak res 5.47 GiB
+step 49 (attempt  51) 1248N,1342P,118N,99P,849N mixed 2  R 0.60  loss +0.0000  |g| 3.849e+00 (A 3.27e+00, B 2.03e+00)  |dtheta| 6.20e-02  |(a/r)BA| 2.267e+00  alloc 1.13  peak res 5.47 GiB
+step 50 (attempt  52) 582N,279N,1132P,312P,1226N mixed 1  R 0.97  loss -0.0000  |g| 1.496e+00 (A 1.28e+00, B 7.71e-01)  |dtheta| 7.46e-02  |(a/r)BA| 2.291e+00  alloc 1.13  peak res 5.47 GiB
+  [val subset, step 50] acc 0.7969  F1 0.7949  rec POS 0.8945 NEG 0.6992  invalid 0.0000  pred POS 0.5977  (n=512)
+step 51 (attempt  54) 1158P,744P,679P,175P,756N mixed 1  R 0.90  loss -0.0000  |g| 1.584e+00 (A 1.36e+00, B 8.12e-01)  |dtheta| 9.36e-02  |(a/r)BA| 2.317e+00  alloc 1.13  peak res 5.47 GiB
+step 52 (attempt  55) 1177N,818P,413P,464N,769N mixed 1  R 0.97  loss -0.0000  |g| 1.635e+00 (A 1.43e+00, B 7.93e-01)  |dtheta| 6.59e-02  |(a/r)BA| 2.344e+00  alloc 1.13  peak res 5.47 GiB
+step 53 (attempt  56) 1356P,336P,765P,978N,1244N mixed 1  R 0.93  loss +0.0000  |g| 2.103e+00 (A 1.86e+00, B 9.89e-01)  |dtheta| 5.87e-02  |(a/r)BA| 2.368e+00  alloc 1.13  peak res 5.47 GiB
+step 54 (attempt  57) 930P,709N,1266N,764N,1156N mixed 1  R 0.70  loss -0.0000  |g| 2.268e+00 (A 1.98e+00, B 1.11e+00)  |dtheta| 6.04e-02  |(a/r)BA| 2.394e+00  alloc 1.13  peak res 5.47 GiB
+step 55 (attempt  58) 134N,855P,460N,1312P,453N mixed 2  R 0.67  loss -0.0000  |g| 3.253e+00 (A 2.84e+00, B 1.58e+00)  |dtheta| 6.24e-02  |(a/r)BA| 2.408e+00  alloc 1.13  peak res 5.47 GiB
+step 56 (attempt  59) 1106N,1104P,743P,918N,1062P mixed 2  R 0.80  loss -0.0000  |g| 4.138e-01 (A 3.28e-01, B 2.52e-01)  |dtheta| 5.77e-02  |(a/r)BA| 2.422e+00  alloc 1.13  peak res 5.47 GiB
+step 57 (attempt  60) 120P,1211N,192N,1129P,3P mixed 3  R 0.87  loss -0.0000  |g| 1.997e+00 (A 1.77e+00, B 9.22e-01)  |dtheta| 7.50e-02  |(a/r)BA| 2.444e+00  alloc 1.13  peak res 5.47 GiB
+step 58 (attempt  61) 670P,109N,78N,309P,608P mixed 1  R 0.73  loss +0.0000  |g| 2.201e+00 (A 1.90e+00, B 1.11e+00)  |dtheta| 5.58e-02  |(a/r)BA| 2.467e+00  alloc 1.13  peak res 5.47 GiB
+step 59 (attempt  62) 1371P,692P,870N,1499N,1484N mixed 1  R 0.57  loss -0.0000  |g| 1.649e+00 (A 1.47e+00, B 7.47e-01)  |dtheta| 5.24e-02  |(a/r)BA| 2.490e+00  alloc 1.13  peak res 5.47 GiB
+step 60 (attempt  63) 1472P,851P,1381N,825P,1063P mixed 1  R 0.90  loss -0.0000  |g| 2.145e+00 (A 1.92e+00, B 9.48e-01)  |dtheta| 6.60e-02  |(a/r)BA| 2.511e+00  alloc 1.13  peak res 5.47 GiB
+  [val subset, step 60] acc 0.7930  F1 0.7930  rec POS 0.7969 NEG 0.7891  invalid 0.0000  pred POS 0.5039  (n=512)
+step 61 (attempt  64) 893N,899P,545N,1429N,1365P mixed 1  R 0.87  loss +0.0000  |g| 2.208e+00 (A 1.97e+00, B 9.88e-01)  |dtheta| 4.67e-02  |(a/r)BA| 2.533e+00  alloc 1.13  peak res 5.47 GiB
+step 62 (attempt  65) 182N,1148P,121N,87P,504N mixed 1  R 0.87  loss +0.0000  |g| 2.240e+00 (A 1.99e+00, B 1.03e+00)  |dtheta| 5.62e-02  |(a/r)BA| 2.553e+00  alloc 1.13  peak res 5.47 GiB
+step 63 (attempt  66) 1229P,231N,52N,250P,1184P mixed 2  R 0.67  loss -0.0000  |g| 9.028e-01 (A 7.14e-01, B 5.52e-01)  |dtheta| 5.57e-02  |(a/r)BA| 2.583e+00  alloc 1.13  peak res 5.47 GiB
+step 64 (attempt  67) 1061P,826N,948P,1406N,0P mixed 1  R 0.90  loss -0.0000  |g| 2.377e+00 (A 2.15e+00, B 1.01e+00)  |dtheta| 5.34e-02  |(a/r)BA| 2.612e+00  alloc 1.13  peak res 5.47 GiB
+step 65 (attempt  69) 915N,633N,821N,884P,1483N mixed 2  R 0.83  loss -0.0000  |g| 4.220e+00 (A 3.79e+00, B 1.87e+00)  |dtheta| 9.44e-02  |(a/r)BA| 2.647e+00  alloc 1.13  peak res 5.47 GiB
+step 66 (attempt  70) 1165N,1128P,502P,576P,1057P mixed 1  R 0.70  loss -0.0000  |g| 2.577e+00 (A 2.31e+00, B 1.14e+00)  |dtheta| 5.82e-02  |(a/r)BA| 2.678e+00  alloc 1.13  peak res 5.47 GiB
+step 67 (attempt  71) 269P,143N,1026P,1256P,1068P mixed 2  R 0.60  loss +0.0000  |g| 4.582e+00 (A 4.15e+00, B 1.94e+00)  |dtheta| 5.92e-02  |(a/r)BA| 2.697e+00  alloc 1.13  peak res 5.47 GiB
+step 68 (attempt  72) 302P,605N,1238P,205P,1162P mixed 3  R 0.83  loss -0.0000  |g| 2.838e+00 (A 2.47e+00, B 1.39e+00)  |dtheta| 8.18e-02  |(a/r)BA| 2.720e+00  alloc 1.13  peak res 5.47 GiB
+step 69 (attempt  73) 46P,1301P,186P,914P,1380P mixed 1  R 0.93  loss +0.0000  |g| 2.532e+00 (A 2.30e+00, B 1.05e+00)  |dtheta| 1.03e-01  |(a/r)BA| 2.743e+00  alloc 1.13  peak res 5.47 GiB
+step 70 (attempt  74) 896P,568N,997P,889N,392N mixed 1  R 0.87  loss +0.0000  |g| 2.575e+00 (A 2.35e+00, B 1.06e+00)  |dtheta| 6.51e-02  |(a/r)BA| 2.760e+00  alloc 1.13  peak res 6.29 GiB
+  [val subset, step 70] acc 0.7070  F1 0.6862  rec POS 0.9648 NEG 0.4492  invalid 0.0000  pred POS 0.7578  (n=512)
+step 71 (attempt  77) 495N,684P,1468P,446P,790P mixed 1  R 0.83  loss -0.0000  |g| 1.913e+00 (A 1.77e+00, B 7.19e-01)  |dtheta| 4.82e-02  |(a/r)BA| 2.770e+00  alloc 1.13  peak res 6.29 GiB
+step 72 (attempt  78) 631N,776P,976P,811N,89P mixed 1  R 0.87  loss +0.0000  |g| 2.415e+00 (A 2.23e+00, B 9.37e-01)  |dtheta| 5.29e-02  |(a/r)BA| 2.772e+00  alloc 1.13  peak res 6.29 GiB
+step 73 (attempt  79) 1230N,875P,1378N,177P,1304P mixed 1  R 0.77  loss -0.0000  |g| 1.798e+00 (A 1.66e+00, B 6.80e-01)  |dtheta| 6.28e-02  |(a/r)BA| 2.777e+00  alloc 1.13  peak res 6.29 GiB
+step 74 (attempt  80) 945P,391N,293N,1408N,176N mixed 1  R 0.63  loss -0.0000  |g| 1.740e+00 (A 1.62e+00, B 6.42e-01)  |dtheta| 7.67e-02  |(a/r)BA| 2.780e+00  alloc 1.13  peak res 6.29 GiB
+step 75 (attempt  81) 164N,1389P,61N,740N,66P mixed 2  R 0.93  loss -0.0000  |g| 3.992e-01 (A 3.42e-01, B 2.06e-01)  |dtheta| 6.98e-02  |(a/r)BA| 2.790e+00  alloc 1.13  peak res 6.29 GiB
+step 76 (attempt  82) 386N,1006N,1151P,600P,1110N mixed 2  R 0.80  loss -0.0000  |g| 4.599e-01 (A 3.66e-01, B 2.79e-01)  |dtheta| 6.55e-02  |(a/r)BA| 2.800e+00  alloc 1.13  peak res 6.29 GiB
+step 77 (attempt  84) 1360N,463N,653P,262N,412N mixed 4  R 0.47  loss +0.0000  |g| 3.318e+00 (A 3.10e+00, B 1.18e+00)  |dtheta| 9.58e-02  |(a/r)BA| 2.811e+00  alloc 1.13  peak res 6.29 GiB
+step 78 (attempt  85) 1261N,799P,942P,1387P,516P mixed 2  R 0.47  loss +0.0000  |g| 3.165e+00 (A 2.95e+00, B 1.15e+00)  |dtheta| 6.10e-02  |(a/r)BA| 2.814e+00  alloc 1.13  peak res 6.29 GiB
+step 79 (attempt  89) 7P,349P,572P,401N,1174N mixed 2  R 0.57  loss +0.0000  |g| 3.726e+00 (A 3.49e+00, B 1.31e+00)  |dtheta| 6.36e-02  |(a/r)BA| 2.816e+00  alloc 1.13  peak res 6.29 GiB
+step 80 (attempt  90) 1021N,606N,702P,1080N,382P mixed 2  R 0.77  loss +0.0000  |g| 3.894e+00 (A 3.67e+00, B 1.31e+00)  |dtheta| 9.25e-02  |(a/r)BA| 2.820e+00  alloc 1.13  peak res 6.29 GiB
+  [val subset, step 80] acc 0.7969  F1 0.7934  rec POS 0.6680 NEG 0.9258  invalid 0.0000  pred POS 0.3711  (n=512)
+step 81 (attempt  92) 1091P,399N,718N,1206N,657P mixed 1  R 0.87  loss +0.0000  |g| 1.913e+00 (A 1.79e+00, B 6.65e-01)  |dtheta| 6.65e-02  |(a/r)BA| 2.827e+00  alloc 1.13  peak res 6.29 GiB
+step 82 (attempt  95) 531P,1231P,1166P,587P,295N mixed 1  R 0.87  loss +0.0000  |g| 1.787e+00 (A 1.69e+00, B 5.79e-01)  |dtheta| 7.75e-02  |(a/r)BA| 2.837e+00  alloc 1.13  peak res 6.29 GiB
+step 83 (attempt  96) 913P,115N,584P,828N,847P mixed 2  R 0.80  loss -0.0000  |g| 3.887e-01 (A 3.39e-01, B 1.89e-01)  |dtheta| 7.34e-02  |(a/r)BA| 2.850e+00  alloc 1.13  peak res 6.29 GiB
+step 84 (attempt  97) 1116N,113N,792N,71N,869P mixed 2  R 0.90  loss -0.0000  |g| 2.550e+00 (A 2.37e+00, B 9.44e-01)  |dtheta| 6.34e-02  |(a/r)BA| 2.870e+00  alloc 1.13  peak res 6.29 GiB
+step 85 (attempt  98) 1430P,1167N,980P,682N,307N mixed 3  R 0.83  loss -0.0000  |g| 4.504e+00 (A 4.26e+00, B 1.46e+00)  |dtheta| 7.92e-02  |(a/r)BA| 2.891e+00  alloc 1.13  peak res 6.29 GiB
+step 86 (attempt  99) 1476P,366N,1216N,241N,860P mixed 1  R 0.93  loss +0.0000  |g| 1.854e+00 (A 1.75e+00, B 6.21e-01)  |dtheta| 9.03e-02  |(a/r)BA| 2.916e+00  alloc 1.13  peak res 6.29 GiB
+step 87 (attempt 100) 1369N,86P,260P,358P,794N mixed 2  R 0.73  loss -0.0000  |g| 4.652e-01 (A 4.09e-01, B 2.22e-01)  |dtheta| 8.21e-02  |(a/r)BA| 2.945e+00  alloc 1.13  peak res 6.29 GiB
+step 88 (attempt 107) 392N,684P,383N,87P,934P mixed 1  R 0.83  loss -0.0000  |g| 1.480e+00 (A 1.40e+00, B 4.67e-01)  |dtheta| 6.58e-02  |(a/r)BA| 2.976e+00  alloc 1.13  peak res 6.29 GiB
+step 89 (attempt 108) 134N,565P,497N,205P,482P mixed 2  R 0.70  loss -0.0000  |g| 3.323e+00 (A 3.15e+00, B 1.05e+00)  |dtheta| 6.27e-02  |(a/r)BA| 3.009e+00  alloc 1.13  peak res 6.29 GiB
+step 90 (attempt 109) 954P,460N,1N,1295N,39P mixed 1  R 0.83  loss -0.0000  |g| 1.587e+00 (A 1.49e+00, B 5.34e-01)  |dtheta| 6.43e-02  |(a/r)BA| 3.032e+00  alloc 1.13  peak res 6.29 GiB
+  [val subset, step 90] acc 0.8047  F1 0.8035  rec POS 0.7266 NEG 0.8828  invalid 0.0000  pred POS 0.4219  (n=512)
+step 91 (attempt 110) 948P,1142P,657P,600P,914P mixed 2  R 0.77  loss +0.0000  |g| 3.989e+00 (A 3.78e+00, B 1.26e+00)  |dtheta| 9.55e-02  |(a/r)BA| 3.057e+00  alloc 1.13  peak res 6.29 GiB
+step 92 (attempt 111) 48N,1353P,1432N,1088P,7P mixed 1  R 0.77  loss -0.0000  |g| 1.561e+00 (A 1.49e+00, B 4.76e-01)  |dtheta| 7.21e-02  |(a/r)BA| 3.086e+00  alloc 1.13  peak res 6.29 GiB
+step 93 (attempt 112) 691N,1192P,945P,176N,89P mixed 1  R 0.87  loss +0.0000  |g| 2.024e+00 (A 1.91e+00, B 6.64e-01)  |dtheta| 8.62e-02  |(a/r)BA| 3.112e+00  alloc 1.13  peak res 6.29 GiB
+step 94 (attempt 113) 847P,875P,71N,1322P,6P mixed 2  R 0.83  loss +0.0000  |g| 4.293e+00 (A 4.04e+00, B 1.45e+00)  |dtheta| 1.26e-01  |(a/r)BA| 3.138e+00  alloc 1.13  peak res 6.29 GiB
+step 95 (attempt 114) 1248N,1174N,764N,1119N,1258N mixed 2  R 0.27  loss -0.0000  |g| 3.305e+00 (A 3.09e+00, B 1.16e+00)  |dtheta| 7.87e-02  |(a/r)BA| 3.145e+00  alloc 1.13  peak res 6.29 GiB
+step 96 (attempt 116) 1372P,1030P,317P,576P,1356P mixed 1  R 0.90  loss -0.0000  |g| 2.189e+00 (A 2.05e+00, B 7.58e-01)  |dtheta| 9.24e-02  |(a/r)BA| 3.160e+00  alloc 1.13  peak res 6.29 GiB
+step 97 (attempt 120) 583N,422N,826N,978N,1108N mixed 1  R 0.03  loss -0.0000  |g| 1.701e+00 (A 1.56e+00, B 6.88e-01)  |dtheta| 7.10e-02  |(a/r)BA| 3.165e+00  alloc 1.13  peak res 6.29 GiB
+step 98 (attempt 138) 1114N,871P,688P,1148P,72P mixed 1  R 0.90  loss -0.0000  |g| 2.140e+00 (A 1.97e+00, B 8.32e-01)  |dtheta| 5.93e-02  |(a/r)BA| 3.169e+00  alloc 1.13  peak res 6.29 GiB
+step 99 (attempt 141) 759N,1468P,1342P,1261N,1304P mixed 1  R 0.67  loss +0.0000  |g| 1.741e+00 (A 1.60e+00, B 6.80e-01)  |dtheta| 7.11e-02  |(a/r)BA| 3.169e+00  alloc 1.13  peak res 6.29 GiB
+step 100 (attempt 142) 132N,1190P,346N,709N,498N mixed 1  R 0.37  loss -0.0000  |g| 1.373e+00 (A 1.27e+00, B 5.13e-01)  |dtheta| 8.20e-02  |(a/r)BA| 3.166e+00  alloc 1.13  peak res 6.29 GiB
+  [val subset, step 100] acc 0.5371  F1 0.4136  rec POS 0.9961 NEG 0.0781  invalid 0.0000  pred POS 0.9590  (n=512)
+
+batches by number of mixed groups: {'0': 42, '1': 35, '2': 30, '3': 15, '4': 15, '5': 5}, prompt groups 710, responses 4260, train time 237 s
+steps 100/100, batches 142, zero-signal batches 42, frozen changed 0/310, params equal init: False
+grad norm range [2.663e-01, 4.582e+00]  change from init 3.056e+00  |(a/r)BA| 3.166e+00
+
+full validation  base:    acc 0.7486  F1 0.7493  rec POS 0.7148 NEG 0.7824  invalid 0.0028  pred POS 0.4662  (n=1066)
+full validation  trained: acc 0.5281  F1 0.3958  rec POS 0.9962 NEG 0.0600  invalid 0.0009  pred POS 0.9681  (n=1066)
+accuracy diff -0.2205  paired bootstrap 95% CI [-0.2608, -0.1801]
+paired changes: {'NEGATIVE': {'base_wrong_now_right': 0, 'base_right_now_wrong': 385}, 'POSITIVE': {'base_wrong_now_right': 150, 'base_right_now_wrong': 0}, 'flips': {'NEGATIVE->POSITIVE': 533, 'None->POSITIVE': 2}, 'invalid_to_valid': 2, 'valid_to_invalid': 0}
+
+vs saved base predictions: acc 0.7486  F1 0.7493  rec POS 0.7148 NEG 0.7824  invalid 0.0028  pred POS 0.4662  (n=1066)
+  accuracy diff -0.2205  paired bootstrap 95% CI [-0.2608, -0.1801]
+  paired changes: {'NEGATIVE': {'base_wrong_now_right': 0, 'base_right_now_wrong': 385}, 'POSITIVE': {'base_wrong_now_right': 150, 'base_right_now_wrong': 0}, 'flips': {'NEGATIVE->POSITIVE': 533, 'None->POSITIVE': 2}, 'invalid_to_valid': 2, 'valid_to_invalid': 0}
+ROC AUC trained                  0.8900
+ROC AUC base                     0.8277   trained - this: +0.0623  CI [+0.0492, +0.0763]
+peak allocated 2.45 GiB, peak reserved 6.30 GiB, device 4.00 GiB, budget 4.0 GiB: FAIL  (allocator stats exclude the CUDA context)

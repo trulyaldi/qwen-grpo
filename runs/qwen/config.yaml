@@ -1,0 +1,48 @@
+# resolved config of run qwen, sha256 73f5ff3f4ec175b730cdeff5c4ae11156e830bdd6910fa6423bf9a456a0b72fd
+run:
+  name: qwen
+  gpu_budget_gib: 4.0
+  overwrite: false
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: bfloat16
+  thinking: false
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.0
+  targets: last2-attention
+data:
+  train_samples: 512
+  val_subset: 512
+  subset_seed: 42
+training:
+  batch_size: 5
+  batch_mode: unconstrained
+  group_size: 6
+  learning_rate: 0.0005
+  max_steps: 100
+  max_attempts: 1000
+  clip_eps: 0.2
+  num_iterations: 1
+  temperature: 1.0
+  max_new_tokens: 4
+  seed: 42
+  eval_every: 10
+  full_val: true
+verification:
+  split: validation
+  merge_subset: 8
+  negative_control:
+    checkpoint: null
+    train: false
+  statistics:
+    confidence_level: 0.95
+    bootstrap_samples: 2000
+    seed: 42
+evaluation:
+  max_new_tokens: 4
+  batch_size: 32
+  score_batch_size: 8
+  bootstrap_samples: 10000
+  bootstrap_seed: 42

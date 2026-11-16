@@ -21,9 +21,9 @@ data:
 
 training:
   batch_size: 5
-  batch_mode: balanced       # cycle (B=1) | balanced (B=2, one prompt per label) | unconstrained
+  batch_mode: unconstrained      # cycle (B=1) | balanced (B=2, one prompt per label) | unconstrained
   group_size: 6
-  learning_rate: 8.0e-5      # write floats with a decimal point: PyYAML reads 1e-4 as a string
+  learning_rate: 5.0e-4      # write floats with a decimal point: PyYAML reads 1e-4 as a string
   max_steps: 100
   max_attempts: 1000
   clip_eps: 0.2
