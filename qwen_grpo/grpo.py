@@ -22,13 +22,17 @@ def response_mask(response_ids: torch.Tensor, eos_ids: list[int]) -> torch.Tenso
 def response_logprobs(logits: torch.Tensor, input_ids: torch.Tensor, prompt_len: int) -> torch.Tensor:
     """log pi(token_t | tokens_<t) for the response tokens.
 
-    logits    [N, T, V]  model output for the full (left-padded prompt + response) sequence
+    logits    [N, K, V]  model output for the last K >= R + 1 columns of the (left-padded prompt + response) sequence:
+                         K = T for the full sequence, K = R + 1 with logits_to_keep (policy.compute_logprobs)
     input_ids [N, T]     prompts occupy columns [0, prompt_len), responses [prompt_len, T)
-    returns   [N, T - prompt_len]
+    returns   [N, R]     R = T - prompt_len
 
-    The logits at column t-1 score the token at column t.
+    The logits at column t-1 score the token at column t, so the response is scored by columns P-1 .. T-2: the last
+    R + 1 logit columns without the final one, whatever K is.
     """
-    pred = logits[:, prompt_len - 1 : -1]
+    R = input_ids.shape[1] - prompt_len
+    assert logits.shape[1] > R, (tuple(logits.shape), R)
+    pred = logits[:, -(R + 1) : -1]
     pred = pred.to(torch.promote_types(pred.dtype, torch.float32))  # bf16 -> fp32, fp64 stays fp64
     targets = input_ids[:, prompt_len:]
     return torch.log_softmax(pred, dim=-1).gather(-1, targets.unsqueeze(-1)).squeeze(-1)

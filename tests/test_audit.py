@@ -98,8 +98,8 @@ class Bigram(torch.nn.Module):
         super().__init__()
         self.W = torch.nn.Parameter(W)
 
-    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None):
-        return SimpleNamespace(logits=self.W[input_ids])
+    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None, logits_to_keep=0):
+        return SimpleNamespace(logits=self.W[input_ids[:, -logits_to_keep:]])  # as HF: last k columns, 0 = all
 
 
 def test_end_to_end_loss_by_hand_with_padding_eos_truncation_and_clipping():
@@ -149,8 +149,8 @@ class Tiny(torch.nn.Module):
         torch.manual_seed(0)
         self.emb, self.out = torch.nn.Embedding(V, d), torch.nn.Linear(d, V)
 
-    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None):
-        return SimpleNamespace(logits=self.out(self.emb(input_ids)))
+    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None, logits_to_keep=0):
+        return SimpleNamespace(logits=self.out(self.emb(input_ids[:, -logits_to_keep:])))  # as HF: last k columns, 0 = all
 
 
 def test_lr_zero_step_leaves_parameters_and_policy_bitwise_unchanged():

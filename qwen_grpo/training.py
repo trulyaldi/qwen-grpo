@@ -71,38 +71,65 @@ def group_rewards(responses, labels, G):
 
 
 
-def prepare(model, rollouts, rewards):
+def micro_batches(rollouts, size=None):
+    """(row slice, rollouts restricted to those rows) in chunks of `size` completions, the last one possibly smaller;
+    size None: the whole batch. Slices are views, and every chunk keeps the batch's padded width and prompt_len."""
+    N = rollouts["input_ids"].shape[0]
+    size = size or N
+    for i in range(0, N, size):
+        rows = slice(i, min(i + size, N))
+        yield rows, {k: v[rows] if isinstance(v, torch.Tensor) else v for k, v in rollouts.items()}
+
+
+def prepare(model, rollouts, rewards, micro_batch_size=None):
     """Fixed targets of one rollout batch -> (advantages [B*G], old_logp [B*G, R]), or None if no group has mixed
-    rewards. old_logp is the sampling policy's log-prob, computed once (no graph) and reused by every update."""
+    rewards. old_logp is the sampling policy's log-prob, computed once (no graph) and reused by every update, in the
+    same micro-batches as the updates: bf16 outputs depend on batch shape, and iteration 0 needs ratio exactly 1."""
     if (rewards == rewards[:, :1]).all():
         return None
     adv = group_advantages(rewards).flatten().to(rollouts["input_ids"].device)
     with torch.no_grad():
-        old_logp = compute_logprobs(model, rollouts)
+        old_logp = torch.cat([compute_logprobs(model, c) for _, c in micro_batches(rollouts, micro_batch_size)])
     return adv, old_logp
 
 
-def grpo_update(model, params, optimizer, rollouts, adv, old_logp, clip_eps=0.2, iteration=0):
+def grpo_update(model, params, optimizer, rollouts, adv, old_logp, clip_eps=0.2, iteration=0, micro_batch_size=None):
     """One AdamW update of the clipped objective against the fixed old_logp -> scalar logs. Iteration 0 must see
-    ratio 1 (same parameters as the sampling policy); later iterations recompute log-probs under the updated adapter."""
-    mask = rollouts["completion_mask"]
-    new_logp = compute_logprobs(model, rollouts)
-    out = {"iteration": iteration}
-    if iteration == 0:
-        out["init_diff"] = masked_max(new_logp.detach() - old_logp, mask)
-        if out["init_diff"] > INIT_TOL:
-            raise RuntimeError(f"old/current log-prob mismatch before the step: {out['init_diff']:.3e}")
-    loss = grpo_loss(new_logp, old_logp, adv, mask, clip_eps=clip_eps)
-    if not (torch.isfinite(adv).all() and torch.isfinite(loss)):
-        raise RuntimeError(f"non-finite advantages {adv.tolist()} or loss {loss.item()}")
+    ratio 1 (same parameters as the sampling policy); later iterations recompute log-probs under the updated adapter.
+
+    Micro-batches: the loss is -(1/N) sum_i J_i over all N = B*G completions (J_i: completion i's length-normalized
+    clipped surrogate). grpo_loss of a chunk c of n_c completions is -(1/n_c) sum_{i in c} J_i, so (n_c / N) times it,
+    summed over chunks, is exactly the full-batch loss; each chunk is backpropagated (and its graph freed) before the
+    next, and the gradients accumulate to the full-batch gradient. A single chunk is not rescaled at all."""
+    if not torch.isfinite(adv).all():
+        raise RuntimeError(f"non-finite advantages {adv.tolist()}")
+    N = adv.shape[0]
+    out, loss, new_logp = {"iteration": iteration}, None, []
     optimizer.zero_grad(set_to_none=True)
-    loss.backward()
+    for rows, chunk in micro_batches(rollouts, micro_batch_size):
+        logp = compute_logprobs(model, chunk)
+        mask = chunk["completion_mask"]
+        if iteration == 0:
+            out["init_diff"] = max(out.get("init_diff", 0.0), masked_max(logp.detach() - old_logp[rows], mask))
+            if out["init_diff"] > INIT_TOL:
+                optimizer.zero_grad(set_to_none=True)
+                raise RuntimeError(f"old/current log-prob mismatch before the step: {out['init_diff']:.3e}")
+        part = grpo_loss(logp, old_logp[rows], adv[rows], mask, clip_eps=clip_eps)
+        if (n_c := mask.shape[0]) != N:
+            part = part * (n_c / N)
+        if not torch.isfinite(part):
+            optimizer.zero_grad(set_to_none=True)
+            raise RuntimeError(f"non-finite loss {part.item()} on completions {rows.start}..{rows.stop - 1}")
+        part.backward()  # frees this chunk's graph before the next forward
+        loss = part.detach() if loss is None else loss + part.detach()
+        new_logp.append(logp.detach())
+        del logp, part
+    new_logp = torch.cat(new_logp)
     grad_norms = {n: p.grad.norm().item() for n, p in params.items()}
     if not all(math.isfinite(g) for g in grad_norms.values()):
         optimizer.zero_grad(set_to_none=True)
         raise RuntimeError(f"non-finite gradients {grad_norms}; no optimizer step taken")
-    stats = clip_stats(new_logp.detach(), old_logp, adv, mask, clip_eps)  # ratios at the parameters being updated
-    del new_logp  # frees the graph before the next forward
+    stats = clip_stats(new_logp, old_logp, adv, rollouts["completion_mask"], clip_eps)  # ratios at the updated parameters
     before = {n: p.detach().clone() for n, p in params.items()}
     optimizer.step()
     optimizer.zero_grad(set_to_none=True)
@@ -114,10 +141,11 @@ def grpo_update(model, params, optimizer, rollouts, adv, old_logp, clip_eps=0.2,
     }
 
 
-def grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=0.2, num_iterations=1):
+def grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=0.2, num_iterations=1, micro_batch_size=None):
     """num_iterations sequential updates on one rollout batch -> list of per-update logs, or None (no step) if no
     group has mixed rewards. trainer._train runs the same loop, interleaved with checkpoints."""
-    targets = prepare(model, rollouts, rewards)
+    targets = prepare(model, rollouts, rewards, micro_batch_size)
     if targets is None:
         return None
-    return [grpo_update(model, params, optimizer, rollouts, *targets, clip_eps, k) for k in range(num_iterations)]
+    return [grpo_update(model, params, optimizer, rollouts, *targets, clip_eps, k, micro_batch_size)
+            for k in range(num_iterations)]

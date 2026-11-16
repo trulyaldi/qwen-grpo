@@ -25,8 +25,8 @@ class Tiny(torch.nn.Module):
         torch.manual_seed(0)
         self.emb, self.out = torch.nn.Embedding(V, d), torch.nn.Linear(d, V)
 
-    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None):
-        return SimpleNamespace(logits=self.out(self.emb(input_ids)))
+    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None, logits_to_keep=0):
+        return SimpleNamespace(logits=self.out(self.emb(input_ids[:, -logits_to_keep:])))  # as HF: last k columns, 0 = all
 
 
 def rollouts(G=3, P=2, R=3):
@@ -323,8 +323,8 @@ class PositionLogits(torch.nn.Module):
         super().__init__()
         self.Z = torch.nn.Parameter(torch.randn(T, V, generator=torch.Generator().manual_seed(3), dtype=torch.float64))
 
-    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None):
-        return SimpleNamespace(logits=self.Z.expand(input_ids.shape[0], -1, -1))
+    def forward(self, input_ids, attention_mask=None, position_ids=None, use_cache=None, logits_to_keep=0):
+        return SimpleNamespace(logits=self.Z.expand(input_ids.shape[0], -1, -1)[:, -logits_to_keep:])
 
 
 def test_b2_opposite_labels_hand_rewards_and_independent_reference_gradient():
@@ -406,3 +406,73 @@ def test_one_iteration_equals_the_first_update_of_three():
     one = grpo_step(*a, torch.optim.AdamW(a[1].values(), lr=1e-2), rollouts(), torch.tensor([[1.0, 0, 0]]))
     three = grpo_step(*b, torch.optim.AdamW(b[1].values(), lr=1e-2), rollouts(), torch.tensor([[1.0, 0, 0]]), num_iterations=3)
     assert len(one) == 1 and one[0] == three[0]
+
+
+# ---- micro-batching: the same objective and gradients in chunks ----
+
+def lora_rollouts(dtype):
+    """A tiny real Qwen3 + LoRA (B != 0, so both factors get gradients) and one rollout batch of B=3 prompts x G=4 with
+    unequal valid lengths (1..5 tokens) and one zero-signal group."""
+    from tests.test_trainer import tiny_lora_model
+    from qwen_grpo.policy import generate_rollouts
+    tok = AutoTokenizer.from_pretrained(MODEL, padding_side="left")
+    torch.manual_seed(0)  # LoRA A init draws from the global RNG
+    model = tiny_lora_model(dtype, "cpu", (("q_proj", "v_proj", "o_proj"), 2), 8, 16).to(dtype)
+    for n, p in model.named_parameters():
+        if "lora_B" in n:
+            torch.nn.init.normal_(p, std=0.1)
+    r = generate_rollouts(model, tok, build_prompts(tok, ["Great.", "A long, dull and tired film.", "Fine"]), G=4, max_new_tokens=5)
+    cmask = torch.arange(5)[None, :] < torch.tensor([5, 1, 3, 5, 2, 5, 4, 5, 1, 2, 3, 4])[:, None]
+    r = {**r, "completion_mask": cmask,
+         "attention_mask": torch.cat([r["attention_mask"][:, :r["prompt_len"]], cmask.long()], 1)}
+    rewards = torch.tensor([[1.0, 0, 0, 1], [0.0, 0, 0, 0], [1.0, 1, 0, 1]])
+    return model, r, rewards
+
+
+def two_updates(dtype, micro_batch_size):
+    model, r, rewards = lora_rollouts(dtype)
+    params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+    opt = torch.optim.SGD(params.values(), lr=3.0)  # a large step, so the second update sees ratios far from 1
+    adv, old = training.prepare(model, r, rewards, micro_batch_size)
+    logs = [training.grpo_update(model, params, opt, r, adv, old, 0.2, k, micro_batch_size) for k in range(2)]
+    return old, logs, {n: p.detach().clone() for n, p in params.items()}
+
+
+@pytest.mark.parametrize("size", [1, 5, 7, 12])
+def test_micro_batched_updates_equal_the_full_batch_updates(size):
+    """N = 12 completions in chunks of 1, 5 (5+5+2), 7 (7+5) or 12: old log-probs, loss, gradient norms, clip statistics
+    and the parameters after two updates (one with clipping active) equal the full batch's, in fp64. One chunk of N
+    performs exactly the full-batch computation."""
+    (old_a, logs_a, pa), (old_b, logs_b, pb) = two_updates(torch.float64, None), two_updates(torch.float64, size)
+    assert logs_a[1]["clip_frac"] > 0 and logs_a[1]["ratio_max"] > 1.2  # the clipped branch is exercised
+    keys = ("loss", "grad_norm", "ratio_mean", "ratio_min", "ratio_max", "outside_frac", "clip_frac", "approx_kl")
+    if size == 12:
+        assert torch.equal(old_a, old_b) and [[x[k] for k in keys] for x in logs_a] == [[x[k] for k in keys] for x in logs_b]
+        assert all(torch.equal(pa[n], pb[n]) for n in pa)
+        return
+    torch.testing.assert_close(old_b, old_a, atol=1e-13, rtol=0)
+    for x, y in zip(logs_a, logs_b):
+        assert [y[k] for k in keys] == pytest.approx([x[k] for k in keys], rel=1e-10, abs=1e-12)
+        assert y["grad_norms"] == pytest.approx(x["grad_norms"], rel=1e-10)
+    assert logs_b[0]["init_diff"] == 0.0
+    for n in pa:
+        torch.testing.assert_close(pb[n], pa[n], atol=1e-12, rtol=1e-10)
+
+
+def test_micro_batched_old_logprobs_keep_the_first_ratio_exactly_one_in_bf16():
+    """bf16 outputs depend on batch shape: prepare() computes old_logp in the same chunks as the update, so iteration 0
+    sees ratio exactly 1 (grpo_update raises above INIT_TOL otherwise)."""
+    model, r, rewards = lora_rollouts(torch.bfloat16)
+    params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+    adv, old = training.prepare(model, r, rewards, 5)
+    out = training.grpo_update(model, params, torch.optim.SGD(params.values(), lr=0.0), r, adv, old, 0.2, 0, 5)
+    assert out["init_diff"] == 0.0 and out["ratio_min"] == out["ratio_max"] == 1.0
+
+
+def test_micro_batches_cover_every_row_once_in_order():
+    r = {"input_ids": torch.arange(24).reshape(12, 2), "completion_mask": torch.ones(12, 1, dtype=torch.bool), "prompt_len": 1}
+    for size, sizes in [(None, [12]), (12, [12]), (5, [5, 5, 2]), (1, [1] * 12)]:
+        chunks = list(training.micro_batches(r, size))
+        assert [c["input_ids"].shape[0] for _, c in chunks] == sizes and all(c["prompt_len"] == 1 for _, c in chunks)
+        assert torch.equal(torch.cat([c["input_ids"] for _, c in chunks]), r["input_ids"])
+        assert [rows.start for rows, _ in chunks] == [sum(sizes[:i]) for i in range(len(sizes))]

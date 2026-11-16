@@ -311,7 +311,7 @@ def _train(cfg: Config, resume, state, device):
                      "invalid_responses": sum(parse_label(r) is None for r in responses),
                      "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16],
                      "mean_completion_tokens": rollouts["completion_mask"].sum(1).float().mean().item()}  # through the first EOS
-            targets = prepare(model, rollouts, rewards)
+            targets = prepare(model, rollouts, rewards, t.micro_batch_size)
             if targets is None:
                 del rollouts
                 result["zero_signal"].append(group)
@@ -320,7 +320,7 @@ def _train(cfg: Config, resume, state, device):
             del rollouts, targets
         group = pending["group"]
         out = grpo_update(model, params, optimizer, pending["rollouts"], pending["adv"], pending["old_logp"],
-                          clip_eps=t.clip_eps, iteration=pending["iteration"])
+                          clip_eps=t.clip_eps, iteration=pending["iteration"], micro_batch_size=t.micro_batch_size)
         pending["iteration"] += 1
         if pending["iteration"] == t.num_iterations:
             pending = None
