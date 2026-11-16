@@ -89,7 +89,7 @@ None of the failures involves code changed by Ticket 00:
 | `tests/test_trl_reference.py` (collection error) | imports `research/trl_reference`, deleted in `4424e0f` |
 | `test_config::test_new_runs_reject_the_historical_schema_with_the_offending_keys` | `48b2028` rewrote `configs/default.yaml` in the current schema; the test still expects the historical one |
 | `test_config::test_historical_configs_in_the_repository_still_load_as_records` | same commit; the test expects the old values (balanced, B = 2, 32 samples) |
-| `test_config::test_current_configs_load_with_distinct_run_names` | failed before `48b2028` too: expects at least 2 current-schema configs besides `default.yaml`, finds only `configs/qwen.yaml` |
+| `test_config::test_current_configs_load_with_distinct_run_names` | failed before `48b2028` too (checked with the old `default.yaml`). Observed: `assert (1 >= 2)` on the config list `[configs/qwen.yaml]` |
 | `test_historical::test_saved_log_and_checkpoint_configs_are_the_reference_yaml` | environment: `load_training_state`'s `torch.load` has no `map_location`, the saved state holds CUDA tensors, and CUDA is hidden. **Not run with a GPU.** |
 | `test_historical::test_reference_run_resumes_under_the_current_code` | same cause. **Not run with a GPU.** |
 

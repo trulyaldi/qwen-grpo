@@ -37,7 +37,7 @@ not the device where computation runs.
 | 9 | `qwen_grpo/evaluation.py:143-150` `label_scores` | `.to(model.device)`, `compute_logprobs` | as 4, no grad | 05, 10 |
 | 10 | `qwen_grpo/verification.py:186` `sequence_logits` | `model(input_ids).logits`, full `[T, V]` logits per example | full-model forward and full logits | 10 |
 | 11 | `qwen_grpo/verification.py:228-244` `merge_check` | `model.merge_and_unload()` in place on the model's device | whole model on the GPU during the merge (bf16 check) | 10 |
-| 12 | `qwen_grpo/verification.py:253` `fp32_merge_check` | `lora_model(torch.float32, "cpu")`, whole model in fp32 on CPU | about 16 GB for Qwen3-4B; cannot run on this host (6.7 GiB RAM) | 10 |
+| 12 | `qwen_grpo/verification.py:253` `fp32_merge_check` | `lora_model(torch.float32, "cpu")`, whole model in fp32 on CPU | estimated ≈ 4.0 B params × 4 bytes ≈ 16 GB for Qwen3-4B (arithmetic, not measured), more than this host's 6.7 GiB RAM | 10 |
 | 13 | `qwen_grpo/verification.py:360`, `scripts/run.py:56` | `lora_model(..., "cuda")` for verify / validate / test | whole model on the GPU | 10, 11 |
 | 14 | `qwen_grpo/trainer.py:207` | `lora_model(dtype, device)` | as 1 | 07 |
 | 15 | `qwen_grpo/trainer.py:274, 304` | pending batch and prompt ids `.to(model.device)` | as 2 | 07 |
