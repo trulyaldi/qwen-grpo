@@ -1,13 +1,16 @@
 """YAML run configuration, the single source of truth for scripts/run.py.
 
-Every key without a default is required; unknown, missing or ill-typed keys are errors. Defaults are the values every
-run so far used, so a YAML may omit those keys and older configs and saved training logs load unchanged (normalized()
-fills them in). Some keys accept one value only: they record a choice the code does not yet support changing, and
-validate() says why instead of silently ignoring a different value.
+Sections: run, model, lora, data, training, evaluation, and optionally verification. Every key without a default is
+required; unknown, missing or ill-typed keys are errors. A YAML may start with `extends: <path of another YAML, relative
+to this file>`: the parent is loaded first and this file's keys are merged onto it by merge().
 
-A YAML file may start with `extends: <path of another YAML, relative to this file>`: the parent is loaded first (itself
-possibly extending another) and this file's keys are merged onto it by merge(). The resolved config has no `extends`.
+Historical configs (written before this schema) name keys that were removed or moved (HISTORICAL). New experiments
+must not use them: load() rejects them unless historical=True, which upgrade()s the mapping explicitly. A removed key
+is accepted only with the one value the current code implements; training.batch_mode cycle/balanced is kept as
+training.legacy_batch_mode, so such a config stays readable (validate, test, verify, report) but cannot be trained or
+resumed.
 """
+import copy
 import dataclasses
 import hashlib
 import json
@@ -23,21 +26,30 @@ from qwen_grpo.model import PRESETS
 
 RUN_NAME = r"[A-Za-z0-9][A-Za-z0-9_.-]*"  # no path separators, cannot start with "." (hidden, "..") or "-"
 DTYPES = {"bfloat16": torch.bfloat16, "float32": torch.float32}
-BATCH_MODES = ("cycle", "balanced", "unconstrained")
+LEGACY_BATCH_MODES = {"cycle": 1, "balanced": 2}  # historical samplers the current code cannot reproduce -> their B
+
+# Historical keys. REMOVED: the only value the current code implements (that value is dropped, any other is an error).
+# MOVED: the key's current name. training.batch_mode "unconstrained" is the shuffled sampler (training.shuffled_batches).
+REMOVED = {"model.thinking": False, "lora.dropout": 0.0, "training.temperature": 1.0, "evaluation.bootstrap_seed": 42,
+           "verification.merge_subset": 8, "verification.statistics.confidence_level": 0.95,
+           "verification.statistics.bootstrap_samples": 2000, "verification.statistics.seed": 42}
+MOVED = {"training.eval_every": "evaluation.every", "training.full_val": "evaluation.full_validation",
+         "verification.negative_control.checkpoint": "verification.control_checkpoint",
+         "verification.negative_control.train": "verification.train_control"}
+HISTORICAL = (*REMOVED, *MOVED, "training.batch_mode", "training.legacy_batch_mode")
 
 
 @dataclass(frozen=True)
 class Run:
-    name: str  # outputs: results/<name>/, results/benchmarks/<name>.*, checkpoints/<name>_step<N>/
+    name: str  # outputs: runs/<name>/
     gpu_budget_gib: float = 4.0  # peak reserved memory the run is checked against (reported, not enforced)
-    overwrite: bool = False  # true: train deletes this run's earlier results/checkpoints first (never on --resume)
+    overwrite: bool = False  # true: train deletes this run's earlier outputs first (never on --resume)
 
 
 @dataclass(frozen=True, kw_only=True)
 class Model:
-    name: str  # a Qwen3 causal LM (the prompt asserts Qwen3's non-thinking chat template)
+    name: str  # a dense Qwen3 causal LM, always in non-thinking mode (sentiment.build_prompts asserts it)
     dtype: str = "bfloat16"  # frozen base weights; LoRA adapters are always fp32
-    thinking: bool = False
 
 
 @dataclass(frozen=True)
@@ -49,8 +61,7 @@ class LoraTargets:
 @dataclass(frozen=True, kw_only=True)
 class Lora:
     rank: int
-    alpha: int
-    dropout: float = 0.0
+    alpha: int  # scale alpha / rank; no dropout (the model is never in train mode)
     targets: str | LoraTargets  # a key of model.PRESETS, or {modules: [...], num_layers: N}
 
     def spec(self):
@@ -63,57 +74,42 @@ class Lora:
 @dataclass(frozen=True, kw_only=True)
 class Data:
     train_samples: int  # balanced subset of the training split
-    val_subset: int  # balanced subset of validation, evaluated every eval_every steps
+    val_subset: int  # balanced subset of validation, evaluated every evaluation.every steps
     subset_seed: int = 42  # selects both subsets; kept apart from training.seed so seed studies see the same data
 
 
 @dataclass(frozen=True, kw_only=True)
 class Training:
-    batch_size: int  # B prompts per optimizer step
-    batch_mode: str
-    group_size: int  # G completions per prompt
+    batch_size: int  # B prompts per rollout batch, drawn by training.shuffled_batches
+    group_size: int  # G completions per prompt, sampled at temperature 1
     learning_rate: float
     max_steps: int  # optimizer updates
     max_attempts: int  # rollout batches, including zero-signal batches that are skipped
-    clip_eps: float = 0.2
-    num_iterations: int = 1  # optimizer updates per rollout batch, all against its sampling-time log-probs
-    temperature: float = 1.0
     max_new_tokens: int  # rollout length; evaluation length is evaluation.max_new_tokens
     seed: int  # LoRA init, rollout sampling, batch order
-    eval_every: int
-    full_val: bool  # full-validation evaluation, label scores and benchmark files after training
+    clip_eps: float = 0.2
+    num_iterations: int = 1  # optimizer updates per rollout batch, all against its sampling-time log-probs
+    micro_batch_size: int | None = None  # completions per forward/backward chunk; None: all B*G at once
+    legacy_batch_mode: str | None = None  # set by upgrade() only: a historical sampler that cannot be trained
 
 
-@dataclass(frozen=True)
-class NegativeControl:
-    checkpoint: str | None = None  # an LR=0 checkpoint of this config (provenance checked), or null
-    train: bool = False  # true: run the LR=0 control with train() before verifying (run.name + "_lr0"); never implicit
-
-
-@dataclass(frozen=True)
-class Statistics:
-    confidence_level: float = 0.95
-    bootstrap_samples: int = 2000
-    seed: int = 42
+@dataclass(frozen=True, kw_only=True)
+class Evaluation:
+    """Greedy evaluation and the bootstrap of train's full validation and of validate/test. Defaults are the settings of
+    the saved baseline; bf16 outputs depend on batch shape, so batch sizes matter too."""
+    every: int  # validation-subset evaluation and checkpoint every `every` optimizer steps
+    full_validation: bool  # full-validation evaluation and label scores of the final checkpoint after training
+    max_new_tokens: int = MAX_NEW
+    batch_size: int = BATCH
+    score_batch_size: int = SCORE_BATCH
+    bootstrap_samples: int = BOOTSTRAP
 
 
 @dataclass(frozen=True)
 class Verification:
     split: str = "validation"  # held-out split: validation (model selection) or test (final report only)
-    merge_subset: int = 8  # examples for the full-logit adapter-vs-merged comparison
-    negative_control: NegativeControl = field(default_factory=NegativeControl)
-    statistics: Statistics = field(default_factory=Statistics)
-
-
-@dataclass(frozen=True)
-class Evaluation:
-    """Greedy evaluation and the bootstrap of train's full-validation and validate/test (verify uses its statistics).
-    Defaults are the settings of the saved baseline; bf16 outputs depend on batch shape, so batch sizes matter too."""
-    max_new_tokens: int = MAX_NEW
-    batch_size: int = BATCH
-    score_batch_size: int = SCORE_BATCH
-    bootstrap_samples: int = BOOTSTRAP
-    bootstrap_seed: int = 42
+    control_checkpoint: str | None = None  # an LR=0 checkpoint of this config (provenance checked), or null
+    train_control: bool = False  # true: train the LR=0 control (run <name>_lr0) before verifying; never implicit
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -123,8 +119,8 @@ class Config:
     lora: Lora
     data: Data
     training: Training
+    evaluation: Evaluation
     verification: Verification = field(default_factory=Verification)
-    evaluation: Evaluation = field(default_factory=Evaluation)
 
 
 def _build(cls, raw, where):
@@ -147,7 +143,7 @@ def _build(cls, raw, where):
             values[f.name] = _build(LoraTargets, v, key)
         elif f.type == str | LoraTargets and type(v) is str:
             values[f.name] = v
-        elif f.type == str | None and (v is None or type(v) is str):
+        elif f.type in (str | None, int | None) and (v is None or type(v) is f.type.__args__[0]):
             values[f.name] = v
         elif f.type is float and isinstance(v, (int, float)) and not isinstance(v, bool):
             values[f.name] = float(v)
@@ -159,9 +155,9 @@ def _build(cls, raw, where):
 
 
 def validate(cfg: Config) -> Config:
-    m, lo, d, t, v, e = cfg.model, cfg.lora, cfg.data, cfg.training, cfg.verification, cfg.evaluation
-    nc, st = v.negative_control, v.statistics
+    m, lo, d, t, e, v = cfg.model, cfg.lora, cfg.data, cfg.training, cfg.evaluation, cfg.verification
     custom = lo.targets if isinstance(lo.targets, LoraTargets) else None
+    rollouts = t.batch_size * t.group_size
     checks = [
         (re.fullmatch(RUN_NAME, cfg.run.name) is not None,
          "run.name: letters, digits, '_', '.', '-', starting with a letter or digit (\"..\" would name the parent directory)"),
@@ -169,44 +165,91 @@ def validate(cfg: Config) -> Config:
         (re.fullmatch(r"Qwen/Qwen3-[0-9.]+B", m.name) is not None,
          "model.name: a dense Qwen3 model 'Qwen/Qwen3-<size>B' (prompt, EOS ids and LoRA presets assume Qwen3)"),
         (m.dtype in DTYPES, f"model.dtype: one of {list(DTYPES)}"),
-        (m.thinking is False, "model.thinking: only false (non-thinking mode; sentiment.build_prompts asserts it)"),
         (custom is not None or lo.targets in PRESETS, f"lora.targets: one of {list(PRESETS)} or {{modules, num_layers}}"),
         (custom is None or (len(custom.modules) >= 1 and all(type(x) is str and x for x in custom.modules)
                             and len(set(custom.modules)) == len(custom.modules)),
          "lora.targets.modules: a non-empty list of distinct module names"),
         (custom is None or custom.num_layers >= 1, "lora.targets.num_layers: >= 1"),
         (lo.rank >= 1 and lo.alpha >= 1, "lora.rank and lora.alpha must be >= 1"),
-        (lo.dropout == 0.0, "lora.dropout: only 0.0 (the model is never put in train mode, so dropout would be "
-                            "silently inactive; enabling it would also break the old/current log-prob equality)"),
         (d.train_samples >= 2 and d.train_samples % 2 == 0, "data.train_samples: even and >= 2 (balanced by label)"),
         (d.val_subset >= 2 and d.val_subset % 2 == 0, "data.val_subset: even and >= 2 (balanced by label)"),
-        (t.batch_mode in BATCH_MODES, f"training.batch_mode: one of {list(BATCH_MODES)}"),
-        ((t.batch_mode == "cycle") == (t.batch_size == 1), "training: batch_mode cycle <=> batch_size 1"),
-        (t.batch_mode != "balanced" or t.batch_size == 2, "training: batch_mode balanced needs batch_size 2"),
-        (t.batch_size <= d.train_samples, "training.batch_size must not exceed data.train_samples"),
+        (1 <= t.batch_size <= d.train_samples, "training.batch_size: between 1 and data.train_samples"),
         (t.group_size >= 2, "training.group_size: >= 2 (a group std needs two samples)"),
         (t.learning_rate >= 0, "training.learning_rate: >= 0 (0 is the negative control)"),
-        (1 <= t.max_steps <= t.max_attempts, "training: 1 <= max_steps <= max_attempts"),
+        (1 <= t.max_steps <= t.max_attempts * t.num_iterations,
+         "training: 1 <= max_steps <= max_attempts * num_iterations (each rollout batch gives at most num_iterations updates)"),
+        (t.max_new_tokens >= 1, "training.max_new_tokens: >= 1"),
         (0 < t.clip_eps < 1, "training.clip_eps: in (0, 1)"),
         (t.num_iterations >= 1, "training.num_iterations: >= 1"),
-        (t.temperature == 1.0, "training.temperature: only 1.0 (log-probs are computed from untempered logits, so "
-                               "any other value would make the sampler differ from the policy being optimized)"),
-        (t.max_new_tokens >= 1 and t.eval_every >= 1, "training.max_new_tokens and training.eval_every: >= 1"),
-        (v.split in ("validation", "test"), "verification.split: validation or test"),
-        (v.merge_subset >= 1, "verification.merge_subset: >= 1"),
-        (not (nc.train and nc.checkpoint), "verification.negative_control: set checkpoint or train, not both"),
-        (0 < st.confidence_level < 1, "verification.statistics.confidence_level: in (0, 1)"),
+        (t.micro_batch_size is None or 1 <= t.micro_batch_size <= rollouts,
+         f"training.micro_batch_size: null or between 1 and batch_size * group_size = {rollouts}"),
+        (t.legacy_batch_mode is None or LEGACY_BATCH_MODES.get(t.legacy_batch_mode) == t.batch_size,
+         f"training.legacy_batch_mode: one of {LEGACY_BATCH_MODES} (mode: batch_size)"),
+        (e.every >= 1, "evaluation.every: >= 1"),
         (min(e.max_new_tokens, e.batch_size, e.score_batch_size) >= 1, "evaluation: token and batch sizes >= 1"),
         (e.bootstrap_samples >= 1000 and e.bootstrap_samples % 1000 == 0,
          "evaluation.bootstrap_samples: a multiple of 1000, >= 1000 (resampled in chunks of 1000)"),
-        (st.bootstrap_samples >= 100 and st.bootstrap_samples % 100 == 0,
-         "verification.statistics.bootstrap_samples: a multiple of 100, >= 100 (resampled in chunks of 100)"),
+        (v.split in ("validation", "test"), "verification.split: validation or test"),
+        (not (v.train_control and v.control_checkpoint), "verification: set control_checkpoint or train_control, not both"),
     ]
     errors = [msg for ok, msg in checks if not ok]
     if errors:
         raise ValueError("invalid config:\n  " + "\n  ".join(errors))
     return cfg
 
+
+# --- historical configs ------------------------------------------------------------------------------------------
+
+_MISSING = object()
+
+
+def _pop(raw, dotted):
+    """Remove raw[a][b][c] for "a.b.c" and return it (_MISSING if absent); parents left empty are removed too."""
+    *parents, key = dotted.split(".")
+    chain = [raw]
+    for p in parents:
+        if not isinstance(chain[-1].get(p), dict):
+            return _MISSING
+        chain.append(chain[-1][p])
+    value = chain[-1].pop(key, _MISSING)
+    for p, parent in zip(reversed(parents), reversed(chain[:-1])):
+        if parent[p] == {}:
+            del parent[p]
+    return value
+
+
+def _put(raw, dotted, value):
+    *parents, key = dotted.split(".")
+    for p in parents:
+        raw = raw.setdefault(p, {})
+    raw[key] = value
+
+
+def historical_keys(raw: dict) -> list:
+    """Dotted keys of `raw` that belong to the historical schema."""
+    return [k for k in HISTORICAL if _pop(copy.deepcopy(raw), k) is not _MISSING]
+
+
+def upgrade(raw: dict) -> dict:
+    """A historical config mapping in the current schema (a current one is returned unchanged). Moved keys are renamed;
+    a removed key must hold the value the current code implements, so nothing is reinterpreted silently."""
+    raw = copy.deepcopy(raw)
+    for old, new in MOVED.items():
+        if (v := _pop(raw, old)) is not _MISSING:
+            _put(raw, new, v)
+    for key, implemented in REMOVED.items():
+        v = _pop(raw, key)
+        same_type = type(v) is type(implemented) or (type(implemented) is float and type(v) is int)  # YAML 0 for 0.0
+        if v is not _MISSING and not (same_type and v == implemented):
+            raise ValueError(f"{key}: {v!r} is a historical setting the current code does not implement (only "
+                             f"{implemented!r}); this config cannot be loaded")
+    mode = _pop(raw, "training.batch_mode")
+    if mode not in (_MISSING, "unconstrained"):  # unconstrained is the shuffled sampler, bitwise (tests/test_config.py)
+        _put(raw, "training.legacy_batch_mode", mode)
+    return raw
+
+
+# --- loading -----------------------------------------------------------------------------------------------------
 
 def merge(base: dict, override: dict) -> dict:
     """override's keys onto base: mappings merge key by key, any other value (list, scalar, null) replaces."""
@@ -236,17 +279,30 @@ def read(path, chain=()) -> dict:
     return merge(base, raw)
 
 
-def load(path) -> Config:
-    return validate(_build(Config, read(path), Path(path).name))
+def load(path, historical=False) -> Config:
+    """The validated config of a YAML file. historical=True also accepts a config written in the historical schema
+    (a saved runs/<name>/config.yaml, a checkpoint's config): needed to resume or evaluate older runs."""
+    raw = read(path)
+    if old := historical_keys(raw):
+        if not historical:
+            raise ValueError(f"{Path(path).name}: {old} belong to the historical config schema (removed or renamed, see "
+                             "README); a new run must use the current schema")
+        raw = upgrade(raw)
+    return validate(_build(Config, raw, Path(path).name))
 
 
 def as_dict(cfg: Config) -> dict:
-    return dataclasses.asdict(cfg)
+    """The resolved config as plain data; training.legacy_batch_mode appears only when it is set."""
+    out = dataclasses.asdict(cfg)
+    if out["training"]["legacy_batch_mode"] is None:
+        del out["training"]["legacy_batch_mode"]
+    return out
 
 
 def sha256(cfg: Config) -> str:
     """Hash of the fully resolved config (defaults included), independent of key order and of how the YAML was split
-    across files: a config and an equivalent one written differently hash equally."""
+    across files. Configs of runs trained before the current schema hashed their historical form, so their recorded
+    hash differs from this one."""
     return hashlib.sha256(json.dumps(as_dict(cfg), sort_keys=True).encode()).hexdigest()
 
 
@@ -259,5 +315,6 @@ def differences(a: dict, b: dict, prefix="") -> list:
 
 
 def normalized(raw: dict) -> dict:
-    """A saved config dict (e.g. a training log's yaml_config) in the current schema, defaults filled in."""
-    return as_dict(_build(Config, raw, "saved config"))
+    """A saved config dict (a training log's yaml_config, a checkpoint's config) in the current schema, defaults filled
+    in. A historical batch mode survives as training.legacy_batch_mode, so it never compares equal to the shuffled one."""
+    return as_dict(_build(Config, upgrade(raw), "saved config"))

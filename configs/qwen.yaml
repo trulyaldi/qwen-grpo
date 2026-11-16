@@ -1,52 +1,29 @@
-# GRPO + LoRA on Qwen3-0.6B. All keys are required; see qwen_grpo/config.py for meanings and allowed values.
-# Values reproduce the historical "last2 B=2 balanced" run except run.name (new outputs, nothing overwritten).
+# GRPO + LoRA on Qwen3-0.6B: the successful reference run (runs/qwen: validation accuracy 0.7486 -> 0.8096 and ROC AUC
+# 0.8277 -> 0.8929 at step 90). Omitted keys take the defaults in qwen_grpo/config.py, listed in README.md.
 run:
   name: qwen
 
 model:
   name: Qwen/Qwen3-0.6B
-  dtype: bfloat16
-  thinking: false
 
 lora:
   rank: 32
   alpha: 64
-  dropout: 0
-  targets: last2-attention   # q/v/o projections of layers 26-27; last-o-proj = layer 27 o_proj only
+  targets: last2-attention   # q/v/o projections of the last two decoder layers (26-27)
 
 data:
   train_samples: 512
   val_subset: 512
-  subset_seed: 42
 
 training:
-  batch_size: 5
-  batch_mode: unconstrained      # cycle (B=1) | balanced (B=2, one prompt per label) | unconstrained
-  group_size: 6
-  learning_rate: 5.0e-4      # write floats with a decimal point: PyYAML reads 1e-4 as a string
-  max_steps: 100
-  max_attempts: 1000
-  clip_eps: 0.2
-  temperature: 1.0
+  batch_size: 5              # B prompts per rollout batch (shuffled sampler)
+  group_size: 6              # G completions per prompt
+  learning_rate: 5.0e-4      # write floats with a decimal point: PyYAML reads 5e-4 as a string
+  max_steps: 100             # optimizer updates
+  max_attempts: 1000         # rollout batches, zero-signal ones included
   max_new_tokens: 4
   seed: 42
-  eval_every: 10
-  full_val: true
 
 evaluation:
-  max_new_tokens: 4
-  batch_size: 32
-  score_batch_size: 8
-  bootstrap_samples: 10000
-  bootstrap_seed: 42
-
-verification:
-  split: validation
-  merge_subset: 8
-  negative_control:
-    checkpoint: null
-    train: false
-  statistics:
-    confidence_level: 0.95
-    bootstrap_samples: 2000
-    seed: 42
+  every: 10                  # validation-subset evaluation + checkpoint
+  full_validation: true

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import torch
+import yaml
 from peft import get_peft_model
 from transformers import AutoTokenizer, Qwen3Config, Qwen3ForCausalLM
 
@@ -16,8 +17,8 @@ from qwen_grpo.evaluation import metrics, paired_f1_bootstrap
 from qwen_grpo.model import TARGETS, lora_config, lora_modules
 
 ROOT = Path(__file__).parents[1]
-CFG = config.load(ROOT / "configs" / "default.yaml")
-STATS = CFG.verification.statistics
+CFG = config.load(ROOT / "configs" / "qwen.yaml")
+STATS = verification.STATISTICS
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -205,8 +206,8 @@ def test_training_rollouts_rescored_from_the_log():
 
 def control_log(tmp_path, cfg, layout="run", **edit):
     """An LR=0 control's training log, in the runs/ layout or the one before it; returns its final checkpoint."""
-    y = dataclasses.asdict(cfg)
-    y["run"]["name"], y["training"]["learning_rate"], y["training"]["full_val"] = "exp_lr0", 0.0, False
+    y = config.as_dict(cfg)
+    y["run"]["name"], y["training"]["learning_rate"], y["evaluation"]["full_validation"] = "exp_lr0", 0.0, False
     for k, v in edit.items():
         sec, key = k.split("__")
         y[sec][key] = v
@@ -233,6 +234,26 @@ def test_control_provenance(tmp_path, monkeypatch, layout):
         runs.write_json(runs.training_log_for(ckpt), broken)
         ok, why, _ = verification.control_provenance(CFG, ckpt)
         assert not ok and reason in why
+
+
+def test_control_provenance_reads_historical_logs_without_reinterpreting_them(tmp_path, monkeypatch):
+    """A control logged under the historical schema vouches for the same experiment; one trained with the historical
+    balanced sampler does not vouch for a shuffled run, although every other setting matches."""
+    monkeypatch.setattr(runs, "ROOT", tmp_path)
+    historical = yaml.safe_load((ROOT / "runs" / "qwen" / "config.yaml").read_text())
+    for mode, ok_expected in [("unconstrained", True), ("balanced", False)]:
+        ckpt = control_log(tmp_path, CFG)
+        log = runs.read_json(runs.training_log_for(ckpt))
+        y = copy.deepcopy(historical)
+        y["run"]["name"], y["training"]["learning_rate"], y["training"]["batch_mode"] = "exp_lr0", 0.0, mode
+        if mode == "balanced":
+            cfg = dataclasses.replace(CFG, training=dataclasses.replace(CFG.training, batch_size=2))
+            y["training"]["batch_size"] = 2
+        else:
+            cfg = CFG
+        runs.write_json(runs.training_log_for(ckpt), {**log, "yaml_config": y})
+        ok, why, _ = verification.control_provenance(cfg, ckpt)
+        assert ok == ok_expected, why
 
 
 def test_saved_baseline_reused_only_when_compatible():
@@ -263,7 +284,7 @@ def synthetic_evidence(log_source):
     big = {**diff, "max_abs": 1.0, "relative": 0.1}
     return {
         "checkpoint": "checkpoints/exp_step5", "split": "validation", "n": 40, "label_balance": {"NEGATIVE": 20, "POSITIVE": 20},
-        "config": dataclasses.asdict(CFG), "notes": {k: f"{k} note" for k in evals}, "evaluations": evals,
+        "config": config.as_dict(CFG), "notes": {k: f"{k} note" for k in evals}, "evaluations": evals,
         "training_log": {"source": log_source, "missing_reason": None if log_source else "no training log at results/exp/training.json"},
         "training_diagnostics": verification.training_diagnostics(synthetic_log()) if log_source else None,
         "parameter_updates": {"status": "INCONCLUSIVE", "init_source": "reconstructed", "init_validated_by_control": None,
@@ -275,7 +296,7 @@ def synthetic_evidence(log_source):
                               "bf16_gpu": {"status": "PASS", "adapter_vs_merged": diff, "adapter_vs_base": big,
                                            "weights": {"m": {"max_abs_error": 1e-3, "error_relative_to_delta": 0.3}},
                                            "full_split": verification.policy_change(NEW, NEW)}},
-        "negative_control": {"status": "NOT_RUN", "reason": "verification.negative_control is not configured"},
+        "negative_control": {"status": "NOT_RUN", "reason": "no LR=0 control configured"},
         "confidence_intervals": {"adapter_vs_base": verification.compare(BASE, NEW, STATS)},
         "reward_integrity": verification.reward_integrity(evals, None, []),
         "gpu_memory": {"peak_allocated_gib": 1.5, "peak_reserved_gib": 1.9},

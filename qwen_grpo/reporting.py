@@ -143,10 +143,17 @@ def _bf16_cause(b16):
             "but a bf16 merge does not exactly preserve this adapter's behavior: deploy with the adapter attached or merge in fp32.")
 
 
+def sampler(t):
+    """How rollout prompts were drawn, from a training config section in the current schema."""
+    return f"historical {t['legacy_batch_mode']}" if t.get("legacy_batch_mode") else "shuffled"
+
+
 def report(ev, plots_made, missing_plots):
-    c, evals = ev["config"], ev["evaluations"]
+    from qwen_grpo.config import normalized
+
+    c, evals = normalized(ev["config"]), ev["evaluations"]  # evidence saved under the historical schema reads the same
     t, lo = c["training"], c["lora"]
-    st = c["verification"]["statistics"]
+    st = next(iter(ev["confidence_intervals"].values()), None)  # each comparison records its bootstrap settings
     rows = [("Accuracy", "accuracy"), ("Macro-F1", "macro_f1"), ("Negative recall", "recall_NEGATIVE"),
             ("Positive recall", "recall_POSITIVE"), ("Predicted-positive rate", "predicted_positive_rate"), ("Invalid rate", "invalid_rate")]
     cols = [m for m in MODELS]
@@ -157,12 +164,13 @@ def report(ev, plots_made, missing_plots):
               f"**No training log for this checkpoint** ({ev['training_log']['missing_reason']}). The GRPO settings below are those of "
               "the YAML; only the LoRA settings are confirmed (against the checkpoint's adapter_config.json).", ""]),
           f"- Model {c['model']['name']} ({c['model']['dtype']} base, fp32 LoRA), non-thinking; dataset Rotten Tomatoes (`data/sentiment.json`).",
-          f"- LoRA r={lo['rank']}, α={lo['alpha']}, dropout {lo['dropout']}, targets `{lo['targets']}`.",
-          f"- GRPO: B={t['batch_size']} ({t['batch_mode']}), G={t['group_size']}, lr {t['learning_rate']}, {t['max_steps']} steps, "
-          f"clip ε {t['clip_eps']}, {t.get('num_iterations', 1)} update(s) per rollout batch, rollout max_new_tokens "
+          f"- LoRA r={lo['rank']}, α={lo['alpha']}, targets `{lo['targets']}`.",
+          f"- GRPO: B={t['batch_size']} ({sampler(t)}), G={t['group_size']}, lr {t['learning_rate']}, {t['max_steps']} steps, "
+          f"clip ε {t['clip_eps']}, {t['num_iterations']} update(s) per rollout batch, rollout max_new_tokens "
           f"{t['max_new_tokens']}, seed {t['seed']}.",
           f"- Held-out: `{ev['split']}`, n={ev['n']} {ev['label_balance']}; greedy, max_new_tokens 4 (baseline settings).",
-          f"- Paired bootstrap: {st['bootstrap_samples']} resamples, {int(st['confidence_level'] * 100)}% percentile CIs, seed {st['seed']}.", "",
+          (f"- Paired bootstrap: {st['resamples']} resamples, {round(st['level'] * 100)}% percentile CIs, seed {st['seed']}."
+           if st else "- Paired bootstrap: no comparisons."), "",
           "## Model comparison", "",
           "| Metric | " + " | ".join(LABEL[m] for m in cols) + " |", "|---|" + "---:|" * len(cols)]
     md += [f"| {name} | " + " | ".join(cell(m, k) for m in cols) + " |" for name, k in rows]
@@ -336,7 +344,7 @@ def summarize(name):
     from qwen_grpo.config import as_dict
     from qwen_grpo.config import load as load_config
 
-    cfg = as_dict(load_config(d / "config.yaml"))  # resolved and validated, defaults filled in
+    cfg = as_dict(load_config(d / "config.yaml", historical=True))  # resolved, validated, current schema
     log, log_source = training_record(name)
     t, rows = cfg["training"], (log or {}).get("training", [])
     ckpts = runs.checkpoints(name)
@@ -352,9 +360,8 @@ def summarize(name):
         "run": name, "id": m["id"], "status": runs.status(name, lock_owner), "created": m["created"],
         "config_sha256": m["config_sha256"], "git_commit": m["git_commit"], "git_dirty": m["git_dirty"],
         "model": cfg["model"], "lora": cfg["lora"], "data": cfg["data"],
-        "grpo": {k: t[k] for k in ("batch_size", "batch_mode", "group_size", "learning_rate", "max_steps", "max_attempts",
-                                   "clip_eps", "temperature", "max_new_tokens", "seed")}
-                | {"num_iterations": t.get("num_iterations", 1)},
+        "grpo": {k: t[k] for k in ("batch_size", "group_size", "learning_rate", "max_steps", "max_attempts", "clip_eps",
+                                   "max_new_tokens", "seed", "num_iterations", "micro_batch_size")} | {"sampler": sampler(t)},
         "training_log": log_source if log else None,  # repository-relative
         "progress": {"optimizer_steps": rows[-1]["step"] if rows else 0, "max_steps": t["max_steps"],
                      "rollout_attempts": max([g["attempt"] for g in rows + (log or {}).get("zero_signal", [])], default=0),
@@ -402,10 +409,11 @@ def run_report(s, plots_made):
           f"id `{s['id']}`, created {s['created']}, config sha256 `{s['config_sha256'][:16]}…`, git "
           f"`{(s['git_commit'] or 'unknown')[:12]}`{' (uncommitted changes)' if s['git_dirty'] else ''}.", "",
           "## 1. Configuration", "",
-          f"- Model {s['model']['name']} ({s['model']['dtype']} base, fp32 LoRA), thinking {s['model']['thinking']}.",
-          f"- LoRA r={lo['rank']}, α={lo['alpha']}, dropout {lo['dropout']}, targets `{lo['targets']}`.",
-          f"- GRPO: B={g['batch_size']} ({g['batch_mode']}), G={g['group_size']}, lr {g['learning_rate']}, max {g['max_steps']} steps "
-          f"/ {g['max_attempts']} attempts, clip ε {g['clip_eps']}, {g['num_iterations']} update(s) per rollout batch, temperature {g['temperature']}, rollout max_new_tokens "
+          f"- Model {s['model']['name']} ({s['model']['dtype']} base, fp32 LoRA), non-thinking.",
+          f"- LoRA r={lo['rank']}, α={lo['alpha']}, targets `{lo['targets']}`.",
+          f"- GRPO: B={g['batch_size']} ({g['sampler']} sampler), G={g['group_size']}, lr {g['learning_rate']}, max {g['max_steps']} steps "
+          f"/ {g['max_attempts']} attempts, clip ε {g['clip_eps']}, {g['num_iterations']} update(s) per rollout batch, "
+          f"micro-batch {g['micro_batch_size'] or 'whole batch'}, temperature 1, rollout max_new_tokens "
           f"{g['max_new_tokens']}, seed {g['seed']}.",
           f"- Data: {s['data']['train_samples']} training prompts, validation subset {s['data']['val_subset']} (subset seed "
           f"{s['data']['subset_seed']}). Full settings: `config.yaml`.", "",
@@ -435,7 +443,7 @@ def run_report(s, plots_made):
         md += ["", f"- Accuracy trained − base {fv['accuracy_diff']:+.4f}, paired bootstrap 95% CI {ci(fv['ci95'])}; "
                f"AUC diff {fv['auc_diff']:+.4f}, CI {ci(fv['auc_ci95'])}. One training seed: CIs cover evaluation sampling only."]
     else:
-        md += ["- Not available: training.full_val is false or training did not finish. See `validate` results (section 5)."]
+        md += ["- Not available: evaluation.full_validation is false or training did not finish. See `validate` results (section 5)."]
     md += ["", "## 5. Held-out evaluations (`validate` / `test`)", ""]
     if s["evaluations"]:
         md += ["| checkpoint | split | n | accuracy | macro-F1 | recall NEG | recall POS | pred. POS rate | AUC | Δ acc vs base [95% CI] |",

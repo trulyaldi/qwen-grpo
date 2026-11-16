@@ -18,7 +18,8 @@ from qwen_grpo.training import decode, group_rewards
 from research.trl_reference.compare_gradients import (compare, manual_gradient, manual_rollouts, make_trainer, trl_advantages,
                                                       trl_gradient)
 from research.trl_reference.evaluate import shift_stats
-from research.trl_reference.train import CONFIG, G, MANUAL_PREDICTIONS, MANUAL_TRAINING, check_lora, grpo_args, make_dataset, make_reward, stream, train_examples
+from research.trl_reference.train import (CONFIG, G, MANUAL_PREDICTIONS, MANUAL_TRAINING, balanced_batches, check_lora, grpo_args,
+                                          make_dataset, make_reward, stream, train_examples)
 
 ROOT = Path(__file__).parents[1]
 BASE_FILE = ROOT / "results" / "baseline" / "validation.json"
@@ -129,6 +130,17 @@ def test_lora_targets_on_real_architecture():
     assert sum(p.numel() for p in params) == CONFIG["lora"]["expected_trainable_params"] == 131_072
     assert all(p.dtype == torch.float32 for p in params)  # PEFT upcasts adapters on a bf16 base
     assert all(p.dtype == torch.bfloat16 for p in model.parameters() if not p.requires_grad)
+
+
+def test_historical_balanced_stream_is_deterministic_one_per_class_without_replacement(examples):
+    take = lambda: [next(s) for s in [balanced_batches(examples, 42)] for _ in range(32)]
+    a, b = take(), take()
+    assert [[e["id"] for e in x] for x in a] == [[e["id"] for e in x] for x in b]
+    assert all([e["label"] for e in x] == ["POSITIVE", "NEGATIVE"] for x in a)
+    for k, label in enumerate(("POSITIVE", "NEGATIVE")):
+        pool = sorted(e["id"] for e in examples if e["label"] == label)
+        first, second = [x[k]["id"] for x in a[:16]], [x[k]["id"] for x in a[16:]]
+        assert sorted(first) == sorted(second) == pool and first != second  # full pass, then a reshuffle
 
 
 def test_trl_batches_are_the_manual_balanced_stream(examples, tok, tmp_path):

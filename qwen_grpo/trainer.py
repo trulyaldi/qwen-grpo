@@ -1,7 +1,7 @@
 """Multi-step GRPO + LoRA: fp32 adapters on selected projections of a frozen Qwen3 base model.
 
-Run through scripts/run.py train --config <yaml> [--resume checkpoints/<run>_step<N>]; every setting comes from the config
-(qwen_grpo/config.py). Rollouts: sampled at training.temperature, training.max_new_tokens. Evaluation: greedy, in chunks,
+Run through scripts/run.py train --config <yaml> [--resume runs/<run>/checkpoints/step<N>]; every setting comes from the config
+(qwen_grpo/config.py). Rollouts: sampled at temperature 1, training.max_new_tokens. Evaluation: greedy, in chunks,
 with the YAML evaluation settings (defaults: those of the saved baseline, so runs stay comparable with it).
 Checkpoints hold the adapter and the training state (optimizer, progress, log so far, RNG), so a run resumes from any
 checkpoint it saved and continues as the uninterrupted run would have (tests/test_trainer.py checks this bitwise on CPU).
@@ -32,42 +32,19 @@ from qwen_grpo import runs
 from qwen_grpo.checkpointing import (load_adapter, load_training_state, rel, save_checkpoint, set_rng_state,
                                      training_lock)
 from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, sha256
-from qwen_grpo.evaluation import (evaluate, label_scores, metrics,
-                                  paired_auc_bootstrap, paired_bootstrap, paired_changes, paired_compare, predictions_path,
-                                  settings, summary, win_matrix)
+from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap,
+                                  paired_changes, paired_compare, predictions_path, settings, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, lora_modules
 from qwen_grpo.policy import generate_rollouts
 from qwen_grpo.reporting import update_run
 from qwen_grpo.sentiment import SPLITS_PATH, build_prompts, load_splits, parse_label
-from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_update, prepare
+from qwen_grpo.training import (balanced_subset, check_grouping, decode, group_rewards, grpo_update, prepare,
+                                shuffled_batches)
 
 ROOT = Path(__file__).resolve().parents[1]  # the git repository (provenance); outputs: runs.ROOT
-BASE_FILE = predictions_path("validation")
-SUFFIX = {"last-o-proj": "", "last2-attention": "_last2"}
-REFERENCE_STEPS = 30  # final step of the saved historical runs in REFERENCES
-SEED = 42  # bootstrap seed of the historical runs (research/trl_reference uses it)
+BASE_FILE = predictions_path("validation")  # saved base predictions; the final evaluation compares with them if they match
+SEED = BOOTSTRAP_SEED  # research/trl_reference imports it
 PACKAGES = ("torch", "transformers", "peft", "datasets", "pyyaml")
-
-
-def output_name(targets, tag="", B=1, mode="cycle"):
-    """Naming scheme of the historical runs (before YAML configs), used only to locate REFERENCES."""
-    return f"grpo_lora{SUFFIX[targets]}" + (f"_b{B}_{mode}" if B > 1 else "") + tag
-
-
-def _ref(targets, B=1, mode="cycle"):
-    name = output_name(targets, B=B, mode=mode)
-    return runs.legacy_results(name) / "validation.json", runs.legacy_checkpoint(name, REFERENCE_STEPS), targets
-
-
-# Saved final (step-30) predictions (and adapters, for label scoring) of earlier Qwen3-0.6B runs:
-# (predictions, checkpoint, targets). A run compares with them only if model and evaluation decoding match.
-REFERENCES = {
-    "base": (BASE_FILE, None, None),
-    "last-o-proj B=1": _ref("last-o-proj"),
-    "last2 B=1": _ref("last2-attention"),
-    "last2 B=2 balanced": _ref("last2-attention", 2, "balanced"),
-    "last2 B=2 unconstrained": _ref("last2-attention", 2, "unconstrained"),
-}
 
 
 def l2(norms):
@@ -177,6 +154,10 @@ def train(cfg: Config, resume=None, device="cuda"):
     """Train run cfg.run.name in runs/<name>/ under runs/.<name>.lock (so `remove` cannot delete it meanwhile). The
     manifest records how training ended; summary.json, plots/ and report.md are then rebuilt from the saved files."""
     name = cfg.run.name
+    if mode := cfg.training.legacy_batch_mode:
+        raise SystemExit(f"run {name!r} uses the historical batch_mode {mode!r}, which the current code does not implement "
+                         "(it has only the shuffled sampler): it cannot be trained or resumed. Its saved outputs stay "
+                         "readable; train it with the code of commit 9bd4500 if needed")
     with training_lock(runs.lock_path(name)):
         state = start(cfg, resume)
         try:
@@ -197,7 +178,7 @@ def train(cfg: Config, resume=None, device="cuda"):
 
 def _train(cfg: Config, resume, state, device):
     t, lo, d, ev = cfg.training, cfg.lora, cfg.data, cfg.evaluation
-    B, mode, G, name = t.batch_size, t.batch_mode, t.group_size, cfg.run.name
+    B, G, name = t.batch_size, t.group_size, cfg.run.name
     gen_kw, score_kw = settings(ev)
     on_cuda = torch.device(device).type == "cuda"
     gib = lambda f: f() / 2**30 if on_cuda else None
@@ -223,7 +204,7 @@ def _train(cfg: Config, resume, state, device):
     torch.manual_seed(t.seed)  # LoRA A init
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
     assert tok.pad_token_id == EOS_IDS[1]  # baseline.py pads with tok.pad_token_id, lora_model with EOS_IDS[1]
-    model = lora_model(dtype, device, lo.spec(), lo.rank, lo.alpha, lo.dropout, cfg.model.name)
+    model = lora_model(dtype, device, lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
     if on_cuda:
         torch.cuda.reset_peak_memory_stats()
     params = {n: p for n, p in model.named_parameters() if p.requires_grad}
@@ -260,20 +241,20 @@ def _train(cfg: Config, resume, state, device):
             "environment": environment(splits, device),
             "config": {"lr": t.learning_rate, "steps": t.max_steps, "max_attempts": t.max_attempts, "train_samples": d.train_samples,
                        "train_ids": [e["id"] for e in train_set], "val_subset_ids": [e["id"] for e in val_sub],
-                       "B": B, "G": G, "batch_mode": mode,
-                       "batch_policy": f"{mode} (see batches()); a zero-signal batch is consumed, not retried",
+                       "B": B, "G": G, "micro_batch_size": t.micro_batch_size,
+                       "batch_policy": "shuffled (training.shuffled_batches); a zero-signal batch is consumed, not retried",
                        "rollout_max_new_tokens": t.max_new_tokens, "eval_max_new_tokens": ev.max_new_tokens,
-                       "eval_batch": ev.batch_size, "sampling": {"do_sample": True, "temperature": t.temperature, "top_p": 1.0, "top_k": 0},
+                       "eval_batch": ev.batch_size, "sampling": {"do_sample": True, "temperature": 1.0, "top_p": 1.0, "top_k": 0},
                        "clip_eps": t.clip_eps, "num_iterations": t.num_iterations, "kl_beta": 0.0, "optimizer": "AdamW(weight_decay=0)", "grad_clipping": None,
                        "lora": {"targets": as_dict(cfg)["lora"]["targets"], "target_modules": module_names,
-                                "trainable_params": n_trainable, "r": lo.rank, "alpha": lo.alpha, "dropout": lo.dropout},
+                                "trainable_params": n_trainable, "r": lo.rank, "alpha": lo.alpha, "dropout": 0.0},
                        "dtypes": {"base": str(dtype), "lora": "torch.float32"}, "gpu_budget_gib": cfg.run.gpu_budget_gib,
                        "checkpoint_contents": "adapter weights + adapter_config + training_state.pt (optimizer, progress, log, RNG)",
                        "initial_checkpoint": rel(runs.checkpoint_path(name, 0))},
             "training": [], "zero_signal": [], "evaluations": [],
         }
         base_full = None
-        if t.full_val:
+        if ev.full_validation:
             base_full = evaluate(model, tok, val_all, **gen_kw)
             saved = saved_predictions(BASE_FILE)
             mism = None if saved is None else [p["id"] for p, q in zip(base_full, saved) if p["response"] != q["response"]]
@@ -305,7 +286,7 @@ def _train(cfg: Config, resume, state, device):
             "pending": to(pending, "cpu")})
         return rel(path)
 
-    stream = batches(train_set, B, mode, seed=t.seed)
+    stream = shuffled_batches(train_set, B, seed=t.seed)
     for _ in range(attempts):  # replay: every attempt, zero-signal or not, consumed one batch
         next(stream)
     if resume is not None:
@@ -319,7 +300,7 @@ def _train(cfg: Config, resume, state, device):
             batch = next(stream)
             attempts += 1
             prompts = build_prompts(tok, [e["text"] for e in batch])
-            rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=t.max_new_tokens, temperature=t.temperature)
+            rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=t.max_new_tokens)
             check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].to(model.device), G)
             responses = decode(tok, rollouts)
             rewards = group_rewards(responses, [e["label"] for e in batch], G)  # [B, G]
@@ -364,7 +345,7 @@ def _train(cfg: Config, resume, state, device):
         print(f"step {step:2d} (attempt {group['attempt']:3d}) {ids:12} mixed {group['mixed_groups']}  R {row['mean_reward']:.2f}  {clip}"
               f"loss {row['loss']:+.4f}  |g| {row['grad_norm']:.3e} (A {row['grad_norm_A']:.2e}, B {row['grad_norm_B']:.2e})  "
               f"|dtheta| {row['update_norm']:.2e}  |(a/r)BA| {row['effective_adapter_norm']:.3e}  {mem}")
-        if step % t.eval_every == 0 or step == t.max_steps:
+        if step % ev.every == 0 or step == t.max_steps:
             ckpt = save(step)
     if step and ckpt != rel(runs.checkpoint_path(name, step)):  # attempt budget ran out between checkpoints
         ckpt = save(step)
@@ -406,26 +387,20 @@ def _train(cfg: Config, resume, state, device):
 
     save_log("training complete; final evaluation pending")  # survives a failure in the evaluation below
 
-    if t.full_val and ckpt is not None:
-        boot = {"n": ev.bootstrap_samples, "seed": ev.bootstrap_seed}
+    if ev.full_validation and ckpt is not None:
+        boot = {"n": ev.bootstrap_samples, "seed": BOOTSTRAP_SEED}
         trained_full = evaluate(model, tok, val_all, **gen_kw)
         tm, bm = metrics(trained_full), metrics(base_full)
         diff, ci_lo, ci_hi = paired_bootstrap([p["correct"] for p in base_full], [p["correct"] for p in trained_full], **boot)
         out_path = runs.training_dir(name) / "validation.json"
-        refs = {ref: preds for ref, (p, _, _) in REFERENCES.items() if p != out_path and (preds := saved_predictions(p)) is not None}
+        saved_base = saved_predictions(BASE_FILE)
         result["final"] = {"base": bm, "trained": tm, "accuracy_diff": diff, "bootstrap_ci95": [ci_lo, ci_hi],
-                           "bootstrap": {"resamples": ev.bootstrap_samples, "seed": ev.bootstrap_seed, "paired_by": "id"},
+                           "bootstrap": {"resamples": ev.bootstrap_samples, "seed": BOOTSTRAP_SEED, "paired_by": "id"},
                            "paired_changes": paired_changes(base_full, trained_full),
-                           "vs_saved": {ref: paired_compare(preds, trained_full, **boot) for ref, preds in refs.items()}}
+                           "vs_saved": {} if saved_base is None else {"base": paired_compare(saved_base, trained_full, **boot)}}
         scores = {"trained": label_scores(model, tok, val_all, **score_kw)}
         with model.disable_adapter():
             scores["base"] = label_scores(model, tok, val_all, **score_kw)
-        for ref, (_, ref_ckpt, targets) in REFERENCES.items():  # same model and targets -> load into this model
-            if (ref_ckpt is not None and targets == lo.targets and ref_ckpt.exists() and ref_ckpt != runs.ROOT / ckpt
-                    and json.loads((ref_ckpt / "adapter_config.json").read_text())["base_model_name_or_path"] == cfg.model.name):
-                set_peft_model_state_dict(model, load_peft_weights(str(ref_ckpt)))
-                scores[ref] = label_scores(model, tok, val_all, **score_kw)
-        set_peft_model_state_dict(model, loaded)
         W = {k: win_matrix(v, [e["label"] for e in val_all]) for k, v in scores.items()}
         result["final"]["auc"] = {k: w.mean().item() for k, w in W.items()}
         result["final"]["auc_vs"] = {k: paired_auc_bootstrap(W["trained"], W[k], **boot) for k in W if k != "trained"}

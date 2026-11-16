@@ -4,7 +4,6 @@ Four kinds of evidence are kept apart: (1) adapter parameters changed, (2) the p
 performance changed (paired bootstrap CIs), (4) merging reproduces the adapter-attached model. Each function returns
 plain JSON-serializable data; reporting.py renders it. Statuses: PASS, FAIL, INCONCLUSIVE, NOT_RUN.
 """
-import dataclasses
 import gc
 import json
 import resource
@@ -16,7 +15,7 @@ from peft import load_peft_weights
 
 from qwen_grpo import runs
 from qwen_grpo.checkpointing import adapter_state, check_adapter_matches, load_adapter, rel  # noqa: F401 (re-exported)
-from qwen_grpo.config import normalized, sha256
+from qwen_grpo.config import as_dict, normalized, sha256
 from qwen_grpo.evaluation import (evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap, paired_changes,
                                   paired_f1_bootstrap, settings, win_matrix)
 from qwen_grpo.model import EOS_IDS, lora_model, lora_modules
@@ -25,6 +24,8 @@ from qwen_grpo.sentiment import LABELS, build_prompts, parse_label, reward
 FP32_MERGE_RTOL = 1e-4  # see merge_check(): fp32 rounding of two algebraically equal computations, with margin
 POWER_RATIO = 100  # the adapter must move logits >= 100x more than merging does, or the merge check has no power
 DRIFT_GUARD = 32  # examples re-scored in-process to confirm a saved baseline still matches the current code
+MERGE_SUBSET = 8  # examples for the full-logit adapter-vs-merged comparison
+STATISTICS = {"level": 0.95, "resamples": 2000, "seed": 42}  # paired bootstrap of compare(): percentile CIs
 PROBES = ["POSITIVE", "NEGATIVE", "positive", " POSITIVE ", "POSITIVE\n\n", "POSITIVE.", "POSITIVE NEGATIVE",
           "POSITIVE because the movie was good", "The answer is POSITIVE", "**POSITIVE**", "POS", "NEGATIVE POSITIVE"]
 
@@ -35,14 +36,6 @@ def strict_correct(response: str, label: str) -> bool:
 
 
 # --- checkpoints -------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
 
 def comparable(cfg_a: dict, cfg_b: dict, ignore):
     """Training configs equal except for the dotted keys in `ignore`. Both are normalized to the current schema first, so
@@ -60,7 +53,7 @@ def training_log(cfg, checkpoint):
     if path is None or not path.exists():
         return None, f"no training log at {rel(path) if path else f'for {checkpoint}'}"
     log = json.loads(path.read_text())
-    if "yaml_config" not in log or not comparable(log["yaml_config"], dataclasses.asdict(cfg), set()):
+    if "yaml_config" not in log or not comparable(log["yaml_config"], as_dict(cfg), set()):
         return None, f"{path.name} was not produced by this config"
     ckpts = {e.get("checkpoint") for e in log["evaluations"]} | {log.get("final_checkpoint", {}).get("path")}
     if rel(checkpoint) not in ckpts:
@@ -69,7 +62,7 @@ def training_log(cfg, checkpoint):
 
 
 def control_provenance(cfg, checkpoint):
-    """A reusable LR=0 control: same config except run name, learning rate 0 and full_val, its own log lists the
+    """A reusable LR=0 control: same config except run name, learning rate 0 and evaluation, its own log lists the
     checkpoint, and that run's in-training control checks passed. Returns (ok, reason, log)."""
     path = runs.training_log_for(checkpoint)
     if path is None or not path.exists():
@@ -80,8 +73,8 @@ def control_provenance(cfg, checkpoint):
         return False, f"{path} predates YAML configs; its settings cannot be compared with this config", None
     if y["training"]["learning_rate"] != 0:
         return False, f"{path} has learning_rate {y['training']['learning_rate']}, not 0", None
-    if not comparable(y, dataclasses.asdict(cfg), {"run.name", "training.learning_rate", "training.full_val"}):
-        return False, f"{path}: settings other than run.name/learning_rate/full_val differ from this config", None
+    if not comparable(y, as_dict(cfg), {"run.name", "training.learning_rate"}):
+        return False, f"{path}: settings other than run.name/learning_rate differ from this config", None
     if log.get("final_checkpoint", {}).get("path") != rel(checkpoint):
         return False, f"{path} does not end at {checkpoint}", None
     if not (log.get("control", {}).get("params_equal_init") and not log.get("frozen_changed")):
@@ -164,15 +157,15 @@ def policy_change(new, ref):
             "degraded": sum(a["correct"] and not b["correct"] for a, b in pairs)}
 
 
-def compare(ref, new, stats):
+def compare(ref, new, stats=STATISTICS):
     """new - ref on identical examples: accuracy, macro-F1 and AUC differences with paired bootstrap CIs."""
-    kw = dict(n=stats.bootstrap_samples, seed=stats.seed, chunk=100, level=stats.confidence_level)
+    kw = dict(n=stats["resamples"], seed=stats["seed"], chunk=100, level=stats["level"])
     changes = paired_changes(ref["predictions"], new["predictions"])  # asserts (id, text, label) alignment
     d, lo, hi = paired_bootstrap([p["correct"] for p in ref["predictions"]], [p["correct"] for p in new["predictions"]], **kw)
     labels = [p["label"] for p in ref["predictions"]]
     auc = paired_auc_bootstrap(win_matrix(new["scores"], labels), win_matrix(ref["scores"], labels), **kw)
     f1 = paired_f1_bootstrap(ref["predictions"], new["predictions"], **kw)
-    out = {"n": len(labels), "level": stats.confidence_level, "resamples": stats.bootstrap_samples, "seed": stats.seed,
+    out = {"n": len(labels), "level": stats["level"], "resamples": stats["resamples"], "seed": stats["seed"],
            "accuracy": {"ref": ref["metrics"]["accuracy"], "new": new["metrics"]["accuracy"], "diff": d, "ci": [lo, hi]},
            "macro_f1": {"ref": ref["metrics"]["macro_f1"], "new": new["metrics"]["macro_f1"], "diff": f1["f1_diff"], "ci": f1["ci"]},
            "auc": {"ref": ref["auc"], "new": new["auc"], "diff": auc["auc_diff"], "ci": auc["ci"]},
@@ -257,7 +250,7 @@ def fp32_merge_check(cfg, checkpoint, subset, tok):
     FP32_MERGE_RTOL = 1e-4, while a wrong merge (missing scale, wrong module, dropped adapter) shifts logits by about
     the adapter's own effect."""
     lo = cfg.lora
-    model = lora_model(torch.float32, "cpu", lo.spec(), lo.rank, lo.alpha, lo.dropout, cfg.model.name)
+    model = lora_model(torch.float32, "cpu", lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
     load_adapter(model, checkpoint)
     merged, ev = merge_check(model, tok, subset, lo.alpha / lo.rank)
     del merged, model
@@ -354,7 +347,7 @@ def verify(cfg, checkpoint, control=None):
     check_adapter_matches(cfg, checkpoint)
     splits = load_splits()
     examples = [{"id": i, **e} for i, e in enumerate(splits[v.split])]
-    subset = examples[: v.merge_subset]
+    subset = examples[:MERGE_SUBSET]
     log, log_source = training_log(cfg, checkpoint)
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
 
@@ -364,7 +357,7 @@ def verify(cfg, checkpoint, control=None):
     torch.cuda.reset_peak_memory_stats()
 
     torch.manual_seed(cfg.training.seed)  # the same seeded construction as train(): a fresh adapter equals the run's init
-    model = lora_model(DTYPES[cfg.model.dtype], "cuda", lo.spec(), lo.rank, lo.alpha, lo.dropout, cfg.model.name)
+    model = lora_model(DTYPES[cfg.model.dtype], "cuda", lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
     reconstructed = adapter_state(model)
     assert all(t.abs().max() == 0 for k, t in reconstructed.items() if "lora_B" in k)
     evals, notes = {}, {}
@@ -419,19 +412,19 @@ def verify(cfg, checkpoint, control=None):
     peak = {"peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30, "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30}
     del merged, model
     torch.cuda.empty_cache()
-    comparisons = {f"{new}_vs_{ref}": compare(evals[ref], evals[new], v.statistics)
+    comparisons = {f"{new}_vs_{ref}": compare(evals[ref], evals[new])
                    for new, ref in [("adapter", "base"), ("merged", "base"), ("merged", "adapter"), ("lr_zero", "base"), ("adapter", "lr_zero")]
                    if new in evals and ref in evals}
     train_examples = [{"id": i, **e} for i, e in enumerate(splits["train"])]
     return {
         "checkpoint": rel(checkpoint), "split": v.split, "n": len(examples), "label_balance": label_balance(examples),
-        "config": dataclasses.asdict(cfg), "config_sha256": sha256(cfg), "notes": notes, "evaluations": evals,
+        "config": as_dict(cfg), "config_sha256": sha256(cfg), "notes": notes, "evaluations": evals,
         "training_log": {"source": log_source if log else None, "missing_reason": None if log else log_source},
         "training_diagnostics": training_diagnostics(log),
         "parameter_updates": updates,
         "policy_change": {k: policy_change(evals[k], base) for k in ("adapter", "merged", "lr_zero") if k in evals},
         "merge_equivalence": {"fp32_cpu": fp32, "bf16_gpu": bf16},
-        "negative_control": control_ev or {"status": "NOT_RUN", "reason": "verification.negative_control is not configured"},
+        "negative_control": control_ev or {"status": "NOT_RUN", "reason": "no LR=0 control configured (verification.control_checkpoint / train_control)"},
         "confidence_intervals": comparisons,
         "reward_integrity": reward_integrity(evals, log, train_examples),
         "gpu_memory": {**peak, "host_peak_rss_gib_after_fp32_check": rss_fp32,

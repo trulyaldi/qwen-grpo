@@ -113,7 +113,6 @@ from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from qwen_grpo.evaluation import paired_compare
 from qwen_grpo.model import EXPECTED_MODULES, TARGET, TARGETS, digest, expected_lora_params, lora_config, lora_modules
-from qwen_grpo.trainer import output_name
 
 
 def tiny_qwen3():
@@ -166,11 +165,6 @@ def test_first_lora_step_updates_only_B_and_leaves_base_bitwise_unchanged():
     assert all(digest(p) == frozen[n] for n, p in model.named_parameters() if not p.requires_grad)
 
 
-def test_output_names_differ():
-    assert output_name("last-o-proj") == "grpo_lora" and output_name("last-o-proj", "_lr0") == "grpo_lora_lr0"
-    assert output_name("last2-attention") == "grpo_lora_last2" and output_name("last2-attention", "_smoke") == "grpo_lora_last2_smoke"
-
-
 def records(correct, ids=None):
     ids = ids or list(range(len(correct)))
     return [{"id": i, "text": f"t{i}", "label": LABEL[i % 2], "prediction": LABEL[i % 2] if c else None, "correct": c}
@@ -205,8 +199,7 @@ from qwen_grpo.evaluation import label_scores, paired_auc_bootstrap, paired_chan
 from qwen_grpo.grpo import group_advantages
 from qwen_grpo.model import EOS_IDS, MODEL
 from qwen_grpo.sentiment import build_prompts
-from qwen_grpo.training import batches, check_grouping
-from qwen_grpo.trainer import REFERENCES
+from qwen_grpo.training import check_grouping, shuffled_batches
 
 TRAIN = balanced_subset(load_splits()["train"], 32, 42)
 
@@ -269,35 +262,15 @@ def test_frozen_parameters_not_updated():
     assert torch.equal(model.emb.weight, emb) and model.emb.weight.grad is None
 
 
-def test_balanced_batches_deterministic_one_per_class_without_replacement():
-    take = lambda: [next(s) for s in [batches(TRAIN, 2, "balanced")] for _ in range(32)]
-    a, b = take(), take()
-    assert [[e["id"] for e in x] for x in a] == [[e["id"] for e in x] for x in b]
-    assert all([e["label"] for e in x] == ["POSITIVE", "NEGATIVE"] for x in a)
-    for k, label in enumerate(("POSITIVE", "NEGATIVE")):
-        pool = sorted(e["id"] for e in TRAIN if e["label"] == label)
-        first, second = [x[k]["id"] for x in a[:16]], [x[k]["id"] for x in a[16:]]
-        assert sorted(first) == sorted(second) == pool and first != second  # full pass, then a reshuffle
-
-
-def test_unconstrained_batches_cover_subset_each_pass():
-    s = batches(TRAIN, 2, "unconstrained")
+def test_shuffled_batches_cover_the_subset_each_pass_without_forcing_labels_apart():
+    s = shuffled_batches(TRAIN, 2)
     first = [next(s) for _ in range(16)]
     ids = [e["id"] for x in first for e in x]
     assert sorted(ids) == sorted(e["id"] for e in TRAIN)
-    assert any(x[0]["label"] == x[1]["label"] for x in first)  # labels are not forced apart
+    assert any(x[0]["label"] == x[1]["label"] for x in first)  # no class balance per batch
 
 
-def test_cycle_mode_is_original_b1_order():
-    s = batches(TRAIN, 1, "cycle")
-    assert [next(s)[0]["id"] for _ in range(40)] == [TRAIN[i % 32]["id"] for i in range(40)]
-
-
-def test_output_files_distinct_and_flips_by_direction():
-    names = {output_name("last2-attention", "", 2, m) for m in ("balanced", "unconstrained")}
-    names |= {output_name(t) for t in TARGETS}
-    assert len(names) == 4
-    assert len({p for p, _, _ in REFERENCES.values()}) == len(REFERENCES)
+def test_flips_by_direction():
     base = records([True, True, False, False])
     new = [dict(p) for p in base]
     new[1].update(prediction="NEGATIVE", correct=False)  # gold POSITIVE broken

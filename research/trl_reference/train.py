@@ -7,6 +7,7 @@ advantages, log-probs, loss, backward and the optimizer. The only TRL override i
 import itertools
 import json
 import math
+import random
 import time
 from importlib.metadata import version
 from pathlib import Path
@@ -20,7 +21,7 @@ from trl import GRPOConfig, GRPOTrainer
 from qwen_grpo.model import (ALPHA, DTYPE, EOS_IDS, EXPECTED_MODULES, MODEL, RANK, TARGETS, digest, expected_lora_params,
                              lora_model, lora_modules)
 from qwen_grpo.sentiment import build_prompts, load_splits, parse_label, reward
-from qwen_grpo.training import balanced_subset, batches
+from qwen_grpo.training import balanced_subset
 
 HERE = Path(__file__).parent
 ROOT = HERE.parents[1]
@@ -48,9 +49,24 @@ def decode_completion(tok, ids):
     return tok.decode(ids[:-1] if ids and ids[-1] in EOS_IDS else ids)
 
 
+def balanced_batches(examples, seed):
+    """The manual run's historical batch_mode "balanced" (qwen_grpo.training.batches as of commit 9bd4500), kept here
+    because this reference reproduces that run: [next POSITIVE, next NEGATIVE], each class reshuffled by its own
+    random.Random(seed + k) after each pass. Training now uses only training.shuffled_batches."""
+    def epochs(pool, rng):
+        while True:
+            order = list(pool)
+            rng.shuffle(order)
+            yield from order
+
+    pos, neg = (epochs([e for e in examples if e["label"] == label], random.Random(seed + k))
+                for k, label in enumerate(("POSITIVE", "NEGATIVE")))
+    return ([next(pos), next(neg)] for _ in itertools.count())
+
+
 def stream(examples, n_batches):
     """First n_batches [POSITIVE, NEGATIVE] pairs of the manual balanced stream -> (pairs, dataset indices, each repeated G times)."""
-    pairs = list(itertools.islice(batches(examples, 2, "balanced", CONFIG["seed"]), n_batches))
+    pairs = list(itertools.islice(balanced_batches(examples, CONFIG["seed"]), n_batches))
     index = {e["id"]: i for i, e in enumerate(examples)}
     return pairs, [index[e["id"]] for pair in pairs for e in pair for _ in range(G)]
 

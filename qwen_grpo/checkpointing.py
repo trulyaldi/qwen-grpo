@@ -24,7 +24,7 @@ def check_adapter_matches(cfg, checkpoint):
     Target modules are compared as resolved module names on the model's weightless skeleton, so a historical regex and
     an equivalent list of names agree."""
     saved = json.loads((Path(checkpoint) / "adapter_config.json").read_text())
-    expected = {"r": cfg.lora.rank, "lora_alpha": cfg.lora.alpha, "lora_dropout": cfg.lora.dropout,
+    expected = {"r": cfg.lora.rank, "lora_alpha": cfg.lora.alpha, "lora_dropout": 0.0,
                 "base_model_name_or_path": cfg.model.name}
     got = {k: saved.get(k) for k in expected}
     if got == expected:

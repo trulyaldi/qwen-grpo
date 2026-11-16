@@ -68,17 +68,18 @@ def skeleton(name):
         return AutoModelForCausalLM.from_config(AutoConfig.from_pretrained(name))
 
 
-def lora_config(target=TARGET, r=RANK, alpha=ALPHA, dropout=0.0):
-    return LoraConfig(r=r, lora_alpha=alpha, lora_dropout=dropout, bias="none", task_type="CAUSAL_LM", target_modules=target)
+def lora_config(target=TARGET, r=RANK, alpha=ALPHA):
+    """No dropout: the model is never put in train mode, so dropout would be silently inactive."""
+    return LoraConfig(r=r, lora_alpha=alpha, lora_dropout=0.0, bias="none", task_type="CAUSAL_LM", target_modules=target)
 
 
-def lora_model(dtype, device, target=TARGET, r=RANK, alpha=ALPHA, dropout=0.0, name=MODEL):
+def lora_model(dtype, device, target=TARGET, r=RANK, alpha=ALPHA, name=MODEL):
     """target: a PEFT target (regex or list of names) or a (modules, num_layers) spec resolved on the loaded model."""
     base = AutoModelForCausalLM.from_pretrained(name, dtype=dtype).to(device).eval()
     base.generation_config = GenerationConfig(eos_token_id=EOS_IDS, pad_token_id=EOS_IDS[1])
     if isinstance(target, tuple):
         target = target_modules(base, *target)
-    return get_peft_model(base, lora_config(target, r, alpha, dropout)).eval()
+    return get_peft_model(base, lora_config(target, r, alpha)).eval()
 
 
 def lora_modules(model):

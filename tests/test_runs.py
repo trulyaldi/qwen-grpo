@@ -110,7 +110,7 @@ def test_report_is_rebuilt_from_saved_files_without_a_model(sandbox, tmp_path, m
     assert {"plots/reward.png", "plots/prediction_bias.png"} <= set(s["artifacts"]["plots"])
     report = (d / "report.md").read_text()
     assert "[validation](evaluation/step4/validation.json)" in report and "NOT_RUN" in report
-    assert "Not available: training.full_val is false" in report and "peak reserved not recorded" in report
+    assert "Not available: evaluation.full_validation is false" in report and "peak reserved not recorded" in report
     assert (runs.verification_dir("tiny", 4) / "report.md").is_file()  # the per-checkpoint report is rebuilt too
     assert "runs/tiny/summary.json" in capsys.readouterr().out
 
@@ -129,11 +129,12 @@ def test_cli_accepts_run_names_and_the_older_paths(tmp_path, monkeypatch):
     run.main(["verify", "--run", "qwen"])
     run.main(["remove", "--run", "qwen"])
     run.main(["remove", "--run", "qwen", "--confirm"])
-    legacy = REPO / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"
+    legacy = tmp_path / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"  # a run from before runs/, historical config
+    runs.write_json(legacy / "adapter_config.json", {})
     run.main(["validate", "--config", str(REPO / "configs" / "default.yaml"), "--checkpoint", str(legacy)])
     assert calls == [("validation", "default", "runs/qwen/checkpoints/step20"), ("test", "default", "runs/qwen/checkpoints/step10"),
                      ("verify", "default", "runs/qwen/checkpoints/step20"), ("remove", "qwen", False), ("remove", "qwen", True),
-                     ("validation", "default", str(legacy))]
+                     ("validation", "default", "checkpoints/grpo_lora_last2_b2_balanced_step30")]
     for argv in (["verify"], ["verify", "--run", "qwen", "--config", "c.yaml"], ["verify", "--config", "c.yaml"],
                  ["verify", "--config", "c.yaml", "--checkpoint", "x", "--step", "3"], ["train", "--run", "qwen"]):
         with pytest.raises(SystemExit):
@@ -149,10 +150,11 @@ def test_summary_paths_resolve_inside_the_run(sandbox, tmp_path):
 
 
 def test_full_validation_sections_from_a_real_final_block(sandbox, tmp_path):
-    """The end-of-training comparison as a GPU run records it (taken from the committed default_rerun benchmark)."""
+    """The end-of-training comparison as a GPU run records it (taken from the committed runs/qwen training log)."""
     sandbox("r")
     trainer.train(make_cfg(tmp_path, max_steps=2), device="cpu")
-    bench = json.loads((REPO / "results" / "benchmarks" / "default_rerun.json").read_text())
+    real = json.loads((REPO / "runs" / "qwen" / "training" / "training.json").read_text())
+    bench = {**real["final"], "memory": real["memory"]}
     path = runs.training_dir("tiny") / "training.json"
     log = json.loads(path.read_text())
     log["final"] = {k: bench[k] for k in ("base", "trained", "accuracy_diff", "bootstrap_ci95", "bootstrap", "paired_changes",

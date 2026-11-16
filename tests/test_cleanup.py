@@ -21,6 +21,7 @@ TARGET = r"model\.layers\.(26|27)\.self_attn\.(q|v|o)_proj"
 def make_cfg(tmp_path, name="qwen", **training):
     raw = copy.deepcopy(RAW)
     raw["run"]["name"] = name
+    raw["lora"].update(rank=8, alpha=16)  # what fake_run's synthetic adapter_config.json records
     raw["training"].update(training)
     path = tmp_path / f"{name}.yaml"
     path.write_text(yaml.safe_dump(raw))
@@ -244,13 +245,14 @@ def test_ownership_follows_the_resolved_config_not_how_the_yaml_is_written(repo,
     root, cfg, ckpt = repo
     parent = tmp_path / "configs" / "default.yaml"
     parent.parent.mkdir()
-    parent.write_text(yaml.safe_dump({**RAW, "run": {"name": "default"}}))
+    full = config.as_dict(cfg)
+    parent.write_text(yaml.safe_dump({**full, "run": {"name": "default"}}))
     child = tmp_path / "configs" / "experiments" / "qwen.yaml"
     child.parent.mkdir()
     child.write_text("extends: ../default.yaml\nrun: {name: qwen}\n")
     assert config.load(child) == cfg
     assert [p.name for p, _ in cleanup.plan(config.load(child), root, ckpt)] == [p.name for p, _ in cleanup.plan(cfg, root, ckpt)]
-    parent.write_text(yaml.safe_dump({**RAW, "run": {"name": "default"}, "training": {**RAW["training"], "seed": 7}}))
+    parent.write_text(yaml.safe_dump({**full, "run": {"name": "default"}, "training": {**full["training"], "seed": 7}}))
     with pytest.raises(SystemExit, match="different config"):
         cleanup.plan(config.load(child), root, ckpt)
 

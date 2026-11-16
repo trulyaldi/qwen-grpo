@@ -29,29 +29,20 @@ def decode(tok, rollouts):
 
 
 
-def batches(train, B, mode, seed=42):
-    """Deterministic, infinite stream of training batches. A zero-signal batch is consumed, never retried.
+def shuffled_batches(train, B, seed=42):
+    """Deterministic, infinite stream of B-prompt batches read from one sequence: the subset in an order shuffled by
+    its own random.Random(seed), reshuffled after each full pass (epoch). Within an epoch every prompt appears once; a
+    batch that straddles two epochs may repeat a prompt. No class balance is enforced per batch. A zero-signal batch is
+    consumed, never retried. This is the historical batch_mode "unconstrained", element for element."""
+    rng = random.Random(seed)
 
-    cycle:         B=1; train[0], train[1], ... in subset order (the original policy)
-    balanced:      B=2; [next POSITIVE, next NEGATIVE], each class reshuffled (own seeded RNG) after each pass
-    unconstrained: B prompts from one stream over the whole subset, reshuffled after each pass
-    """
-    def stream(pool, rng):
+    def epochs():
         while True:
-            order = list(pool)
+            order = list(train)
             rng.shuffle(order)
             yield from order
 
-    if mode == "cycle":
-        assert B == 1
-        return ([train[i % len(train)]] for i in itertools.count())
-    if mode == "balanced":
-        assert B == 2
-        pos, neg = (stream([e for e in train if e["label"] == label], random.Random(seed + k))
-                    for k, label in enumerate(("POSITIVE", "NEGATIVE")))
-        return ([next(pos), next(neg)] for _ in itertools.count())
-    assert mode == "unconstrained"
-    s = stream(train, random.Random(seed))
+    s = epochs()
     return ([next(s) for _ in range(B)] for _ in itertools.count())
 
 

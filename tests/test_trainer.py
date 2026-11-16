@@ -13,8 +13,7 @@ from qwen_grpo import checkpointing, config, runs, trainer
 from qwen_grpo.model import EOS_IDS, lora_config, target_modules
 from tests.test_config import RAW
 
-SETTINGS = {"train_samples": 4, "val_subset": 2, "group_size": 3, "max_steps": 4, "max_attempts": 40, "eval_every": 2,
-            "max_new_tokens": 3}
+SETTINGS = {"batch_size": 2, "group_size": 3, "max_steps": 4, "max_attempts": 40, "max_new_tokens": 3}
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +21,7 @@ def float32_default():
     torch.set_default_dtype(torch.float32)  # tests/test_grpo.py sets float64 at import
 
 
-def tiny_lora_model(dtype, device, target, r, alpha, dropout, name):
+def tiny_lora_model(dtype, device, target, r, alpha, name=None):
     """Stand-in for model.lora_model: a fixed random 4-layer Qwen3 base (its own RNG, so the global stream is consumed
     exactly as by from_pretrained), LoRA resolved by the real target_modules()."""
     with torch.random.fork_rng():
@@ -31,7 +30,7 @@ def tiny_lora_model(dtype, device, target, r, alpha, dropout, name):
                                             num_attention_heads=2, num_key_value_heads=1, head_dim=8,
                                             tie_word_embeddings=True)).to(dtype).eval()
     base.generation_config = GenerationConfig(eos_token_id=EOS_IDS, pad_token_id=EOS_IDS[1])
-    return get_peft_model(base, lora_config(target_modules(base, *target), r, alpha, dropout)).eval()
+    return get_peft_model(base, lora_config(target_modules(base, *target), r, alpha)).eval()
 
 
 def hashed_rewards(responses, labels, G):
@@ -40,12 +39,13 @@ def hashed_rewards(responses, labels, G):
     return torch.tensor(r).reshape(len(labels), G)
 
 
-def make_cfg(tmp_path, **training):
+def make_cfg(tmp_path, every=2, **training):
     raw = copy.deepcopy(RAW)
     raw["run"]["name"] = "tiny"
     raw["model"]["dtype"] = "float32"
-    raw["data"].update(train_samples=SETTINGS["train_samples"], val_subset=SETTINGS["val_subset"])
-    raw["training"].update({k: v for k, v in SETTINGS.items() if k in raw["training"]}, full_val=False, **training)
+    raw["data"].update(train_samples=4, val_subset=2)
+    raw["training"].update(SETTINGS, **training)
+    raw["evaluation"].update(every=every, full_validation=False)
     path = tmp_path / "cfg.yaml"
     path.write_text(yaml.safe_dump(raw))
     return config.load(path)
@@ -170,6 +170,19 @@ def test_resume_inside_a_reused_rollout_batch_equals_uninterrupted_run_bitwise(s
     assert same_tensors(state(part, 4)["pending"], state(full, 4)["pending"])
 
 
+def test_the_evaluation_interval_does_not_change_the_trajectory(sandbox, tmp_path):
+    """evaluation.every only adds subset evaluations and checkpoints (greedy, no random draws): the updates are bitwise
+    those of a run that evaluates less often. This is why provenance checks may ignore the evaluation section."""
+    sandbox("every2")
+    ref = trainer.train(make_cfg(tmp_path), device="cpu")
+    sandbox("every1")
+    out = trainer.train(make_cfg(tmp_path, every=1), device="cpu")
+    strip = lambda rs: [{k: v for k, v in r.items() if k != "step_seconds" and not k.endswith("_gib")} for r in rs]
+    assert len(out["evaluations"]) == 5 > len(ref["evaluations"]) == 3
+    assert strip(out["training"]) == strip(ref["training"]) and out["zero_signal"] == ref["zero_signal"]
+    assert same_tensors(adapter(tmp_path / "every1", 4), adapter(tmp_path / "every2", 4))
+
+
 def test_num_iterations_must_be_positive(tmp_path):
     with pytest.raises(ValueError, match="num_iterations"):
         make_cfg(tmp_path, num_iterations=0)
@@ -215,11 +228,11 @@ def test_exhausted_attempt_budget_saves_and_reports_the_last_step(sandbox, tmp_p
         calls.append(1)
         return torch.zeros(len(labels), G) if len(calls) == 1 else hashed_rewards(responses, labels, G)
     monkeypatch.setattr(trainer, "group_rewards", first_batch_zero_signal)
-    cfg = make_cfg(tmp_path, max_steps=5, max_attempts=5, eval_every=10)
+    cfg = make_cfg(tmp_path, max_steps=5, max_attempts=5, every=10)
     root = sandbox("run")
     out = trainer.train(cfg, device="cpu")
     step = out["successful_steps"]
-    assert out["zero_signal_groups"] >= 1 and 0 < step < 5  # budget ran out between eval_every checkpoints
+    assert out["zero_signal_groups"] >= 1 and 0 < step < 5  # budget ran out between evaluation.every checkpoints
     assert out["final_checkpoint"]["step"] == step and out["final_checkpoint"]["path"].endswith(f"tiny/checkpoints/step{step}")
     assert (ckpt(root, step) / checkpointing.STATE).exists() and runs.latest_checkpoint("tiny") == ckpt(root, step)
 
@@ -243,7 +256,7 @@ def test_one_grpo_step_decreases_the_grpo_loss_through_both_lora_factors(tok):
     from qwen_grpo.training import grpo_step
 
     torch.manual_seed(0)
-    model = tiny_lora_model(torch.float32, "cpu", (("q_proj", "v_proj", "o_proj"), 2), 8, 16, 0.0, None)
+    model = tiny_lora_model(torch.float32, "cpu", (("q_proj", "v_proj", "o_proj"), 2), 8, 16)
     for n, p in model.named_parameters():
         if "lora_B" in n:
             torch.nn.init.normal_(p, std=0.1)  # with B = 0 the gradient of A is exactly zero

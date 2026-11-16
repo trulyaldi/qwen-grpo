@@ -79,7 +79,7 @@ def git_tracked(root, paths):
 
 def references(root, paths):
     """Files outside `paths` that mention one of them by repository-relative path (another run's verification, a
-    config's negative_control.checkpoint, documentation, research code)."""
+    config's verification.control_checkpoint, documentation, research code)."""
     root = Path(root)
     rels = [p.relative_to(root).as_posix() for p in paths]
     pattern = re.compile("|".join(rf"(?<![\w.-]){re.escape(r)}(?![\w.-])" for r in rels))

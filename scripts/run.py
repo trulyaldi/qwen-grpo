@@ -15,7 +15,7 @@ from before runs/ existed (checkpoints/<run>_step<N>/), whose outputs stay in re
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
 evaluation section) and compare it with the base model (paired: the saved baseline predictions if they match model and
 decoding, else the base evaluated in-process). verify compares base, adapter-attached, merged and (if configured) an
-LR=0 control on verification.split. Neither retrains the checkpoint; only verification.negative_control.train runs a
+LR=0 control on verification.split. Neither retrains the checkpoint; only verification.train_control runs a
 (control) training, as the separate run <run>_lr0. remove lists what it would delete with sizes and deletes only with
 --confirm; it refuses when ownership is uncertain (qwen_grpo/cleanup.py).
 """
@@ -36,7 +36,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     from qwen_grpo.checkpointing import check_adapter_matches, load_adapter
     from qwen_grpo.config import DTYPES, as_dict, sha256
     from qwen_grpo import runs
-    from qwen_grpo.evaluation import (evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare,
+    from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare,
                                       predictions_path, settings, summary, win_matrix)
     from qwen_grpo.model import lora_model
     from qwen_grpo.sentiment import load_splits
@@ -53,7 +53,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
 
     lo, (gen_kw, score_kw) = cfg.lora, settings(cfg.evaluation)
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
-    model = lora_model(DTYPES[cfg.model.dtype], "cuda", lo.spec(), lo.rank, lo.alpha, lo.dropout, cfg.model.name)
+    model = lora_model(DTYPES[cfg.model.dtype], "cuda", lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
     load_adapter(model, checkpoint)
 
     splits = load_splits()
@@ -66,7 +66,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     labels = [e["label"] for e in examples]
     W = {k: win_matrix(v, labels) for k, v in scores.items()}
     m = metrics(preds)
-    boot = {"n": cfg.evaluation.bootstrap_samples, "seed": cfg.evaluation.bootstrap_seed}
+    boot = {"n": cfg.evaluation.bootstrap_samples, "seed": BOOTSTRAP_SEED}
     out = {
         "checkpoint": runs.rel(checkpoint),
         "split": split, "config": as_dict(cfg), "config_sha256": sha256(cfg), "decoding": decoding,
@@ -105,19 +105,20 @@ def updated(checkpoint):
 
 def control_checkpoint(cfg):
     """The LR=0 control for verify: an existing checkpoint, or a fresh run of train() with learning_rate 0 (as the run
-    <run>_lr0) if (and only if) verification.negative_control.train is set. Its provenance is checked either way."""
+    <run>_lr0) if (and only if) verification.train_control is set. Its provenance is checked either way."""
     import dataclasses
 
     from qwen_grpo import runs
     from qwen_grpo.verification import control_provenance
 
-    nc = cfg.verification.negative_control
-    if nc.train:
+    v = cfg.verification
+    if v.train_control:
         from qwen_grpo.trainer import train
 
         name = f"{cfg.run.name}_lr0"
         train(dataclasses.replace(cfg, run=dataclasses.replace(cfg.run, name=name),
-                                  training=dataclasses.replace(cfg.training, learning_rate=0.0, full_val=False)))
+                                  training=dataclasses.replace(cfg.training, learning_rate=0.0),
+                                  evaluation=dataclasses.replace(cfg.evaluation, full_validation=False)))
         ckpt = runs.ROOT / runs.read_json(runs.training_dir(name) / "training.json")["final_checkpoint"]["path"]
         import gc
 
@@ -125,8 +126,8 @@ def control_checkpoint(cfg):
 
         gc.collect()  # train() returns with its model and optimizer unreferenced; release them before verify loads a model
         torch.cuda.empty_cache()
-    elif nc.checkpoint:
-        ckpt = runs.ROOT / nc.checkpoint
+    elif v.control_checkpoint:
+        ckpt = runs.ROOT / v.control_checkpoint
     else:
         return None
     ok, why, _ = control_provenance(cfg, ckpt)
@@ -204,7 +205,8 @@ def main(argv=None):
     if args.command == "train":
         from qwen_grpo.trainer import train
 
-        return train(load(args.config), resume=args.resume)
+        # a new run must use the current config schema; resuming accepts the historical one its run was saved with
+        return train(load(args.config, historical=args.resume is not None), resume=args.resume)
     if args.run is not None:
         if args.command == "report":
             return report_run(args.run)
@@ -213,9 +215,9 @@ def main(argv=None):
 
             return remove_run(args.run, confirm=args.confirm)
         config_path, checkpoint = runs.resolve(args.run, args.step)
-        cfg = load(config_path)
+        cfg = load(config_path, historical=True)
     else:
-        cfg, checkpoint = load(args.config), args.checkpoint
+        cfg, checkpoint = load(args.config, historical=True), args.checkpoint
     if args.command == "remove":
         from qwen_grpo.cleanup import remove
 
