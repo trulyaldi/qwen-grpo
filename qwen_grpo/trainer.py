@@ -39,7 +39,7 @@ from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, l
 from qwen_grpo.policy import generate_rollouts
 from qwen_grpo.reporting import update_run
 from qwen_grpo.sentiment import SPLITS_PATH, build_prompts, load_splits, parse_label
-from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_step
+from qwen_grpo.training import balanced_subset, batches, check_grouping, decode, group_rewards, grpo_update, prepare
 
 ROOT = Path(__file__).resolve().parents[1]  # the git repository (provenance); outputs: runs.ROOT
 BASE_FILE = predictions_path("validation")
@@ -73,6 +73,13 @@ REFERENCES = {
 def l2(norms):
     """Aggregate L2 norm sqrt(sum_k ||theta_k||^2) from per-tensor norms."""
     return math.sqrt(sum(x * x for x in norms))
+
+
+def to(x, device):
+    """x with every tensor in it (nested dicts) moved to device."""
+    if isinstance(x, dict):
+        return {k: to(v, device) for k, v in x.items()}
+    return x.to(device) if isinstance(x, torch.Tensor) else x
 
 
 def git_state():
@@ -257,7 +264,7 @@ def _train(cfg: Config, resume, state, device):
                        "batch_policy": f"{mode} (see batches()); a zero-signal batch is consumed, not retried",
                        "rollout_max_new_tokens": t.max_new_tokens, "eval_max_new_tokens": ev.max_new_tokens,
                        "eval_batch": ev.batch_size, "sampling": {"do_sample": True, "temperature": t.temperature, "top_p": 1.0, "top_k": 0},
-                       "clip_eps": t.clip_eps, "kl_beta": 0.0, "optimizer": "AdamW(weight_decay=0)", "grad_clipping": None,
+                       "clip_eps": t.clip_eps, "num_iterations": t.num_iterations, "kl_beta": 0.0, "optimizer": "AdamW(weight_decay=0)", "grad_clipping": None,
                        "lora": {"targets": as_dict(cfg)["lora"]["targets"], "target_modules": module_names,
                                 "trainable_params": n_trainable, "r": lo.rank, "alpha": lo.alpha, "dropout": lo.dropout},
                        "dtypes": {"base": str(dtype), "lora": "torch.float32"}, "gpu_budget_gib": cfg.run.gpu_budget_gib,
@@ -275,7 +282,7 @@ def _train(cfg: Config, resume, state, device):
                   + ("not compared (different model or decoding)" if mism is None else str(len(mism))))
         eval_subset(0)
         step = attempts = 0
-        ckpt, mixed_counts, elapsed = None, Counter(), 0.0
+        ckpt, mixed_counts, elapsed, pending = None, Counter(), 0.0, None
         torch.manual_seed(t.seed)  # rollout sampling
     else:
         load_adapter(model, resume)
@@ -283,6 +290,7 @@ def _train(cfg: Config, resume, state, device):
         result, base_full = state["result"], state["base_full"]
         step, attempts, ckpt, elapsed = state["step"], state["attempts"], state["checkpoint"], state["train_seconds"]
         mixed_counts = Counter(state["mixed_counts"])
+        pending = to(state.get("pending"), model.device)  # a batch whose remaining updates were cut by this checkpoint
         result.setdefault("resumed", []).append({"from": rel(resume), "step": step, "attempts": attempts,
                                                  "environment": environment(splits, device)})
         print(f"resumed from {rel(resume)}: step {step}, attempt {attempts}")
@@ -293,7 +301,8 @@ def _train(cfg: Config, resume, state, device):
         eval_subset(step, rel(path))
         save_checkpoint(model, optimizer, path, {
             "config": as_dict(cfg), "step": step, "attempts": attempts, "checkpoint": rel(path),
-            "mixed_counts": dict(mixed_counts), "train_seconds": time.time() - t0, "result": result, "base_full": base_full})
+            "mixed_counts": dict(mixed_counts), "train_seconds": time.time() - t0, "result": result, "base_full": base_full,
+            "pending": to(pending, "cpu")})
         return rel(path)
 
     stream = batches(train_set, B, mode, seed=t.seed)
@@ -302,33 +311,44 @@ def _train(cfg: Config, resume, state, device):
     if resume is not None:
         set_rng_state(state["rng"])  # last: nothing between here and the next rollout may draw random numbers
     t0 = time.time() - elapsed
-    while step < t.max_steps and attempts < t.max_attempts:
-        batch = next(stream)
-        attempts += 1
+    # pending: the current rollout batch while it still has updates to run (rollouts, advantages, the old_logp computed
+    # once at sampling time, its log record, next iteration); a checkpoint saves it, so resuming continues it exactly.
+    while step < t.max_steps and (pending is not None or attempts < t.max_attempts):
         t_step = time.time()
-        prompts = build_prompts(tok, [e["text"] for e in batch])
-        rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=t.max_new_tokens, temperature=t.temperature)
-        check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].to(model.device), G)
-        responses = decode(tok, rollouts)
-        rewards = group_rewards(responses, [e["label"] for e in batch], G)  # [B, G]
-        mixed = int((rewards != rewards[:, :1]).any(dim=1).sum())
-        mixed_counts[mixed] += 1
-        group = {"attempt": attempts, "prompt_ids": [e["id"] for e in batch], "labels": [e["label"] for e in batch],
-                 "mixed_groups": mixed, "responses": responses, "rewards": rewards.tolist(), "mean_reward": rewards.mean().item(),
-                 "invalid_responses": sum(parse_label(r) is None for r in responses),
-                 "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16],
-                 "mean_completion_tokens": rollouts["completion_mask"].sum(1).float().mean().item()}  # through the first EOS
-        out = grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=t.clip_eps)
-        del rollouts
-        if out is None:
-            result["zero_signal"].append(group)
-            continue
+        if pending is None:
+            batch = next(stream)
+            attempts += 1
+            prompts = build_prompts(tok, [e["text"] for e in batch])
+            rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=t.max_new_tokens, temperature=t.temperature)
+            check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].to(model.device), G)
+            responses = decode(tok, rollouts)
+            rewards = group_rewards(responses, [e["label"] for e in batch], G)  # [B, G]
+            mixed = int((rewards != rewards[:, :1]).any(dim=1).sum())
+            mixed_counts[mixed] += 1
+            group = {"attempt": attempts, "prompt_ids": [e["id"] for e in batch], "labels": [e["label"] for e in batch],
+                     "mixed_groups": mixed, "responses": responses, "rewards": rewards.tolist(), "mean_reward": rewards.mean().item(),
+                     "invalid_responses": sum(parse_label(r) is None for r in responses),
+                     "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16],
+                     "mean_completion_tokens": rollouts["completion_mask"].sum(1).float().mean().item()}  # through the first EOS
+            targets = prepare(model, rollouts, rewards)
+            if targets is None:
+                del rollouts
+                result["zero_signal"].append(group)
+                continue
+            pending = {"rollouts": rollouts, "adv": targets[0], "old_logp": targets[1], "group": group, "iteration": 0}
+            del rollouts, targets
+        group = pending["group"]
+        out = grpo_update(model, params, optimizer, pending["rollouts"], pending["adv"], pending["old_logp"],
+                          clip_eps=t.clip_eps, iteration=pending["iteration"])
+        pending["iteration"] += 1
+        if pending["iteration"] == t.num_iterations:
+            pending = None
         step += 1
         with torch.no_grad():  # norms over several modules aggregate as sqrt(sum of squares)
-            row = {"step": step, **group, "loss": out["loss"], "init_diff": out["init_diff"], "grad_norm": out["grad_norm"],
+            row = {"step": step, **group, **{k: v for k, v in out.items() if k != "grad_norms"},
                    "grad_norm_A": l2(out["grad_norms"][n] for n in names_A), "grad_norm_B": l2(out["grad_norms"][n] for n in names_B),
-                   "update_norm": out["update_norm"], "learning_rate": optimizer.param_groups[0]["lr"],
-                   "step_seconds": time.time() - t_step,  # rollout generation + rewards + GRPO update
+                   "learning_rate": optimizer.param_groups[0]["lr"],
+                   "step_seconds": time.time() - t_step,  # GRPO update (+ rollout generation and rewards at iteration 0)
                    "lora_A_norm": l2(params[n].norm().item() for n in names_A),
                    "lora_B_norm": l2(params[n].norm().item() for n in names_B),
                    "effective_adapter_norm": l2(((lo.alpha / lo.rank) * Bm @ A).norm().item() for A, Bm in pairs),
@@ -337,9 +357,11 @@ def _train(cfg: Config, resume, state, device):
                    "peak_allocated_gib": gib(torch.cuda.max_memory_allocated),
                    "peak_reserved_gib": gib(torch.cuda.max_memory_reserved)}
         result["training"].append(row)
-        ids = ",".join(f"{e['id']}{e['label'][0]}" for e in batch)
+        ids = ",".join(f"{i}{label[0]}" for i, label in zip(group["prompt_ids"], group["labels"]))
         mem = f"alloc {row['cuda_allocated_gib']:.2f}  peak res {row['peak_reserved_gib']:.2f} GiB" if on_cuda else ""
-        print(f"step {step:2d} (attempt {attempts:3d}) {ids:12} mixed {mixed}  R {row['mean_reward']:.2f}  "
+        clip = (f"it {out['iteration']}  r [{out['ratio_min']:.3f}, {out['ratio_max']:.3f}]  clip {out['clip_frac']:.3f}  "
+                f"kl {out['approx_kl']:.2e}  ") if t.num_iterations > 1 else ""
+        print(f"step {step:2d} (attempt {group['attempt']:3d}) {ids:12} mixed {group['mixed_groups']}  R {row['mean_reward']:.2f}  {clip}"
               f"loss {row['loss']:+.4f}  |g| {row['grad_norm']:.3e} (A {row['grad_norm_A']:.2e}, B {row['grad_norm_B']:.2e})  "
               f"|dtheta| {row['update_norm']:.2e}  |(a/r)BA| {row['effective_adapter_norm']:.3e}  {mem}")
         if step % t.eval_every == 0 or step == t.max_steps:

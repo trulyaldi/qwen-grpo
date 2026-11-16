@@ -76,6 +76,7 @@ class Training:
     max_steps: int  # optimizer updates
     max_attempts: int  # rollout batches, including zero-signal batches that are skipped
     clip_eps: float = 0.2
+    num_iterations: int = 1  # optimizer updates per rollout batch, all against its sampling-time log-probs
     temperature: float = 1.0
     max_new_tokens: int  # rollout length; evaluation length is evaluation.max_new_tokens
     seed: int  # LoRA init, rollout sampling, batch order
@@ -187,6 +188,7 @@ def validate(cfg: Config) -> Config:
         (t.learning_rate >= 0, "training.learning_rate: >= 0 (0 is the negative control)"),
         (1 <= t.max_steps <= t.max_attempts, "training: 1 <= max_steps <= max_attempts"),
         (0 < t.clip_eps < 1, "training.clip_eps: in (0, 1)"),
+        (t.num_iterations >= 1, "training.num_iterations: >= 1"),
         (t.temperature == 1.0, "training.temperature: only 1.0 (log-probs are computed from untempered logits, so "
                                "any other value would make the sampler differ from the policy being optimized)"),
         (t.max_new_tokens >= 1 and t.eval_every >= 1, "training.max_new_tokens and training.eval_every: >= 1"),

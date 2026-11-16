@@ -59,3 +59,23 @@ def grpo_loss(
         raise ValueError("Empty response detected.")
     per_sequence = surrogate.sum(dim=1) / lengths
     return -per_sequence.mean()
+
+
+@torch.no_grad()
+def clip_stats(logp, old_logp, advantages, mask, clip_eps=0.2) -> dict:
+    """Token-level diagnostics of grpo_loss over the valid tokens (shapes as in grpo_loss).
+
+    ratio_*        r = exp(logp - old_logp)
+    outside_frac   fraction with r outside [1 - eps, 1 + eps]
+    clip_frac      fraction where the clamped branch is the min, so the token's gradient is zero:
+                   (A > 0 and r > 1 + eps) or (A < 0 and r < 1 - eps)
+    approx_kl      k3 estimator mean((r - 1) - log r) of KL(old || current), samples from old
+    """
+    log_r = (logp - old_logp)[mask]
+    r = log_r.exp()
+    adv = advantages.unsqueeze(1).expand_as(mask)[mask]
+    outside = (r < 1 - clip_eps) | (r > 1 + clip_eps)
+    clipped = ((adv > 0) & (r > 1 + clip_eps)) | ((adv < 0) & (r < 1 - clip_eps))
+    return {"ratio_mean": r.mean().item(), "ratio_min": r.min().item(), "ratio_max": r.max().item(),
+            "outside_frac": outside.float().mean().item(), "clip_frac": clipped.float().mean().item(),
+            "approx_kl": ((r - 1) - log_r).mean().item()}

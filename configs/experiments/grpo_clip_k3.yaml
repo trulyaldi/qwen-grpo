@@ -1,0 +1,9 @@
+# Clipping-enabled GRPO: 3 optimizer updates per rollout batch against the batch's sampling-time log-probs, so the
+# importance ratio can leave [1 - clip_eps, 1 + clip_eps]. max_steps counts updates: 30 steps = 10 rollout batches.
+extends: ../default.yaml
+
+run:
+  name: grpo_clip_k3
+
+training:
+  num_iterations: 3

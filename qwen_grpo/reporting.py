@@ -69,7 +69,7 @@ def _figure(path, xlabel, ylabel, title, draw):
 def training_plots(log, plots):
     """Plots 1-4 and the loss diagnostic from a training log; every point is a recorded value."""
     rows, evals = log["training"], log["evaluations"]
-    attempts = sorted(rows + log["zero_signal"], key=lambda g: g["attempt"])
+    attempts = sorted({g["attempt"]: g for g in rows + log["zero_signal"]}.values(), key=lambda g: g["attempt"])  # K rows per batch
     B = log["config"]["B"]
     steps = [r["step"] for r in rows]
     made = [
@@ -159,7 +159,8 @@ def report(ev, plots_made, missing_plots):
           f"- Model {c['model']['name']} ({c['model']['dtype']} base, fp32 LoRA), non-thinking; dataset Rotten Tomatoes (`data/sentiment.json`).",
           f"- LoRA r={lo['rank']}, α={lo['alpha']}, dropout {lo['dropout']}, targets `{lo['targets']}`.",
           f"- GRPO: B={t['batch_size']} ({t['batch_mode']}), G={t['group_size']}, lr {t['learning_rate']}, {t['max_steps']} steps, "
-          f"clip ε {t['clip_eps']}, rollout max_new_tokens {t['max_new_tokens']}, seed {t['seed']}.",
+          f"clip ε {t['clip_eps']}, {t.get('num_iterations', 1)} update(s) per rollout batch, rollout max_new_tokens "
+          f"{t['max_new_tokens']}, seed {t['seed']}.",
           f"- Held-out: `{ev['split']}`, n={ev['n']} {ev['label_balance']}; greedy, max_new_tokens 4 (baseline settings).",
           f"- Paired bootstrap: {st['bootstrap_samples']} resamples, {int(st['confidence_level'] * 100)}% percentile CIs, seed {st['seed']}.", "",
           "## Model comparison", "",
@@ -193,7 +194,10 @@ def report(ev, plots_made, missing_plots):
         md += [f"- Training log: frozen tensors changed {len(td['frozen_changed'])}; {td['optimizer_updates']} updates from "
                f"{td['rollout_attempts']} rollout attempts ({td['zero_signal_batches']} zero-signal batches skipped); "
                f"mixed-reward group fraction {_f(td['mixed_reward_group_fraction'])}; grad norm range {td['grad_norm_range']} "
-               f"(no clipping); max old/current log-prob gap {td['max_init_diff']} (so ρ ≡ 1 and clipping is inactive)."]
+               f"(no clipping); max old/current log-prob gap {td['max_init_diff']} " + (
+                   "(so ρ ≡ 1 and clipping is inactive)." if td.get("num_iterations", 1) == 1 else
+                   f"at the first of {td['num_iterations']} updates per rollout batch; ρ range {td['ratio_range']}, "
+                   f"max effective clip fraction {_f(td['max_clip_frac'])}.")]
     else:
         md += [f"- Training log: not available ({ev['training_log']['missing_reason']}). Frozen-weight digests, gradient norms and "
                "reward curves of this run cannot be checked here."]
@@ -349,7 +353,8 @@ def summarize(name):
         "config_sha256": m["config_sha256"], "git_commit": m["git_commit"], "git_dirty": m["git_dirty"],
         "model": cfg["model"], "lora": cfg["lora"], "data": cfg["data"],
         "grpo": {k: t[k] for k in ("batch_size", "batch_mode", "group_size", "learning_rate", "max_steps", "max_attempts",
-                                   "clip_eps", "temperature", "max_new_tokens", "seed")},
+                                   "clip_eps", "temperature", "max_new_tokens", "seed")}
+                | {"num_iterations": t.get("num_iterations", 1)},
         "training_log": log_source if log else None,  # repository-relative
         "progress": {"optimizer_steps": rows[-1]["step"] if rows else 0, "max_steps": t["max_steps"],
                      "rollout_attempts": max([g["attempt"] for g in rows + (log or {}).get("zero_signal", [])], default=0),
@@ -400,7 +405,7 @@ def run_report(s, plots_made):
           f"- Model {s['model']['name']} ({s['model']['dtype']} base, fp32 LoRA), thinking {s['model']['thinking']}.",
           f"- LoRA r={lo['rank']}, α={lo['alpha']}, dropout {lo['dropout']}, targets `{lo['targets']}`.",
           f"- GRPO: B={g['batch_size']} ({g['batch_mode']}), G={g['group_size']}, lr {g['learning_rate']}, max {g['max_steps']} steps "
-          f"/ {g['max_attempts']} attempts, clip ε {g['clip_eps']}, temperature {g['temperature']}, rollout max_new_tokens "
+          f"/ {g['max_attempts']} attempts, clip ε {g['clip_eps']}, {g['num_iterations']} update(s) per rollout batch, temperature {g['temperature']}, rollout max_new_tokens "
           f"{g['max_new_tokens']}, seed {g['seed']}.",
           f"- Data: {s['data']['train_samples']} training prompts, validation subset {s['data']['val_subset']} (subset seed "
           f"{s['data']['subset_seed']}). Full settings: `config.yaml`.", "",

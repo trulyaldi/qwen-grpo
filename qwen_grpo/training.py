@@ -1,11 +1,12 @@
-"""GRPO training mechanics: prompt batching, rollout grouping, rewards, and one optimizer update per rollout batch."""
+"""GRPO training mechanics: prompt batching, rollout grouping, rewards, and training.num_iterations optimizer updates per
+rollout batch, all against the batch's sampling-time log-probs."""
 import itertools
 import math
 import random
 
 import torch
 
-from qwen_grpo.grpo import group_advantages, grpo_loss
+from qwen_grpo.grpo import clip_stats, group_advantages, grpo_loss
 from qwen_grpo.model import EOS_IDS
 from qwen_grpo.policy import compute_logprobs
 from qwen_grpo.sentiment import LABELS, reward
@@ -79,18 +80,27 @@ def group_rewards(responses, labels, G):
 
 
 
-def grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=0.2):
-    """One AdamW update from a fresh rollout group -> scalar logs, or None (no step) if no group has mixed rewards."""
+def prepare(model, rollouts, rewards):
+    """Fixed targets of one rollout batch -> (advantages [B*G], old_logp [B*G, R]), or None if no group has mixed
+    rewards. old_logp is the sampling policy's log-prob, computed once (no graph) and reused by every update."""
     if (rewards == rewards[:, :1]).all():
         return None
     adv = group_advantages(rewards).flatten().to(rollouts["input_ids"].device)
-    mask = rollouts["completion_mask"]
     with torch.no_grad():
-        old_logp = compute_logprobs(model, rollouts)  # sampling policy of this group only
+        old_logp = compute_logprobs(model, rollouts)
+    return adv, old_logp
+
+
+def grpo_update(model, params, optimizer, rollouts, adv, old_logp, clip_eps=0.2, iteration=0):
+    """One AdamW update of the clipped objective against the fixed old_logp -> scalar logs. Iteration 0 must see
+    ratio 1 (same parameters as the sampling policy); later iterations recompute log-probs under the updated adapter."""
+    mask = rollouts["completion_mask"]
     new_logp = compute_logprobs(model, rollouts)
-    init_diff = masked_max(new_logp.detach() - old_logp, mask)
-    if init_diff > INIT_TOL:
-        raise RuntimeError(f"old/current log-prob mismatch before the step: {init_diff:.3e}")
+    out = {"iteration": iteration}
+    if iteration == 0:
+        out["init_diff"] = masked_max(new_logp.detach() - old_logp, mask)
+        if out["init_diff"] > INIT_TOL:
+            raise RuntimeError(f"old/current log-prob mismatch before the step: {out['init_diff']:.3e}")
     loss = grpo_loss(new_logp, old_logp, adv, mask, clip_eps=clip_eps)
     if not (torch.isfinite(adv).all() and torch.isfinite(loss)):
         raise RuntimeError(f"non-finite advantages {adv.tolist()} or loss {loss.item()}")
@@ -100,12 +110,23 @@ def grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=0.2):
     if not all(math.isfinite(g) for g in grad_norms.values()):
         optimizer.zero_grad(set_to_none=True)
         raise RuntimeError(f"non-finite gradients {grad_norms}; no optimizer step taken")
+    stats = clip_stats(new_logp.detach(), old_logp, adv, mask, clip_eps)  # ratios at the parameters being updated
+    del new_logp  # frees the graph before the next forward
     before = {n: p.detach().clone() for n, p in params.items()}
     optimizer.step()
     optimizer.zero_grad(set_to_none=True)
     return {
-        "loss": loss.item(), "init_diff": init_diff, "grad_norms": grad_norms,
+        **out, "loss": loss.item(), "grad_norms": grad_norms,
         "grad_norm": math.sqrt(sum(g * g for g in grad_norms.values())),
         "update_norm": math.sqrt(sum((p.detach() - before[n]).pow(2).sum().item() for n, p in params.items())),
+        **stats,
     }
 
+
+def grpo_step(model, params, optimizer, rollouts, rewards, clip_eps=0.2, num_iterations=1):
+    """num_iterations sequential updates on one rollout batch -> list of per-update logs, or None (no step) if no
+    group has mixed rewards. trainer._train runs the same loop, interleaved with checkpoints."""
+    targets = prepare(model, rollouts, rewards)
+    if targets is None:
+        return None
+    return [grpo_update(model, params, optimizer, rollouts, *targets, clip_eps, k) for k in range(num_iterations)]

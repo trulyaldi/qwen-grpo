@@ -131,6 +131,50 @@ def test_resumed_run_equals_uninterrupted_run_bitwise(sandbox, tmp_path, monkeyp
     assert "step  4" in log and "train time" in log
 
 
+def test_resume_inside_a_reused_rollout_batch_equals_uninterrupted_run_bitwise(sandbox, tmp_path, monkeypatch):
+    """num_iterations=3, checkpoints every 2 updates: step 2 lands after the 2nd update on the first batch, and the run
+    stops after the first update on the second. The checkpoint carries the in-flight batch and its old log-probs."""
+    from qwen_grpo.verification import training_diagnostics
+    cfg = make_cfg(tmp_path, num_iterations=3)
+    full = sandbox("full")
+    ref = trainer.train(cfg, device="cpu")
+    rows = ref["training"]
+    assert [r["step"] for r in rows] == [1, 2, 3, 4] and [r["iteration"] for r in rows] == [0, 1, 2, 0]
+    assert len({r["attempt"] for r in rows[:3]}) == 1 and rows[3]["attempt"] > rows[0]["attempt"]
+    assert rows[0]["ratio_min"] == rows[0]["ratio_max"] == 1 and rows[1]["ratio_max"] != 1  # same rollouts, moved policy
+    pend = state(full, 2)["pending"]
+    assert pend["iteration"] == 2 and pend["group"]["rollout_sha256"] == rows[0]["rollout_sha256"]
+    assert state(full, 4)["pending"]["iteration"] == 1  # max_steps cut the second batch after one update
+    attempts = {g["attempt"]: g for g in rows + ref["zero_signal"]}
+    td = training_diagnostics(ref)
+    assert td["num_iterations"] == 3 and td["max_init_diff"] == 0.0
+    assert td["mixed_reward_group_fraction"] == sum(g["mixed_groups"] for g in attempts.values()) / (2 * len(attempts))  # per batch, B=2
+
+    part = sandbox("part")
+    save = checkpointing.save_checkpoint
+
+    def crash_after_step2(model, optimizer, path, st):
+        save(model, optimizer, path, st)
+        if st["step"] == 2:
+            raise KeyboardInterrupt
+    monkeypatch.setattr(trainer, "save_checkpoint", crash_after_step2)
+    with pytest.raises(KeyboardInterrupt):
+        trainer.train(cfg, device="cpu")
+    monkeypatch.setattr(trainer, "save_checkpoint", save)
+    out = trainer.train(cfg, resume=ckpt(part, 2), device="cpu")
+    strip = lambda rs: [{k: v for k, v in r.items() if k != "step_seconds"} for r in rs]
+    assert strip(out["training"]) == strip(rows) and out["zero_signal"] == ref["zero_signal"]
+    assert [e["predictions"] for e in out["evaluations"]] == [e["predictions"] for e in ref["evaluations"]]
+    assert same_tensors(adapter(part, 4), adapter(full, 4))
+    assert same_tensors(state(part, 4)["optimizer"], state(full, 4)["optimizer"])
+    assert same_tensors(state(part, 4)["pending"], state(full, 4)["pending"])
+
+
+def test_num_iterations_must_be_positive(tmp_path):
+    with pytest.raises(ValueError, match="num_iterations"):
+        make_cfg(tmp_path, num_iterations=0)
+
+
 def test_resume_refuses_other_configs_later_checkpoints_and_adapter_only_checkpoints(sandbox, tmp_path):
     cfg = make_cfg(tmp_path)
     root = sandbox("run")
@@ -209,7 +253,7 @@ def test_one_grpo_step_decreases_the_grpo_loss_through_both_lora_factors(tok):
     adv, mask = group_advantages(rewards).flatten(), rollouts["completion_mask"]
     with torch.no_grad():
         old = compute_logprobs(model, rollouts)
-    out = grpo_step(model, params, torch.optim.SGD(params.values(), lr=1e-3), rollouts, rewards)
+    out, = grpo_step(model, params, torch.optim.SGD(params.values(), lr=1e-3), rollouts, rewards)
     with torch.no_grad():
         after = grpo_loss(compute_logprobs(model, rollouts), old, adv, mask).item()
     assert out["loss"] == pytest.approx(0.0, abs=1e-6)  # ratio 1: -mean(A) = 0

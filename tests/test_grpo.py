@@ -3,7 +3,7 @@ import math
 import pytest
 import torch
 
-from qwen_grpo.grpo import group_advantages, grpo_loss, response_logprobs, response_mask
+from qwen_grpo.grpo import clip_stats, group_advantages, grpo_loss, response_logprobs, response_mask
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -174,3 +174,49 @@ def test_clipping_cases(sign, region):
 
     expected = torch.tensor([[0.0 if clipped else -A * rho]])
     torch.testing.assert_close(logp.grad, expected, rtol=1e-12, atol=1e-12)
+
+
+def clip_batch():
+    """2 sequences (A = +1, -1), lengths 4 and 3, ratios in every region of [1 - 0.2, 1 + 0.2] (none on a boundary)."""
+    rho = torch.tensor([[0.7, 0.95, 1.1, 1.5], [0.5, 1.05, 1.3, 9.0]])
+    mask = torch.tensor([[True, True, True, True], [True, True, True, False]])
+    old = torch.full((2, 4), -1.5)
+    logp = (old + rho.log()).requires_grad_(True)
+    return logp, old, torch.tensor([1.0, -1.0]), mask, rho
+
+
+def test_clipped_gradient_and_diagnostics_hand_computed():
+    logp, old, adv, mask, rho = clip_batch()
+    grpo_loss(logp, old, adv, mask, clip_eps=0.2).backward()
+    # dL/dlogp_it = -A_i rho_it / (L_i N) unless the clamp is the active min: (A > 0, rho > 1.2) or (A < 0, rho < 0.8)
+    clipped = torch.tensor([[False, False, False, True], [True, False, False, False]])
+    lengths = torch.tensor([[4.0], [3.0]])
+    expected = torch.where(clipped | ~mask, 0.0, -adv.unsqueeze(1) * rho / (lengths * 2))
+    torch.testing.assert_close(logp.grad, expected, rtol=1e-12, atol=1e-12)
+
+    s = clip_stats(logp.detach(), old, adv, mask, clip_eps=0.2)
+    r = rho[mask]
+    assert s["ratio_min"] == pytest.approx(0.5) and s["ratio_max"] == pytest.approx(1.5)  # 9.0 is masked out
+    assert s["ratio_mean"] == pytest.approx(r.mean().item())
+    assert s["outside_frac"] == pytest.approx(4 / 7)  # 0.7, 1.5, 0.5, 1.3
+    assert s["clip_frac"] == pytest.approx(2 / 7)  # 1.5 (A > 0) and 0.5 (A < 0); 0.7 and 1.3 still pass gradient
+    assert s["clip_frac"] == pytest.approx(((logp.grad == 0) & mask).sum().item() / mask.sum().item())  # = zero-gradient tokens
+    assert s["approx_kl"] == pytest.approx(((r - 1) - r.log()).mean().item())
+
+
+def test_clip_eps_changes_gradients_only_when_ratios_reach_the_boundary():
+    def grad(rho, eps):
+        logp = (torch.zeros(1, 2) + rho.log()).requires_grad_(True)
+        grpo_loss(logp, torch.zeros(1, 2), torch.tensor([1.0]), torch.ones(1, 2, dtype=torch.bool), clip_eps=eps).backward()
+        return logp.grad
+
+    active = torch.tensor([[1.3, 1.0]])
+    assert grad(active, 0.2)[0, 0] == 0 and grad(active, 0.5)[0, 0] == pytest.approx(-1.3 / 2)
+    inside = torch.tensor([[1.1, 0.95]])
+    assert torch.equal(grad(inside, 0.2), grad(inside, 0.5))
+
+
+def test_clip_stats_at_ratio_one():
+    logp, old, adv, mask, _ = clip_batch()
+    s = clip_stats(old, old, adv, mask)
+    assert (s["ratio_min"], s["ratio_max"], s["ratio_mean"], s["outside_frac"], s["clip_frac"], s["approx_kl"]) == (1, 1, 1, 0, 0, 0)

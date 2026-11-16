@@ -296,7 +296,7 @@ def reward_integrity(evals, train_log, train_examples):
     if train_log is not None:
         by_id = {e["id"]: e for e in train_examples}
         rows, rescored = [], 0
-        for g in train_log["training"] + train_log["zero_signal"]:
+        for g in {g["attempt"]: g for g in train_log["training"] + train_log["zero_signal"]}.values():  # one per rollout batch
             G = len(g["responses"]) // len(g["labels"])
             for i, r in enumerate(g["responses"]):
                 label, logged = g["labels"][i // G], g["rewards"][i // G][i % G]
@@ -314,7 +314,7 @@ def training_diagnostics(log):
         return None
     rows, cfg = log["training"], log["config"]
     B = cfg["B"]
-    attempts = sorted(rows + log["zero_signal"], key=lambda g: g["attempt"])
+    attempts = sorted({g["attempt"]: g for g in rows + log["zero_signal"]}.values(), key=lambda g: g["attempt"])  # K rows per batch
     get = lambda k: [r.get(k) for r in rows] if rows and all(k in r for r in rows) else None
     return {
         "rollout_attempts": log["groups_generated"], "optimizer_updates": log["successful_steps"],
@@ -322,7 +322,10 @@ def training_diagnostics(log):
         "prompt_groups": log["prompt_groups"],
         "mixed_reward_group_fraction": sum(g["mixed_groups"] for g in attempts) / (B * len(attempts)) if attempts else None,
         "frozen_changed": log["frozen_changed"], "params_equal_init": log["params_equal_init"],
-        "max_init_diff": max(r["init_diff"] for r in rows) if rows else None,
+        "max_init_diff": max(r["init_diff"] for r in rows if "init_diff" in r) if rows else None,  # first update per batch
+        "num_iterations": cfg.get("num_iterations", 1),
+        "ratio_range": [min(r["ratio_min"] for r in rows), max(r["ratio_max"] for r in rows)] if get("ratio_min") else None,
+        "max_clip_frac": max(r["clip_frac"] for r in rows) if get("clip_frac") else None,
         "grad_norm_range": [min(r["grad_norm"] for r in rows), max(r["grad_norm"] for r in rows)] if rows else None,
         "grad_clipping": cfg.get("grad_clipping"),
         "learning_rate": cfg["lr"], "per_step_learning_rate": get("learning_rate"),

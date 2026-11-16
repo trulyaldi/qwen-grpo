@@ -100,7 +100,7 @@ without its own `run.name`. Full YAMLs with every key spelled out also load.
 | `model` | `name`, `dtype` (bfloat16), `thinking` (false) | `name`: any `Qwen/Qwen3-<size>B`; `dtype`: `bfloat16` or `float32` (base weights); `thinking`: `false` only |
 | `lora` | `rank`, `alpha`, `dropout` (0.0), `targets` | a preset (`last2-attention`, `last-o-proj`) or `{modules: [q_proj, ...], num_layers: N}`: those Linear layers in each of the last N decoder layers of the loaded model |
 | `data` | `train_samples`, `val_subset`, `subset_seed` (42) | balanced subsets of the cached splits |
-| `training` | `batch_size`, `batch_mode`, `group_size`, `learning_rate`, `max_steps`, `max_attempts`, `clip_eps` (0.2), `temperature` (1.0), `max_new_tokens`, `seed`, `eval_every`, `full_val` | `learning_rate: 0.0` is the negative control |
+| `training` | `batch_size`, `batch_mode`, `group_size`, `learning_rate`, `max_steps`, `max_attempts`, `clip_eps` (0.2), `num_iterations` (1: updates per rollout batch, `max_steps` counts updates), `temperature` (1.0), `max_new_tokens`, `seed`, `eval_every`, `full_val` | `learning_rate: 0.0` is the negative control |
 | `evaluation` | `max_new_tokens` (4), `batch_size` (32), `score_batch_size` (8), `bootstrap_samples` (10000), `bootstrap_seed` (42) | greedy evaluation in `train`, `validate`, `test`; the defaults are the saved baseline's settings |
 | `verification` | `split` (validation), `merge_subset` (8), `negative_control` (`checkpoint: null`, `train: false`), `statistics` (`confidence_level: 0.95`, `bootstrap_samples: 2000`, `seed: 42`) | `verify` only |
 

@@ -162,8 +162,8 @@ def test_lr_zero_step_leaves_parameters_and_policy_bitwise_unchanged():
     before = {n: p.detach().clone() for n, p in params.items()}
     with torch.no_grad():
         logp0 = compute_logprobs(model, r)
-    out = grpo_step(model, params, opt, r, torch.tensor([[1.0, 0, 0], [0.0, 1, 1]]))
-    assert out is not None and out["grad_norm"] > 0 and out["update_norm"] == 0.0  # a real gradient, no movement
+    out, = grpo_step(model, params, opt, r, torch.tensor([[1.0, 0, 0], [0.0, 1, 1]]))
+    assert out["grad_norm"] > 0 and out["update_norm"] == 0.0  # a real gradient, no movement
     assert all(torch.equal(p, before[n]) for n, p in params.items())
     with torch.no_grad():
         assert torch.equal(compute_logprobs(model, r), logp0)

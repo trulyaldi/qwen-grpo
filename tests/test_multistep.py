@@ -1,3 +1,4 @@
+import copy
 import json
 import math
 from pathlib import Path
@@ -6,7 +7,9 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from qwen_grpo import evaluation
+from qwen_grpo import evaluation, training
+from qwen_grpo.grpo import group_advantages, grpo_loss
+from qwen_grpo.policy import compute_logprobs
 from qwen_grpo.evaluation import metrics, paired_bootstrap
 from qwen_grpo.sentiment import load_splits
 from qwen_grpo.training import balanced_subset, group_rewards, grpo_step
@@ -73,10 +76,11 @@ def test_nonfinite_gradient_blocks_step():
 def test_step_updates_and_logs_plain_scalars():
     model, params, opt = setup()
     before = {n: p.detach().clone() for n, p in params.items()}
-    out = grpo_step(model, params, opt, rollouts(), torch.tensor([[1.0, 0.0, 0.0]]))
+    out, = grpo_step(model, params, opt, rollouts(), torch.tensor([[1.0, 0.0, 0.0]]))
     assert all(not torch.equal(p, before[n]) for n, p in params.items())
     assert all(p.grad is None for p in params.values())
-    flat = [v for v in out.values() if not isinstance(v, dict)] + list(out["grad_norms"].values())
+    assert out["iteration"] == 0
+    flat = [v for k, v in out.items() if k not in ("grad_norms", "iteration")] + list(out["grad_norms"].values())
     assert all(type(v) is float for v in flat)
 
 
@@ -152,9 +156,8 @@ def test_first_lora_step_updates_only_B_and_leaves_base_bitwise_unchanged():
     ids = torch.randint(0, 16, (G, P + R), generator=torch.Generator().manual_seed(0))
     r = {"input_ids": ids, "attention_mask": torch.ones_like(ids), "completion_mask": torch.ones(G, R, dtype=torch.bool), "prompt_len": P}
 
-    out = grpo_step(model, params, torch.optim.AdamW(params.values(), lr=1e-2, weight_decay=0.0), r,
-                    torch.tensor([[1.0, 0, 1, 0, 0, 1]]))
-    assert out is not None
+    out, = grpo_step(model, params, torch.optim.AdamW(params.values(), lr=1e-2, weight_decay=0.0), r,
+                     torch.tensor([[1.0, 0, 1, 0, 0, 1]]))
     for n, p in params.items():
         if ".lora_A." in n:
             assert out["grad_norms"][n] == 0 and torch.equal(p, before[n])
@@ -393,3 +396,40 @@ def test_b2_opposite_labels_hand_rewards_and_independent_reference_gradient():
     # POS: +a0 from group 0's correct rows, -0.745 from group 1's wrong POSITIVE row (A < 0), -C pi; JUNK: A < 0 and -C pi < 0
     assert d[POS] > 0 and d[JUNK] < 0
     assert d[POS] - d[NEG] == pytest.approx((5 * a0 / 3 - (10 / 6) / (s1 + 1e-4) / 3 - C * (pi0[POS] - pi0[NEG])) / 12, abs=1e-12)
+
+
+def test_reused_batch_keeps_the_sampling_time_old_logp(monkeypatch):
+    """num_iterations=3: one old-log-prob pass, then 3 graph passes; every update sees the same old_logp; ratio 1 at the
+    first update only. The result equals 3 hand-written SGD steps on the clipped loss against the initial log-probs."""
+    model, params, _ = setup()
+    reference = copy.deepcopy(model)
+    seen, passes = [], []
+    monkeypatch.setattr(training, "grpo_loss", lambda logp, old, *a, **k: seen.append(old.clone()) or grpo_loss(logp, old, *a, **k))
+    monkeypatch.setattr(training, "compute_logprobs", lambda m, r: passes.append(torch.is_grad_enabled()) or compute_logprobs(m, r))
+    rewards = torch.tensor([[1.0, 0.0, 0.0]])
+    logs = grpo_step(model, params, torch.optim.SGD(params.values(), lr=3.0), rollouts(), rewards, clip_eps=0.2, num_iterations=3)
+
+    assert [r["iteration"] for r in logs] == [0, 1, 2] and passes == [False, True, True, True]
+    with torch.no_grad():
+        old = compute_logprobs(reference, rollouts())
+    assert all(torch.equal(o, old) for o in seen)
+    assert logs[0]["ratio_min"] == logs[0]["ratio_max"] == 1 and logs[0]["clip_frac"] == logs[0]["approx_kl"] == 0
+    assert "init_diff" in logs[0] and all("init_diff" not in r for r in logs[1:])
+    assert logs[1]["ratio_max"] > 1.2 and logs[2]["clip_frac"] > 0  # this lr pushes ratios through the clip boundary
+
+    ref_params = dict(reference.named_parameters())
+    adv, mask = group_advantages(rewards).flatten(), rollouts()["completion_mask"]
+    for _ in range(3):
+        loss = grpo_loss(compute_logprobs(reference, rollouts()), old, adv, mask, clip_eps=0.2)
+        grads = torch.autograd.grad(loss, list(ref_params.values()))
+        with torch.no_grad():
+            for p, g in zip(ref_params.values(), grads):
+                p -= 3.0 * g
+    assert all(torch.allclose(params[n], p, rtol=0, atol=1e-6) for n, p in ref_params.items())
+
+
+def test_one_iteration_equals_the_first_update_of_three():
+    a, b = setup()[:2], setup()[:2]
+    one = grpo_step(*a, torch.optim.AdamW(a[1].values(), lr=1e-2), rollouts(), torch.tensor([[1.0, 0, 0]]))
+    three = grpo_step(*b, torch.optim.AdamW(b[1].values(), lr=1e-2), rollouts(), torch.tensor([[1.0, 0, 0]]), num_iterations=3)
+    assert len(one) == 1 and one[0] == three[0]
