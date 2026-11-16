@@ -222,6 +222,10 @@ def main(argv=None):
         from qwen_grpo.cleanup import remove
 
         return remove(cfg, runs.ROOT, checkpoint, confirm=args.confirm)
+    if args.command in ("verify", *SPLITS):
+        from qwen_grpo.config import require_implemented
+
+        require_implemented(cfg)
     if not (checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {checkpoint}")
     if args.command == "verify":

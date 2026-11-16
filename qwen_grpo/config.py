@@ -1,6 +1,6 @@
 """YAML run configuration, the single source of truth for scripts/run.py.
 
-Sections: run, model, lora, data, training, evaluation, and optionally verification. Every key without a default is
+Sections: run, model, lora, data, training, evaluation, and optionally verification, execution, streaming and dflash. Every key without a default is
 required; unknown, missing or ill-typed keys are errors. A YAML may start with `extends: <path of another YAML, relative
 to this file>`: the parent is loaded first and this file's keys are merged onto it by merge().
 
@@ -112,6 +112,43 @@ class Verification:
     train_control: bool = False  # true: train the LR=0 control (run <name>_lr0) before verifying; never implicit
 
 
+BACKENDS = ("resident", "l2l_sync", "l2l_async")
+WEIGHT_STORAGE = ("pinned", "pageable")
+KV_CACHE = ("gpu", "cpu")
+L2L_ONLY = ("weight_storage", "resident_layers", "weight_buffers", "prefetch_depth", "activation_checkpointing")
+DRAFTERS = {"z-lab/Qwen3-4B-DFlash-b16": "Qwen/Qwen3-4B"}  # DFlash drafter -> the target model it was trained for
+
+
+@dataclass(frozen=True, kw_only=True)
+class Execution:
+    """Where frozen base weights live and how layers run (docs/l2l/). The L2L_ONLY keys are null under resident, which
+    keeps the whole model on the GPU, and required under l2l_*. resident_layers is checked against the model depth when
+    the model is loaded."""
+    backend: str = "resident"  # resident | l2l_sync | l2l_async
+    weight_storage: str | None = None  # frozen base weights in CPU RAM: pinned (assignment) | pageable (explicit opt-out)
+    resident_layers: int | None = None  # decoder layers kept on the GPU for the whole run
+    weight_buffers: int | None = None  # GPU buffers for streamed layers
+    prefetch_depth: int | None = None  # streamed layers in flight ahead of the one computing; l2l_sync: 0
+    activation_checkpointing: bool | None = None  # keep layer-boundary inputs only, recompute layers in backward
+    vocab_chunk_size: int | None = None  # output head over vocabulary chunks; null: the whole vocabulary at once
+    kv_cache: str = "gpu"  # rollout KV cache placement
+
+
+@dataclass(frozen=True, kw_only=True)
+class Streaming:
+    """Disk-backed prompts and rollout records (Ticket 09). Provisional: fields will follow the implementation."""
+    enabled: bool = False
+    directory: str | None = None  # prompt shards, rollout records and resume state
+
+
+@dataclass(frozen=True, kw_only=True)
+class DFlash:
+    """DFlash speculative decoding (Ticket 12). Provisional: only the drafter's identity is checked here; drafting
+    parameters wait until the paper and code have been read."""
+    enabled: bool = False
+    draft_model: str | None = None  # a key of DRAFTERS whose target is model.name
+
+
 @dataclass(frozen=True, kw_only=True)
 class Config:
     run: Run
@@ -121,6 +158,12 @@ class Config:
     training: Training
     evaluation: Evaluation
     verification: Verification = field(default_factory=Verification)
+    execution: Execution = field(default_factory=Execution)
+    streaming: Streaming = field(default_factory=Streaming)
+    dflash: DFlash = field(default_factory=DFlash)
+
+
+OPTIONAL_SECTIONS = {"execution": Execution, "streaming": Streaming, "dflash": DFlash}  # added after runs were saved
 
 
 def _build(cls, raw, where):
@@ -143,7 +186,7 @@ def _build(cls, raw, where):
             values[f.name] = _build(LoraTargets, v, key)
         elif f.type == str | LoraTargets and type(v) is str:
             values[f.name] = v
-        elif f.type in (str | None, int | None) and (v is None or type(v) is f.type.__args__[0]):
+        elif f.type in (str | None, int | None, bool | None) and (v is None or type(v) is f.type.__args__[0]):
             values[f.name] = v
         elif f.type is float and isinstance(v, (int, float)) and not isinstance(v, bool):
             values[f.name] = float(v)
@@ -191,11 +234,66 @@ def validate(cfg: Config) -> Config:
          "evaluation.bootstrap_samples: a multiple of 1000, >= 1000 (resampled in chunks of 1000)"),
         (v.split in ("validation", "test"), "verification.split: validation or test"),
         (not (v.train_control and v.control_checkpoint), "verification: set control_checkpoint or train_control, not both"),
+        *execution_checks(cfg),
     ]
     errors = [msg for ok, msg in checks if not ok]
     if errors:
         raise ValueError("invalid config:\n  " + "\n  ".join(errors))
     return cfg
+
+
+def execution_checks(cfg: Config) -> list:
+    """(ok, message) pairs for the execution, streaming and dflash sections."""
+    x, s, f = cfg.execution, cfg.streaming, cfg.dflash
+    l2l = x.backend in ("l2l_sync", "l2l_async")
+    unset = [k for k in L2L_ONLY if getattr(x, k) is None]
+    checks = [
+        (x.backend in BACKENDS, f"execution.backend: one of {list(BACKENDS)}"),
+        (x.kv_cache in KV_CACHE, f"execution.kv_cache: one of {list(KV_CACHE)}"),
+        (x.vocab_chunk_size is None or x.vocab_chunk_size >= 1, "execution.vocab_chunk_size: null or >= 1"),
+        (s.enabled == (s.directory is not None), "streaming: enabled requires directory, and directory requires enabled"),
+        (s.directory is None or s.directory != "", "streaming.directory: a non-empty path"),
+        (f.enabled == (f.draft_model is not None), "dflash: enabled requires draft_model, and draft_model requires enabled"),
+        (f.draft_model is None or f.draft_model in DRAFTERS, f"dflash.draft_model: one of {list(DRAFTERS)}"),
+        (f.draft_model not in DRAFTERS or DRAFTERS[f.draft_model] == cfg.model.name,
+         f"dflash.draft_model {f.draft_model!r} drafts for {DRAFTERS.get(f.draft_model)}, not model.name {cfg.model.name!r}"),
+    ]
+    if x.backend == "resident":
+        checks += [(not (set(L2L_ONLY) - set(unset)),
+                    f"execution: {sorted(set(L2L_ONLY) - set(unset))} only apply to l2l backends; resident keeps the "
+                    "whole model on the GPU, so leave them null"),
+                   (x.kv_cache == "gpu", "execution.kv_cache: resident generation (HF generate) keeps the cache on the GPU")]
+    elif l2l:
+        checks += [(not unset, f"execution: backend {x.backend} needs {unset}")]
+        if not unset:
+            checks += [
+                (x.weight_storage in WEIGHT_STORAGE, f"execution.weight_storage: one of {list(WEIGHT_STORAGE)}"),
+                (x.resident_layers >= 0, "execution.resident_layers: >= 0"),
+                (x.weight_buffers >= 1, "execution.weight_buffers: >= 1"),
+                (x.backend != "l2l_sync" or x.prefetch_depth == 0,
+                 "execution.prefetch_depth: 0 for l2l_sync (each layer is transferred when it is needed)"),
+                (x.backend != "l2l_async" or x.prefetch_depth >= 1, "execution.prefetch_depth: >= 1 for l2l_async"),
+                (x.backend != "l2l_async" or x.weight_buffers >= x.prefetch_depth + 1,
+                 "execution.weight_buffers: >= prefetch_depth + 1 (one buffer is being computed on while prefetch_depth "
+                 "others are being filled)"),
+            ]
+    return checks
+
+
+def unimplemented(cfg: Config) -> list:
+    """Settings this code base accepts in a config but cannot execute yet. Training and evaluation refuse them (no
+    silent resident fallback); the L2L lab reports them as BLOCKED."""
+    x = cfg.execution
+    return ([f"execution.backend {x.backend!r}"] * (x.backend != "resident")
+            + ["execution.vocab_chunk_size"] * (x.vocab_chunk_size is not None)
+            + ["execution.kv_cache 'cpu'"] * (x.kv_cache != "gpu")
+            + ["streaming"] * cfg.streaming.enabled + ["dflash"] * cfg.dflash.enabled)
+
+
+def require_implemented(cfg: Config):
+    if missing := unimplemented(cfg):
+        raise SystemExit(f"config {cfg.run.name!r} uses settings that are not implemented yet: {missing}. Refusing to "
+                         "run instead of falling back to the resident backend.")
 
 
 # --- historical configs ------------------------------------------------------------------------------------------
@@ -302,8 +400,13 @@ def as_dict(cfg: Config) -> dict:
 def sha256(cfg: Config) -> str:
     """Hash of the fully resolved config (defaults included), independent of key order and of how the YAML was split
     across files. Configs of runs trained before the current schema hashed their historical form, so their recorded
-    hash differs from this one."""
-    return hashlib.sha256(json.dumps(as_dict(cfg), sort_keys=True).encode()).hexdigest()
+    hash differs from this one. A section added later (OPTIONAL_SECTIONS) is left out while it equals its defaults
+    exactly, so configs that do not use it keep the hash they had before it existed."""
+    out = as_dict(cfg)
+    for name, cls in OPTIONAL_SECTIONS.items():
+        if getattr(cfg, name) == cls():
+            del out[name]
+    return hashlib.sha256(json.dumps(out, sort_keys=True).encode()).hexdigest()
 
 
 def differences(a: dict, b: dict, prefix="") -> list:

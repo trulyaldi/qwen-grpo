@@ -1,0 +1,11 @@
+# L2L lab: synchronous L2L candidate (not implemented before Ticket 03: the lab reports BLOCKED).
+extends: resident.yaml
+run:
+  name: l2l_lab_sync
+execution:
+  backend: l2l_sync
+  weight_storage: pinned
+  resident_layers: 0
+  weight_buffers: 1
+  prefetch_depth: 0
+  activation_checkpointing: true

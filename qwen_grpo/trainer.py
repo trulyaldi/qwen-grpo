@@ -31,7 +31,7 @@ from transformers import AutoTokenizer
 from qwen_grpo import runs
 from qwen_grpo.checkpointing import (load_adapter, load_training_state, rel, save_checkpoint, set_rng_state,
                                      training_lock)
-from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, sha256
+from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, require_implemented, sha256
 from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap,
                                   paired_changes, paired_compare, predictions_path, settings, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, lora_modules
@@ -154,6 +154,7 @@ def train(cfg: Config, resume=None, device="cuda"):
     """Train run cfg.run.name in runs/<name>/ under runs/.<name>.lock (so `remove` cannot delete it meanwhile). The
     manifest records how training ended; summary.json, plots/ and report.md are then rebuilt from the saved files."""
     name = cfg.run.name
+    require_implemented(cfg)  # before start(): a refused config leaves nothing behind
     if mode := cfg.training.legacy_batch_mode:
         raise SystemExit(f"run {name!r} uses the historical batch_mode {mode!r}, which the current code does not implement "
                          "(it has only the shuffled sampler): it cannot be trained or resumed. Its saved outputs stay "

@@ -1,0 +1,23 @@
+# Acceptance thresholds of the L2L lab (qwen_grpo/lab.py), by case -> candidate backend -> dtype -> quantity.
+# A comparison passes iff shapes and dtypes match, both tensors are finite, and
+#     max|got - ref| <= atol + rtol * max|ref|.
+# require_nonzero: the reference must not be identically zero (a zero gradient makes the comparison powerless).
+# A quantity without an entry cannot be judged: the experiment fails. Thresholds are set from documented evidence
+# before an acceptance run, and are never widened to make a failing run pass (research/l2l/protocol.md).
+
+fixture_equivalence:
+  resident:
+    float32:
+      why: >-
+        Resident vs resident: the same code on the same kernels, with the same CPU thread count (fixtures.THREADS) and
+        reduction order, gives bitwise identical results. Measured in Ticket 00 (tests/test_fixtures.py), so any
+        difference is a defect, not rounding.
+      quantities:
+        logits: {atol: 0.0, rtol: 0.0}
+        logp: {atol: 0.0, rtol: 0.0}
+        loss: {atol: 0.0, rtol: 0.0}
+        grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
+        final_lora: {atol: 0.0, rtol: 0.0}
+        optimizer: {atol: 0.0, rtol: 0.0}
+        updates: {atol: 0.0, rtol: 0.0}
+  # l2l_sync / l2l_async thresholds are added by Tickets 03-08, each with its numerical justification.

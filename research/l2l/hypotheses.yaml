@@ -1,0 +1,76 @@
+# Research hypotheses of the L2L + streaming work. kind: correctness (explicit numerical acceptance thresholds,
+# research/l2l/tolerances.yaml) or performance (repeated timings with uncertainty). status: untested | PASS | FAIL |
+# BLOCKED, updated only from saved results under research/l2l/experiments/ (cite the run names in `evidence`).
+
+H01:
+  statement: Synchronous L2L produces the same logits as resident Qwen3 execution.
+  kind: correctness
+  tickets: ["03"]
+  status: untested
+  evidence: []
+H02:
+  statement: Checkpointed L2L backward produces the same LoRA gradients as resident autograd.
+  kind: correctness
+  tickets: ["04"]
+  status: untested
+  evidence: []
+H03:
+  statement: Memory-efficient output-head computation preserves GRPO log-probabilities and gradients.
+  kind: correctness
+  tickets: ["05"]
+  status: untested
+  evidence: []
+H04:
+  statement: Streamed generation follows the same target-policy distribution as resident generation.
+  kind: correctness
+  tickets: ["06"]
+  status: untested
+  evidence: []
+H05:
+  statement: A complete streamed GRPO + LoRA optimizer update is numerically equivalent to a resident update.
+  kind: correctness
+  tickets: ["07"]
+  status: untested
+  evidence: []
+H06:
+  statement: Double-buffered asynchronous prefetching reduces execution time without changing numerical results.
+  kind: performance  # with a correctness precondition: every equivalence test still passes under l2l_async
+  tickets: ["08"]
+  status: untested
+  evidence: []
+H07:
+  statement: Bounded layer residency makes GPU weight memory independent of total model depth.
+  kind: performance  # a memory measurement: GPU weight memory vs depth at a fixed number of buffers
+  tickets: ["02", "11"]
+  status: untested
+  evidence: []
+H08:
+  statement: An interrupted and resumed run preserves the same committed training sequence as an uninterrupted run.
+  kind: correctness
+  tickets: ["09"]
+  status: untested
+  evidence: []
+H09:
+  statement: Tensor-by-tensor merging preserves the adapter-attached model's behaviour.
+  kind: correctness
+  tickets: ["10"]
+  status: untested
+  evidence: []
+H10:
+  statement: DFlash reduces target-model execution overhead while preserving the current LoRA policy's output distribution.
+  kind: performance  # with a correctness precondition: distribution preservation
+  tickets: ["12"]
+  status: untested
+  evidence: []
+H11:
+  statement: The complete Qwen3-4B system respects the 8 GB GPU-memory budget.
+  kind: performance  # a memory budget, judged on process-level evidence
+  tickets: ["11"]
+  status: untested
+  evidence: []
+H12:
+  statement: The trained policy has learned the intended task, not merely changed parameters or exploited the reward.
+  kind: correctness  # scientific validation: held-out evaluation with confidence intervals and negative controls
+  tickets: ["13"]
+  status: untested
+  evidence: []

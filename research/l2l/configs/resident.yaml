@@ -1,0 +1,9 @@
+# L2L lab: resident candidate on the fp32 fixtures. Fixture cases use model.dtype and execution only.
+extends: ../../../configs/default.yaml
+run:
+  name: l2l_lab_resident
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: float32
+execution:
+  backend: resident

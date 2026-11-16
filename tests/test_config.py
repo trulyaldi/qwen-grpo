@@ -1,9 +1,11 @@
 """YAML config: strict loading, defaults, inheritance, hashing, validation, historical configs, wiring of values into
 the implementation, the shuffled sampler, and CLI dispatch (no GPU)."""
 import copy
+import json
 import dataclasses
 import itertools
 import random
+import re
 from pathlib import Path
 
 import pytest
@@ -484,3 +486,93 @@ def test_cli_loads_configs_that_extend_the_reference(monkeypatch, tmp_path):
     run.main(["train", "--config", str(tmp_path / "low_lr.yaml")])
     assert (calls[0].run.name, calls[0].training.learning_rate, calls[0].training.max_steps) == ("low_lr", 1e-5, 200)
     assert config.differences(RAW, config.as_dict(calls[0])) == ["run.name", "training.learning_rate", "training.max_steps"]
+
+
+# --- execution, streaming and dflash sections (Ticket 01) ------------------------------------------------------------
+
+L2L = {"backend": "l2l_async", "weight_storage": "pinned", "resident_layers": 0, "weight_buffers": 2,
+       "prefetch_depth": 1, "activation_checkpointing": True}
+
+
+def with_section(name, values):
+    return lambda r: r.update({name: dict(values)})
+
+
+def test_valid_execution_settings_load(tmp_path):
+    cfg = config.load(write(tmp_path, with_section("execution", L2L)))
+    assert cfg.execution.backend == "l2l_async" and cfg.execution.weight_buffers == 2
+    sync = config.load(write(tmp_path, with_section("execution", {**L2L, "backend": "l2l_sync", "prefetch_depth": 0,
+                                                                  "weight_buffers": 1})))
+    assert sync.execution.prefetch_depth == 0
+
+
+@pytest.mark.parametrize("execution, message", [
+    # backend
+    ({"backend": "l2l"}, "execution.backend: one of"),
+    ({"backend": "resident", "weight_buffers": 2}, "only apply to l2l backends"),
+    ({"backend": "resident", "kv_cache": "cpu"}, "resident generation"),
+    ({"backend": "l2l_sync"}, f"needs {list(config.L2L_ONLY)}"),
+    # memory
+    ({**L2L, "weight_storage": "disk"}, "execution.weight_storage: one of"),
+    ({**L2L, "weight_buffers": 0}, "execution.weight_buffers: >= 1"),
+    ({**L2L, "resident_layers": -1}, "execution.resident_layers: >= 0"),
+    ({**L2L, "kv_cache": "nvme"}, "execution.kv_cache: one of"),
+    ({**L2L, "vocab_chunk_size": 0}, "execution.vocab_chunk_size"),
+    ({**L2L, "activation_checkpointing": 1}, "got int 1"),
+    # prefetch
+    ({**L2L, "backend": "l2l_sync"}, "prefetch_depth: 0 for l2l_sync"),
+    ({**L2L, "prefetch_depth": 0}, "prefetch_depth: >= 1 for l2l_async"),
+    ({**L2L, "prefetch_depth": 2, "weight_buffers": 2}, "weight_buffers: >= prefetch_depth + 1"),
+    ({**L2L, "prefetch_depth": 1.0}, "got float 1.0"),
+    ({**L2L, "prefetch": 1}, "unknown keys ['prefetch']"),
+])
+def test_invalid_execution_settings_are_rejected(tmp_path, execution, message):
+    with pytest.raises(ValueError, match=re.escape(message)):
+        config.load(write(tmp_path, with_section("execution", execution)))
+
+
+@pytest.mark.parametrize("section, values, message", [
+    ("streaming", {"enabled": True}, "enabled requires directory"),
+    ("streaming", {"directory": "data/stream"}, "directory requires enabled"),
+    ("dflash", {"enabled": True}, "enabled requires draft_model"),
+    ("dflash", {"enabled": True, "draft_model": "z-lab/other"}, "dflash.draft_model: one of"),
+    # incompatible identities: the drafter was trained for Qwen3-4B, the config's model is Qwen3-0.6B
+    ("dflash", {"enabled": True, "draft_model": "z-lab/Qwen3-4B-DFlash-b16"}, "drafts for Qwen/Qwen3-4B"),
+    ("dflash", {"enabled": True, "draft_model": "x", "block_size": 16}, "unknown keys ['block_size']"),
+])
+def test_invalid_streaming_and_dflash_settings_are_rejected(tmp_path, section, values, message):
+    with pytest.raises(ValueError, match=message.replace("[", r"\[").replace("]", r"\]")):
+        config.load(write(tmp_path, with_section(section, values)))
+
+
+def test_dflash_loads_only_for_its_target_model(tmp_path):
+    def edit(r):
+        r["model"]["name"] = "Qwen/Qwen3-4B"
+        r["dflash"] = {"enabled": True, "draft_model": "z-lab/Qwen3-4B-DFlash-b16"}
+    assert config.load(write(tmp_path, edit)).dflash.enabled
+
+
+def test_existing_config_hashes_are_unchanged_and_execution_settings_change_the_hash(tmp_path):
+    recorded = json.loads((ROOT / "research" / "l2l" / "baseline.json").read_text())["configs"]  # Ticket 00, before Ticket 01
+    for path, entry in recorded.items():
+        assert config.sha256(config.load(ROOT / path)) == entry["sha256"], path
+    explicit = config.load(write(tmp_path, with_section("execution", {"backend": "resident"})))
+    assert config.sha256(explicit) == config.sha256(config.load(QWEN))         # writing the defaults out changes nothing
+    assert config.sha256(config.load(write(tmp_path, with_section("execution", L2L)))) != config.sha256(explicit)
+    old_log = {k: v for k, v in RAW.items() if k not in config.OPTIONAL_SECTIONS}  # a log saved before the sections
+    assert verification.comparable(old_log, RAW, set())
+
+
+def test_unimplemented_settings_are_refused_before_anything_is_written(tmp_path):
+    from qwen_grpo import trainer
+
+    for section, values in [("execution", L2L), ("execution", {"vocab_chunk_size": 4096}),
+                            ("streaming", {"enabled": True, "directory": "d"})]:
+        cfg = config.load(write(tmp_path, with_section(section, values)))
+        assert config.unimplemented(cfg)
+        with pytest.raises(SystemExit, match="not implemented yet"):
+            trainer.train(cfg)                                       # conftest: runs/ must stay untouched
+    path = write(tmp_path, with_section("execution", L2L))
+    with pytest.raises(SystemExit, match="not implemented yet"):
+        run.main(["verify", "--config", str(path), "--checkpoint", str(tmp_path / "missing")])
+    assert config.unimplemented(config.load(QWEN)) == []
