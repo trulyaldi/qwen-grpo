@@ -8,7 +8,7 @@ take from it, how our system differs, the numerical risks and the validating exp
 |---|---|---|---|
 | L2L | Pudipeddi, Mesmakhosroshahi, Xi, Bharadwaj. *Training Large Neural Networks with Constant Memory using a New Execution Algorithm* (2020) | arXiv 2002.05645 PDF as served on 2026-11-17 | https://arxiv.org/pdf/2002.05645 |
 | MegaTrain | Yuan, Sun, Sun, Ye. *MegaTrain: Full Precision Training of 100B+ Parameter Large Language Models on a Single GPU* (2026) | arXiv 2604.05091 PDF as served on 2026-11-17; code not yet inspected (HEAD `9d88c68` noted) | https://arxiv.org/pdf/2604.05091 |
-| Soup ELS | Makazhan. *Exact Layer Streaming: LoRA Fine-Tuning of an 8B Model on a 4 GB Laptop GPU* | **v3**, `exact_layer_streaming_v3.pdf` (Zenodo record 21918325, 2026-08-13); code not yet inspected (HEAD `e7fe9b2` noted) | https://doi.org/10.5281/zenodo.21918325 |
+| Soup ELS | Makazhan. *Exact Layer Streaming: LoRA Fine-Tuning of an 8B Model on a 4 GB Laptop GPU* | **v3**, `exact_layer_streaming_v3.pdf` (Zenodo record 21918325, 2026-08-13); code: `src/soup_cli/utils/layer_stream_runtime.py` `RamSource` only, at `e7fe9b2` | https://doi.org/10.5281/zenodo.21918325 |
 
 Not yet read: Chen et al. 2016, FlexGen, DFlash. They are cited only from the tickets that use them (04, 06, 12).
 
@@ -60,7 +60,7 @@ Not yet read: Chen et al. 2016, FlexGen, DFlash. They are cited only from the ti
   kept as one tensor. Views of a flat buffer bound to a layer (Ticket 03).
 - **How we differ.**
   1. **We pin the whole frozen store**, per the owner's instruction (the assignment requires pinned CPU memory) and
-     like Soup ELS §3.1. This is the design MegaTrain argues against for host-capacity reasons. MegaTrain's
+     like Soup ELS §3.1 (whose code pins per tensor; we pin one exact-size allocation per layer). This is the design MegaTrain argues against for host-capacity reasons. MegaTrain's
      pageable-store-plus-staging design is the alternative if the target machine's page-locked ceiling is too low (see
      Soup ELS §5.1). Whether it would satisfy "pinned" as the assignment means it is an owner decision.
   2. Our slabs hold **frozen bf16 weights only**. No gradients or Adam moments are in them, and nothing flows back to
@@ -92,6 +92,15 @@ Not yet read: Chen et al. 2016, FlexGen, DFlash. They are cited only from the ti
   (H11, Ticket 11).
 - **What we take.** A fully page-locked frozen store; the GPU-resident set (buffers + embedding + norm + LoRA state);
   the page-locked ceiling as the binding host limit; bit-exactness against resident as the correctness gate.
+- **Code, `RamSource` (`layer_stream_runtime.py`, `e7fe9b2`).** The store is allocated once at its final dtype,
+  **per tensor**, with `torch.empty(shape, dtype, device="cpu", pin_memory=True)`. It is filled with `copy_` from
+  per-layer safetensors shards, one tensor at a time. The docstring explains why: the obvious
+  `load_file -> .to(dtype) -> .pin_memory()` path makes three transient copies, and on their machine that is what pushed
+  a 5.55 GB base past the 7.12 GB page-locked ceiling. The code refuses a non-CPU result and a non-pinned result
+  (`is_pinned()`).
+  - *Inference, not tested:* on this host's torch 2.14, a `pin_memory=True` allocation is rounded up to a power of two,
+    so per-tensor pinning would hold, for example, 64 MiB for a 47.5 MiB 4B MLP matrix. Whether Soup's torch 2.5.1
+    rounds the same way was not checked.
 - **How we differ.** bf16 base, not NF4. GRPO with stochastic rollouts, not supervised fine-tuning. Pinning by
   `cudaHostRegister` on exact-size allocations (we measured `pin_memory=True` rounding up to powers of two). The
   per-tensor alignment above.

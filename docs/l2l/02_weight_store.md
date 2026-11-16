@@ -75,6 +75,12 @@ host-specific (WSL2, RTX 3050 Ti laptop).
 
 ## Not established here
 
+- `memory_plan` counts the store, buffers and resident tensors exactly, and reuses the Step-0 calculator for the KV
+  cache, boundary checkpoints and logits. It does **not** yet estimate per-layer activation transients or the CUDA
+  context. The reuse path is `budget.calculator.Budget.layer_transient` and the measured context (`lab.memory`), to be
+  added in Tickets 03–04 and 11.
+- "Never adopt the resident reference model" is a documented rule, not enforced by code. Comparison harnesses build
+  separate instances (`store_equivalence` does).
 - Streaming into GPU buffers is tested only as copies. Running a layer on its GPU views is Ticket 03.
 - Process-level GPU memory (WSL2 `nvidia-smi` is unreliable; Ticket 11).
 - Behaviour on the target Linux machine (page-locked ceiling, bandwidth).
