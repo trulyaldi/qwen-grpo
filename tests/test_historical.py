@@ -1,8 +1,14 @@
 """Saved artifacts (results/baseline, runs/qwen) stay valid evidence under the current code: the baseline numbers, the
 reference run's config, log and checkpoints load, resume and pass the checks verify relies on. Needs the Qwen3-0.6B
-tokenizer/config files only, no weights. (Older runs were deleted in commit b43b0fa; git history keeps them.)"""
+tokenizer/config files only, no weights. (Older runs were deleted in commit b43b0fa; git history keeps them.)
+
+The repository keeps the reference run's record and its step-0 and step-90 adapters. Its other checkpoints and every
+optimizer state (training_state.pt) left the tree in the cleanup (docs/cleanup_report.md); the tests marked
+`historical_artifact` validate them from the archive: extract runs_qwen.tar.gz and set QWEN_GRPO_ARCHIVE to the
+extracted repo/ directory (or check out commit 20e7315 there). Without it they skip and say so, never pass."""
 import dataclasses
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -17,7 +23,18 @@ from qwen_grpo.model import EXPECTED_MODULES, PRESETS, lora_config, skeleton, ta
 ROOT = Path(__file__).parents[1]
 RUN = ROOT / "runs" / "qwen"
 QWEN = config.load(ROOT / "configs" / "qwen.yaml")
-CHECKPOINTS = [p for _, p in sorted((int(p.name[4:]), p) for p in (RUN / "checkpoints").glob("step*"))]
+
+
+def checkpoints(run):
+    return [p for _, p in sorted((int(p.name[4:]), p) for p in (run / "checkpoints").glob("step*"))]
+
+
+CHECKPOINTS = checkpoints(RUN)  # in the repository: step0 and step90 (adapters only)
+ARCHIVED = Path(os.environ["QWEN_GRPO_ARCHIVE"]) / "runs" / "qwen" if os.environ.get("QWEN_GRPO_ARCHIVE") else None
+historical_artifact = pytest.mark.skipif(
+    ARCHIVED is None or not (ARCHIVED / "checkpoints" / "step100" / "training_state.pt").exists(),
+    reason="external fixture: the full reference run runs/qwen (optimizer states, steps 10-100) is archived, not in the "
+           "repository; set QWEN_GRPO_ARCHIVE to the extracted runs_qwen.tar.gz repo/ directory (docs/cleanup_report.md)")
 
 
 def test_saved_validation_baseline_numbers():
@@ -32,13 +49,25 @@ def test_reference_run_results_are_the_reported_numbers():
     assert round(final["auc"]["base"], 4) == 0.8277
 
 
-def test_saved_log_and_checkpoint_configs_are_the_reference_yaml():
-    """The training log's yaml_config and every checkpoint's training state normalize to configs/qwen.yaml."""
+def test_saved_log_config_is_the_reference_yaml():
     log = json.loads((RUN / "training" / "training.json").read_text())
     assert config.normalized(log["yaml_config"]) == config.as_dict(QWEN)
-    for ckpt in CHECKPOINTS[1:]:
+    assert [p.name for p in CHECKPOINTS] == ["step0", "step90"]
+    assert not any((p / checkpointing.STATE).exists() for p in CHECKPOINTS)  # optimizer states are archived
+
+
+@historical_artifact
+def test_archived_checkpoint_states_are_the_reference_yaml():
+    """Every archived checkpoint's training state normalizes to configs/qwen.yaml, and its adapter is the repository's
+    where both exist."""
+    archived = checkpoints(ARCHIVED)
+    assert [p.name for p in archived] == [f"step{s}" for s in range(0, 101, 10)]
+    for ckpt in archived[1:]:
         state = checkpointing.load_training_state(ckpt)
         assert config.normalized(state["config"]) == config.as_dict(QWEN), ckpt
+    for ckpt in CHECKPOINTS:
+        assert (ckpt / "adapter_model.safetensors").read_bytes() == \
+            (ARCHIVED / "checkpoints" / ckpt.name / "adapter_model.safetensors").read_bytes()
 
 
 def test_saved_log_passes_the_provenance_check():
@@ -48,17 +77,20 @@ def test_saved_log_passes_the_provenance_check():
     assert verification.training_log(other, CHECKPOINTS[-1])[0] is None
 
 
-def test_reference_run_resumes_under_the_current_code():
+@historical_artifact
+def test_reference_run_resumes_under_the_current_code(monkeypatch):
     """check_resume accepts the final checkpoint with the run's saved (historical) config and with configs/qwen.yaml, and
     refuses an earlier one only because later checkpoints exist (the config comparison comes first)."""
-    saved = config.load(RUN / "config.yaml", historical=True)
-    last = CHECKPOINTS[-1]
+    monkeypatch.setattr(runs, "ROOT", ARCHIVED.parents[1])  # the archived repository holds every checkpoint
+    saved = config.load(ARCHIVED / "config.yaml", historical=True)
+    last = checkpoints(ARCHIVED)[-1]
     state = checkpointing.load_training_state(last)
     assert runs.parse_checkpoint(last) == ("qwen", 100, "run")
     for cfg in (saved, QWEN):
         trainer.check_resume(cfg, last, state)
+    step90 = ARCHIVED / "checkpoints" / "step90"
     with pytest.raises(SystemExit, match="overwrite later checkpoints"):
-        trainer.check_resume(QWEN, RUN / "checkpoints" / "step90", checkpointing.load_training_state(RUN / "checkpoints" / "step90"))
+        trainer.check_resume(QWEN, step90, checkpointing.load_training_state(step90))
     micro = dataclasses.replace(QWEN, training=dataclasses.replace(QWEN.training, micro_batch_size=6))
     with pytest.raises(SystemExit, match=r"different config \(training.micro_batch_size\)"):
         trainer.check_resume(micro, last, state)
