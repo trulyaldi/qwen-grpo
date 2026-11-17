@@ -233,6 +233,7 @@ def train(cfg: Config, resume=None, device="cuda"):
     manifest records how training ended; summary.json, plots/ and report.md are then rebuilt from the saved files."""
     name = cfg.run.name
     require_implemented(cfg)  # before start(): a refused config leaves nothing behind
+    check_device(cfg, device)  # likewise: an unusable device fails before anything is created or loaded
     if mode := cfg.training.legacy_batch_mode:
         raise SystemExit(f"run {name!r} uses the historical batch_mode {mode!r}, which the current code does not implement "
                          "(it has only the shuffled sampler): it cannot be trained or resumed. Its saved outputs stay "
@@ -243,11 +244,11 @@ def train(cfg: Config, resume=None, device="cuda"):
             raise SystemExit(f"run {name!r} has no valid resumable checkpoint (rejected: {rejected})")
     with training_lock(runs.lock_path(name)):
         state = start(cfg, resume)
-        guard = None
+        guard, held = None, []  # held: resources _train acquires (the backend), released here whatever happens
         try:
             guard = memory_guard(cfg, device)  # inside: a CUDA error here marks the run failed, not "running"
             with tee(runs.training_dir(name) / "training.log"), guard or nullcontext():
-                result = _train(cfg, resume, state, device)
+                result = _train(cfg, resume, state, device, held)
         except BaseException as e:
             exceeded = guard is not None and guard.violations
             status = "interrupted" if isinstance(e, KeyboardInterrupt) and not exceeded else "failed"
@@ -263,6 +264,8 @@ def train(cfg: Config, resume=None, device="cuda"):
                                  f"{rel(runs.training_dir(name) / 'memory')}/)") from e
             raise
         finally:
+            for r in held:  # the L2L weight store unregisters its pinned memory (GBs for Qwen3-4B)
+                r.close()
             if guard is not None and cfg.memory.allocator_cap:
                 torch.cuda.set_per_process_memory_fraction(1.0, torch.device(device))
         save_memory(cfg, guard)
@@ -304,7 +307,49 @@ def save_memory(cfg, guard):
     return runs.write_json(out / f"{stamp.strftime('%Y%m%dT%H%M%SZ')}.json", rep)
 
 
-def _train(cfg: Config, resume, state, device):
+def check_device(cfg, device):
+    """Refuse a device the run cannot use, before anything is loaded: CUDA requested but unavailable, a torch build
+    without kernels for the GPU (e.g. sm_61 on a cu130 wheel), or bfloat16 weights on a GPU without bf16 support. No
+    fallback to the CPU or to float32 is ever taken."""
+    dev = torch.device(device)
+    if dev.type != "cuda":
+        return
+    if not torch.cuda.is_available():
+        raise SystemExit(f"device {device!r} requested but torch.cuda.is_available() is False (torch {torch.__version__}, "
+                         f"built for CUDA {torch.version.cuda}); refusing to fall back to the CPU")
+    p = torch.cuda.get_device_properties(dev)
+    code = p.major * 10 + p.minor
+    arches = torch.cuda.get_arch_list()
+    if f"sm_{code}" not in arches and not any(a.startswith("compute_") and int(a.split("_")[1]) <= code for a in arches):
+        raise SystemExit(f"{p.name} (sm_{code}) is not supported by this torch build ({torch.__version__}: {arches}); "
+                         "install a torch wheel built for this GPU")
+    if cfg.model.dtype == "bfloat16" and not torch.cuda.is_bf16_supported():
+        raise SystemExit(f"model.dtype bfloat16 but {p.name} does not support bf16; refusing to switch precision "
+                         "silently (set model.dtype: float32 explicitly if that experiment is intended)")
+
+
+def rss_bytes():
+    """This process's resident set size (Linux /proc), or None."""
+    try:
+        for line in open("/proc/self/status"):
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return None
+
+
+def weight_bytes_copied(backend):
+    """Frozen weight bytes the L2L executor has copied host -> GPU so far (None for the resident backend)."""
+    ex = getattr(backend, "executor", None)
+    if ex is None:
+        return None
+    if hasattr(ex, "stats"):  # async prefetching executor: counts every copy it issued
+        return ex.stats["bytes_copied"]
+    return sum(t["slab_bytes"] for t in getattr(ex, "trace", []) if t.get("loaded", True))
+
+
+def _train(cfg: Config, resume, state, device, held=None):
     t, lo, d, ev = cfg.training, cfg.lora, cfg.data, cfg.evaluation
     B, G, name = t.batch_size, t.group_size, cfg.run.name
     gen_kw, score_kw = settings(ev)
@@ -336,6 +381,8 @@ def _train(cfg: Config, resume, state, device):
     load_device = device if cfg.execution.backend == "resident" else "cpu"
     model = lora_model(dtype, load_device, lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
     backend = make_backend(cfg, model, device)  # generation, log-probs and evaluation run through it
+    if held is not None:
+        held.append(backend)
     if on_cuda:
         torch.cuda.reset_peak_memory_stats()
     params = {n: p for n, p in model.named_parameters() if p.requires_grad}
@@ -474,6 +521,9 @@ def _train(cfg: Config, resume, state, device):
     # once at sampling time, its log record, next iteration); a checkpoint saves it, so resuming continues it exactly.
     while step < t.max_steps and (pending is not None or attempts < t.max_attempts):
         t_step = time.time()
+        timing = {"rollout_s": None, "prepare_s": None}
+        sync = torch.cuda.synchronize if on_cuda else (lambda: None)  # phase times include the queued GPU work
+        copied0 = weight_bytes_copied(backend)
         if pending is None:
             if stream is None:
                 batch, occurrences = prompts_on_disk.next_batch()
@@ -482,7 +532,11 @@ def _train(cfg: Config, resume, state, device):
                 batch = next(stream)
             attempts += 1
             prompts = build_prompts(tok, [e["text"] for e in batch])
+            t0_phase = time.time()
             rollouts = backend.generate_rollouts(tok, prompts, G=G, max_new_tokens=t.max_new_tokens)
+            sync()
+            timing["rollout_s"] = time.time() - t0_phase
+            timing["rollout_tokens"] = int(rollouts["completion_mask"].sum())
             check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].to(model.device), G)
             responses = decode(tok, rollouts)
             rewards = group_rewards(responses, [e["label"] for e in batch], G)  # [B, G]
@@ -493,7 +547,10 @@ def _train(cfg: Config, resume, state, device):
                      "invalid_responses": sum(parse_label(r) is None for r in responses),
                      "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16],
                      "mean_completion_tokens": rollouts["completion_mask"].sum(1).float().mean().item()}  # through the first EOS
+            t0_phase = time.time()
             targets = prepare(model, rollouts, rewards, t.micro_batch_size, logprobs=backend.logprobs)
+            sync()
+            timing["prepare_s"] = time.time() - t0_phase
             if stream is None:  # the group's record on disk, before any update uses it
                 group["occurrences"] = occurrences
                 rollout_store.write({"group_id": attempts, "policy_version": step, "occurrences": occurrences,
@@ -510,9 +567,12 @@ def _train(cfg: Config, resume, state, device):
                        "policy_version": step}
             del rollouts, targets
         group = pending["group"]
+        t0_phase = time.time()
         out = grpo_update(model, params, optimizer, pending["rollouts"], pending["adv"], pending["old_logp"],
                           clip_eps=t.clip_eps, iteration=pending["iteration"], micro_batch_size=t.micro_batch_size,
                           logprobs=backend.logprobs)
+        sync()
+        timing["update_s"] = time.time() - t0_phase  # forward + backward (+ recomputation) + AdamW step
         crash_point("update")  # the update is applied in memory but not committed (no checkpoint contains it yet)
         pending["iteration"] += 1
         if pending["iteration"] == t.num_iterations:
@@ -531,6 +591,15 @@ def _train(cfg: Config, resume, state, device):
                    "peak_allocated_gib": gib(torch.cuda.max_memory_allocated),
                    "peak_reserved_gib": gib(torch.cuda.max_memory_reserved)}
         result["training"].append(row)
+        sync()
+        copied = weight_bytes_copied(backend)
+        # wall-clock phases of this step, kept outside the training rows (which runs compare bitwise); rollout_s and
+        # prepare_s are None on later iterations of a reused batch. Allocator figures are in the row; nvidia-smi
+        # samples (CUDA context included) in training/memory/ when memory.guard is on
+        result.setdefault("timings", []).append({
+            "step": step, **timing, "step_s": time.time() - t_step,
+            "cpu_rss_bytes": rss_bytes(), "backend": backend.name,
+            "weight_bytes_copied": None if copied is None else copied - copied0})
         ids = ",".join(f"{i}{label[0]}" for i, label in zip(group["prompt_ids"], group["labels"]))
         mem = f"alloc {row['cuda_allocated_gib']:.2f}  peak res {row['peak_reserved_gib']:.2f} GiB" if on_cuda else ""
         clip = (f"it {out['iteration']}  r [{out['ratio_min']:.3f}, {out['ratio_max']:.3f}]  clip {out['clip_frac']:.3f}  "
