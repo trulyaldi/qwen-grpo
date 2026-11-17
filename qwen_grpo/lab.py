@@ -36,6 +36,7 @@ import yaml
 
 from qwen_grpo import config
 from qwen_grpo.execution import fixtures as F
+from qwen_grpo.evidence import read_bytes, result_path
 from qwen_grpo.execution.qwen3_forward import explicit_logprobs
 from qwen_grpo.grpo import grpo_loss
 from qwen_grpo import store_lab as store_cases  # Ticket 02 cases; store_lab reads lab at call time
@@ -585,10 +586,10 @@ def report(name, root=RESULTS):
     """Re-derive every status field from the saved raw data and refuse a result whose recorded fields disagree.
     Rewrites summary.md for current-schema results only; a Ticket 01 (schema 1) result is checked and printed with its
     hypothesis outcome derived on the fly, and its files are left exactly as recorded."""
-    path = Path(root) / name / "result.json"
-    if not path.exists():
+    path = result_path(Path(root) / name)  # result.json, or its lossless result.json.gz (qwen_grpo/evidence.py)
+    if path is None:
         raise SystemExit(f"no experiment {name!r} under {root}")
-    result = json.loads(path.read_text())
+    result = json.loads(read_bytes(path))
     for key in ("config_sha256", "input_sha256", "tolerances_sha256"):
         if not result.get("identity", {}).get(key):
             raise SystemExit(f"{path}: identity.{key} is missing")

@@ -15,13 +15,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from qwen_grpo.evidence import read_result  # noqa: E402  (result.json or its lossless result.json.gz)
+
 EXP = ROOT / "research" / "l2l" / "experiments"
 OUT_JSON, OUT_MD = ROOT / "research" / "l2l" / "final_results.json", ROOT / "research" / "l2l" / "final_report.md"
 
 
 def lab_result(name):
-    p = EXP / name / "result.json"
-    return json.loads(p.read_text()) if p.exists() else None
+    return read_result(EXP / name)
 
 
 def jfile(name):
@@ -167,7 +169,8 @@ def freshness(reqs):
     return out
 
 
-def main():
+def requirements():
+    """Every requirement with its status, derived from the evidence files (also read by scripts/experiment.py)."""
     reqs = []
 
     def add(rid, name, essential, status_detail):
@@ -194,6 +197,11 @@ def main():
     held = heldout_status()
     add("R14", "held-out task improvement with Qwen3-4B, 1-2k prompts (H12)", True, held[:2])
     add("R15", "negative control behaves as no learning", True, control_status(held[2]))
+    return reqs, held
+
+
+def main():
+    reqs, held = requirements()
     essential_bad = [r for r in reqs if r["essential"] and r["status"] != "PASS"]
     verdict = "SHIP" if not essential_bad else "DON'T SHIP"
     res = {"verdict": verdict, "requirements": reqs, "silent_failure_audit": [dict(zip(
@@ -220,8 +228,7 @@ def main():
                "against the base model, with the LR=0 control as the no-learning reference, is."]
     md += ["\n## Silent-failure audit\n", "| stage | silent failure | detection | fault / evidence | occurred | detected by tooling |",
            "|---|---|---|---|---|---|"] + [f"| {' | '.join(a)} |" for a in AUDIT]
-    md += ["\nThe full registry (every stage, Soup's observed coverage, fault-injection tests): "
-           "`docs/silent_failures.md`."]
+    md += ["\nFault-injection tests of these stages: `tests/silent_failures/` and the lab's `--perturb` runs."]
     md += ["\n## Evidence freshness\n", "PASS evidence and the engine files (" + ", ".join(f"`{e}`" for e in ENGINE)
            + ") modified or deleted since it was produced (new files are not listed). A non-empty list means the result predates the current code: it is "
            "reported, not re-labelled, and should be re-run before it is relied on.\n",
