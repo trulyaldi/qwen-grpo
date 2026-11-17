@@ -428,3 +428,21 @@ def test_update_equivalence_passes_and_a_corrupted_advantage_fails(tmp_path, mon
     failed = {c["quantity"] for c in f["comparisons"] if not c["pass"]}
     assert {"loss", "grads", "updates", "optimizer"} <= failed
     assert all(c["pass"] for c in f["comparisons"] if c["quantity"] == "logp" and ".it0" in c["name"])  # same policy
+
+
+def test_logprob_equivalence_compares_step_gradients_so_a_fully_clipped_micro_batch_is_not_a_zero_reference(tmp_path,
+                                                                                                          monkeypatch):
+    """The configuration that failed t05_logprob_equivalence_cpu (V 1000, R 1, micro-batches of 2: in later iterations
+    one micro-batch has every token clipped, so its head / layer gradients are exactly zero on every side)."""
+    from qwen_grpo import head_lab
+    monkeypatch.setattr(head_lab, "VOCABS", {1000: (7, 256)})
+    monkeypatch.setattr(head_lab, "LENGTHS", (1,))
+    monkeypatch.setattr(head_lab, "MICRO", (2,))
+    monkeypatch.setattr(head_lab, "QWEN3_VOCAB", 3000)
+    monkeypatch.setattr(head_lab, "REAL_HEAD", {"hidden": 64, "vocab": 3000, "rows": 2, "R": 8, "chunk": 256})
+    r = lab.run("logprob_equivalence", STORE_CPU, "v1000", root=tmp_path, trials=2, warmup=0)
+    assert r["status"] == "PASS", r["reasons"][:5]
+    names = [c["name"] for c in r["comparisons"] if c["quantity"] in ("head_grads", "hidden_grads")]
+    assert names and not any(".mb" in n.split(".it")[-1] for n in names)  # one tensor per step, not per micro-batch
+    zero = torch.zeros(2, 3)
+    assert head_lab._concat([zero, torch.ones(1, 3)]).abs().max() > 0 and head_lab._concat([zero, None]) is None

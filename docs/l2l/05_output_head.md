@@ -136,6 +136,25 @@ example:
 
 Either fix must be recorded as a change made after this failure, followed by a new run.
 
+## Change after `t05_logprob_equivalence_cpu` (recorded FAIL)
+
+**What changed.** Head-input and decoder-layer-output gradients are now compared once per optimizer step, with the
+micro-batches concatenated along rows: `head_grads.<tag>.<side>.it<k>` and `hidden_grads.<tag>.<side>.it<k>.<i>`.
+Before, they were compared per micro-batch. Nothing else changed: the thresholds, the nonzero-reference requirement
+(now applied to the step), the grid and the sides are as before.
+
+**Why.**
+- All 120 failures of the recorded run had max_abs = 0: every side, including the exact L2L full head, agreed.
+- They failed only because the reference tensor was identically zero. At V = 1000, R = 1, micro-batches of 2, later
+  iterations clip every token of one micro-batch, so that micro-batch's gradient with respect to the head input and
+  the layer outputs is genuinely zero.
+- A per-micro-batch zero is a property of the data, not a lack of power. Over the whole step, the reference is
+  nonzero.
+
+**This was decided after the failure.** The failed run stays on record (H03 NOT_SUPPORTED by its rule).
+`test_logprob_equivalence_compares_step_gradients_so_a_fully_clipped_micro_batch_is_not_a_zero_reference` reruns
+exactly the failing configuration. The fixed case is recorded below as `t05_logprob_equivalence_cpu_v2`.
+
 ## Not established here
 
 - **GPU peak memory and GPU time.** The local GPU is unusable with this PyTorch build. CPU allocation figures are

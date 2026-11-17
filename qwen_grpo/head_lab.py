@@ -18,8 +18,10 @@ Compared, candidate side vs full at the same parameters:
   logp.<tag>.<side>.old / .it<k>            selected log-probs [N, R]
   loss.<tag>.<side>.it<k>                   the micro-batch-accumulated GRPO loss grpo_update reports
   grads.<tag>.<side>.it<k>.<param>          every LoRA gradient
-  head_grads.<tag>.<side>.it<k>.mb<j>       dL/d(head input) [n, R, H]
-  hidden_grads.<tag>.<side>.it<k>.mb<j>.<i> dL/d(output of decoder layer i)
+  head_grads.<tag>.<side>.it<k>             dL/d(head input) [N, R, H], the micro-batches concatenated
+  hidden_grads.<tag>.<side>.it<k>.<i>       dL/d(output of decoder layer i) [N, T, H], micro-batches concatenated
+                                            (per step, not per micro-batch: changed after t05_logprob_equivalence_cpu,
+                                            where a fully clipped micro-batch had an exactly zero reference)
 Measurements (not thresholds): each candidate's own ITERATIONS-step training run (final LoRA distance to the
 reference's, its logs); output-head memory (largest tensor allocated and non-parameter bytes saved for backward, by
 a dispatch mode / saved-tensor hooks, plus the CUDA allocator peak on a GPU) and time (interleaved trials) for the
@@ -146,14 +148,23 @@ def side_at(model, capture, r, adv, old, k, mb, snapshot):
     return out, logs
 
 
+def _concat(grads):
+    """The micro-batches' gradients concatenated along rows -> [N, ...]; None if any micro-batch has none (the
+    comparison then reports the quantity as missing)."""
+    return None if not grads or any(g is None for g in grads) else torch.cat(grads, dim=0)
+
+
 def flat(out, prefix):
+    """Per-step tensors. Head-input and layer-output gradients are compared for the whole step (micro-batches
+    concatenated): one micro-batch whose tokens are all clipped has an exactly zero gradient there, legitimately, and
+    the nonzero-reference requirement applies to the step (changed after t05_logprob_equivalence_cpu)."""
     t = {f"logp.{prefix}": out["logp"], f"loss.{prefix}": out["loss"]}
     t.update({f"grads.{prefix}.{n}": g for n, g in out["grads"].items()})
-    for j, g in enumerate(out["head"]):
-        if g is not None:
-            t[f"head_grads.{prefix}.mb{j}"] = g
-    for j, d in enumerate(out["layers"]):
-        t.update({f"hidden_grads.{prefix}.mb{j}.{i}": g for i, g in d.items() if g is not None})
+    if (head := _concat(out["head"])) is not None:
+        t[f"head_grads.{prefix}"] = head
+    for i in sorted(set().union(*(d.keys() for d in out["layers"]))):
+        if (g := _concat([d.get(i) for d in out["layers"]])) is not None:
+            t[f"hidden_grads.{prefix}.{i}"] = g
     return t
 
 

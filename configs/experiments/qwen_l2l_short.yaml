@@ -1,0 +1,13 @@
+# Short version of configs/experiments/qwen_l2l.yaml (10 optimizer steps, validation subset every 5, no full
+# validation): a quick resident-vs-L2L comparison before the full run.
+extends: qwen_l2l.yaml
+
+run:
+  name: qwen_l2l_short
+
+training:
+  max_steps: 10
+
+evaluation:
+  every: 5
+  full_validation: false

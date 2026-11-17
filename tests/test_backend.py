@@ -3,6 +3,7 @@ store, CPU buffers) reproduces the resident run bitwise (rollouts, losses, evalu
 without ever calling model.generate(). The single-update grid with per-tensor comparisons is the lab case
 update_equivalence."""
 import copy
+import json
 
 import pytest
 import torch
@@ -114,3 +115,16 @@ def test_checkpoint_evaluation_commands_refuse_an_l2l_config_instead_of_running_
     for command in ("verify", "validate"):
         with pytest.raises(SystemExit, match="resident backend only"):
             run.main([command, "--config", str(cfg_path), "--checkpoint", str(tmp_path / "missing")])
+
+
+def test_compare_runs_reports_identical_runs_and_catches_a_different_one(sandbox, tmp_path):
+    from scripts import compare_runs
+    sandbox("both")
+    trainer.train(make_cfg(tmp_path, name="tiny_res"), device="cpu")
+    trainer.train(make_cfg(tmp_path, L2L_CPU, name="tiny_l2l"), device="cpu")
+    trainer.train(make_cfg(tmp_path, L2L_CPU, name="tiny_lr", learning_rate=1e-3), device="cpu")
+    assert compare_runs.main(["tiny_res", "tiny_l2l", "--out", str(tmp_path / "same.json")]) == 0
+    rep = json.loads((tmp_path / "same.json").read_text())
+    assert rep["identical"] and rep["backends"] == ["resident", "l2l_sync"] and len(rep["checkpoints"]) >= 2
+    assert compare_runs.main(["tiny_res", "tiny_lr", "--out", str(tmp_path / "diff.json")]) == 1
+    assert json.loads((tmp_path / "diff.json").read_text())["training_rows"]["first_differing_step"] is not None

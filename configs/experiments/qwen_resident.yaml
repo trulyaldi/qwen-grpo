@@ -1,0 +1,6 @@
+# configs/qwen.yaml re-run under its own name: the resident reference for the L2L run (configs/experiments/qwen_l2l.yaml),
+# on the same machine and software, so the two runs can be compared bitwise (scripts/compare_runs.py).
+extends: ../qwen.yaml
+
+run:
+  name: qwen_resident
