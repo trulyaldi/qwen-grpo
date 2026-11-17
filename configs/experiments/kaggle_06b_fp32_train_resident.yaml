@@ -1,0 +1,5 @@
+# Kaggle gpu-train (float32 diagnostic), Qwen3-0.6B, RESIDENT, 1024 prompts, 210 updates: the reference for the L2L runs.
+extends: kaggle_06b_fp32_train_base.yaml
+
+run:
+  name: kaggle_06b_fp32_train_resident

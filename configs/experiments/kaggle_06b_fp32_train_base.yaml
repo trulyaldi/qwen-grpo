@@ -1,0 +1,27 @@
+# DIAGNOSTIC training base for Kaggle gpu-train (abstract: extended, never trained): Qwen3-0.6B with FLOAT32 base weights
+# (the T4 has no native bfloat16; never evidence for a bf16 claim), 1024 balanced training prompts and ~210 updates of
+# B = 5 x G = 6, so every prompt is used about once (as the Qwen3-4B final run). The guard records nvidia-smi samples
+# (training/memory/) under the T4's 15 GiB. Steps, evaluation interval and seeds: override them in a committed YAML that
+# extends one of the files below (a submission runs the config as committed at its pinned commit).
+#   kaggle_06b_fp32_train_resident -> _l2l_sync -> _l2l_async -> _streaming -> kaggle_06b_fp32_pilot (20 steps)
+abstract: true
+extends: kaggle_06b_fp32_base.yaml
+
+run:
+  name: kaggle_06b_fp32_train_base
+
+data:
+  train_samples: 1024
+  val_subset: 256
+
+training:
+  max_steps: 210
+  seed: 42
+
+evaluation:
+  every: 30                    # validation-subset evaluation and a resumable checkpoint every 30 updates
+  full_validation: true        # all 1066 validation examples vs the base model at the end
+
+memory:
+  guard: true
+  interval_s: 1.0

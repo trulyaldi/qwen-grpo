@@ -1,0 +1,14 @@
+# Kaggle gpu-train PILOT (float32 diagnostic): kaggle_06b_fp32_train_streaming.yaml cut to 20 updates with an evaluation
+# and a checkpoint every 10, no full validation: the same data, backend, streaming and guard as the full experiment, so
+# its timings and memory predict the 1024-prompt run before quota is spent on it.
+extends: kaggle_06b_fp32_train_streaming.yaml
+
+run:
+  name: kaggle_06b_fp32_pilot
+
+training:
+  max_steps: 20
+
+evaluation:
+  every: 10
+  full_validation: false

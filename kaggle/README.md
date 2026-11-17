@@ -42,6 +42,42 @@ python scripts/kaggle_submit.py summary  --mode cpu                 # pass / fai
 | `cpu` | CPU | Import checks. Every repository config loaded and validated. pytest: config, sentiment data and reward, GRPO maths, policy, explicit forward, L2L layer streaming, checkpointed backward, trainer (checkpoints, bitwise resume), disk streaming and crash-consistent resume, correctness audit, run reports. `--scope full`: the whole suite. Qwen weights are never downloaded (`tests/conftest.py` forbids it). |
 | `gpu-tests` | T4 (device 0) | pytest on every file with CUDA-parametrized tests (resident vs L2L forward, checkpointed backward and LoRA gradients, sync vs async prefetch, buffer reuse and synchronization, pinned weight store, streamed generation, DFlash exactness, profiler). The lab cases (`forward / gradient / generation / update_equivalence`, async, CUDA) run only on a GPU with native bf16, because each lab grid mixes fp32 and bf16. |
 | `gpu-short` | T4 (device 0) | Three 8-step GRPO + LoRA runs of Qwen3-0.6B in **float32** (diagnostic), one per backend: `configs/experiments/kaggle_06b_fp32_resident.yaml`, `_l2l_sync.yaml`, `_l2l_async.yaml` (identical except `execution` and `run.name`). Then `scripts/compare_runs.py` compares sync and async with resident (bitwise rule of `tolerances.yaml` `update_equivalence`). They cover model loading, rollouts, reward, advantages, LoRA gradient flow, optimizer steps, checkpoint save/reload and subset evaluation. |
+| `gpu-train` | T4 (device 0) | One full training run, `scripts/run.py train --config <yaml>`, of a YAML committed at the pinned commit (`--config`). See below. |
+
+## gpu-train: full Qwen3-0.6B training runs
+
+```bash
+python scripts/kaggle_submit.py submit --mode gpu-train --config configs/experiments/kaggle_06b_fp32_pilot.yaml --dry-run
+python scripts/kaggle_submit.py submit --mode gpu-train --config configs/experiments/kaggle_06b_fp32_pilot.yaml [--max-hours 11]
+python scripts/kaggle_submit.py status|logs|download|summary --mode gpu-train [--submission <id>]
+python scripts/kaggle_submit.py submit --mode gpu-train --config <same yaml> --resume-from <submission id>   # next version
+```
+
+- **Configs** (`configs/experiments/`, all float32 diagnostics): `kaggle_06b_fp32_train_{resident,l2l_sync,l2l_async}.yaml`
+  (1024 prompts, 210 updates, evaluation and checkpoint every 30, full validation, memory guard),
+  `kaggle_06b_fp32_train_streaming.yaml` (l2l_async + disk streaming), `kaggle_06b_fp32_pilot.yaml` (the streaming run,
+  20 updates). Other steps, intervals or seeds: commit a YAML that extends one of them, push, submit it.
+- **Checks before anything is pushed:** the config is resolved from the pinned commit's tree (not the working copy);
+  bf16, models other than Qwen3-0.6B and unimplemented settings are refused; the resolved sha256 goes into the
+  submission and the kernel refuses to train if its own resolution differs. A submission repeating the same commit,
+  config and resume source is refused, as is a new version while the previous gpu-train output is not downloaded
+  (`--force` overrides both), and while the kernel is queued or running.
+- **Time and storage:** training stops at `--max-hours` (default 11, measured from kernel start) with SIGINT, so the
+  run ends `interrupted` with its saved checkpoints; then the whole run directory (checkpoints included) is copied to
+  `/kaggle/working/evidence/artifacts/runs/<run>/`. `/kaggle/working` disappears with the session, so download each
+  version's output (by its own kernel version) before submitting the next.
+- **Resume across versions:** `--resume-from <id>` needs that submission's downloaded output and the same config and
+  commit. The run directory is packed (`run.tar` + `qwen_grpo_resume.json` with every file's sha256) and uploaded as a
+  **private** Kaggle dataset `<user>/qwen-grpo-resume-<run>`, attached to the new version. The kernel restores it,
+  verifies every file and the marker's sha256 (a stale dataset version is refused), and runs
+  `scripts/run.py train --config runs/<run>/config.yaml --resume <latest | runs/<run>/checkpoints/step<N>>`: the
+  continued run equals an uninterrupted one bitwise on the same hardware and software (tests/test_kaggle_train.py, CPU).
+- **Evidence** (beyond the table below): `resolved_config.yaml`, `raw/train.log`, `performance_summary.json` (status,
+  steps, s/step, per-phase timings, weight bytes copied host→GPU, allocator peaks, nvidia-smi device and per-process
+  maxima, host RAM, peak RSS, free disk, reward curve, accuracy and predicted-POSITIVE rate per evaluation, final
+  validation vs base, git commit, packages, model revision), `host_resources.csv`, `gpu_apps.csv`, and the run itself.
+- **Outcome:** PASS only for a completed run (every step, frozen weights unchanged, final checkpoint). INCOMPLETE (time
+  budget, resumable) and FAIL exit non-zero; `summary` passes only PASS, and prints the resume command when INCOMPLETE.
 
 ### bfloat16 on T4 (never silently replaced)
 

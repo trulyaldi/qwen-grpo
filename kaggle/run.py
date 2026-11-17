@@ -4,7 +4,8 @@ Standard library only. On the Kaggle machine it:
   1. clones the public repository at the pinned commit (SUBMISSION["commit"]) into /tmp and verifies the checkout;
   2. creates an isolated virtualenv with the repository's pinned requirements (torch from the CPU or cu126 index);
   3. records the environment (GPU model, compute capability, native bf16 support, memory, RAM, disk, versions);
-  4. runs the steps of SUBMISSION["mode"] (cpu | gpu-tests | gpu-short), each as a subprocess with its raw output kept;
+  4. runs the steps of SUBMISSION["mode"] (cpu | gpu-tests | gpu-short | gpu-train), each as a subprocess with its raw
+     output kept;
   5. writes /kaggle/working/evidence/ (raw files, plus the derived results.json) and exits non-zero on any failure.
 
 Nothing here changes training code, configs or tolerances. gpu-short trains the repository's committed float32
@@ -16,9 +17,13 @@ import datetime as _dt
 import json
 import os
 import platform
+import re
 import shutil
+import signal
 import subprocess
 import sys
+import tarfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -33,6 +38,10 @@ TMP = Path(os.environ.get("KAGGLE_RUNNER_TMP", "/tmp"))
 REPO = TMP / "qwen-grpo"
 VENV = TMP / "qwen-grpo-venv"
 PY = VENV / "bin" / "python"
+INPUT = Path(os.environ.get("KAGGLE_RUNNER_INPUT", "/kaggle/input"))  # attached datasets (gpu-train resume)
+RESUME_MARKER = "qwen_grpo_resume.json"
+T0 = time.time()  # kernel start: gpu-train's time budget counts setup too
+RESULT_EXTRA = {}  # mode-specific top-level fields of results.json (gpu-train: the resolved config sha256)
 # Local testing of this runner only (never set on Kaggle): reuse an existing interpreter instead of building the venv.
 LOCAL_PYTHON = os.environ.get("KAGGLE_RUNNER_PYTHON")
 TORCH_INDEX = {"cpu": "https://download.pytorch.org/whl/cpu", "gpu": "https://download.pytorch.org/whl/cu126"}
@@ -397,12 +406,284 @@ def study_plan(cuda):
     sh([PY, "scripts/experiment.py", "plan", "--target", "local"], "study_plan", cwd=REPO, env=base_env(cuda=cuda))
 
 
+# Mode D: one full training run (scripts/kaggle_submit.py --mode gpu-train), optionally resumed from a packed run.
+
+def sha256_file(p):
+    import hashlib
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def restore_run(input_root, repo, expected_marker_sha, run_name):
+    """Put the packed run (an attached dataset: run.tar + the marker, or a directory Kaggle extracted) at
+    repo/runs/<run_name> and verify every file against the marker. -> (ok, detail). Nothing unverified is used."""
+    markers = sorted(Path(input_root).rglob(RESUME_MARKER)) if Path(input_root).exists() else []
+    if not markers:
+        return False, f"no {RESUME_MARKER} under {input_root}: the resume dataset is not attached"
+    found = [m for m in markers if sha256_file(m) == expected_marker_sha]
+    if not found:
+        return False, f"{len(markers)} resume marker(s) found, none with the submitted sha256 (a stale dataset version?)"
+    m = found[0]
+    meta = json.loads(m.read_text())
+    if meta["run_name"] != run_name:
+        return False, f"the dataset holds run {meta['run_name']!r}, not {run_name!r}"
+    dest = Path(repo) / "runs" / run_name
+    if dest.exists():
+        return False, f"{dest} exists before the restore"
+    tars = list(m.parent.rglob("run.tar"))
+    if tars:
+        with tarfile.open(tars[0]) as t:
+            bad = [x.name for x in t.getmembers() if not x.name.startswith(f"runs/{run_name}/")]
+            if bad:
+                return False, f"run.tar holds paths outside runs/{run_name}/: {bad[:3]}"
+            t.extractall(repo, filter="data")
+    else:
+        src = next((d for d in m.parent.rglob(run_name) if (d / "manifest.json").exists()), None)
+        if src is None:
+            return False, "neither run.tar nor an extracted run directory next to the marker"
+        shutil.copytree(src, dest)
+    bad = [rel for rel, h in meta["files"].items() if not (dest / rel).is_file() or sha256_file(dest / rel) != h]
+    extra = sorted(str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file()
+                   and str(p.relative_to(dest)) not in meta["files"])
+    if bad or extra:
+        return False, f"restored files differ from the marker: changed/missing {bad[:5]}, unexpected {extra[:5]}"
+    return True, f"{len(meta['files'])} files restored and verified into runs/{run_name}"
+
+
+def run_until(cmd, name, cwd, env, budget_s, on_start=None):
+    """Like sh(), but at budget_s it sends SIGINT (the trainer then ends the run `interrupted`, keeping its saved
+    checkpoints) and kills only if that does not end it within 10 minutes. -> (returncode, seconds, reason or None)."""
+    out = RAW / f"{name}.log"
+    log(f"$ {' '.join(map(str, cmd))}  (budget {budget_s / 3600:.2f} h, output raw/{out.name})")
+    t0, reason = time.time(), None
+    with open(out, "w") as f:
+        f.write(f"# {now()} $ {' '.join(map(str, cmd))}\n")
+        f.flush()
+        p = subprocess.Popen(list(map(str, cmd)), cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT)
+        if on_start:
+            on_start(p.pid)
+        try:
+            rc = p.wait(timeout=max(budget_s, 1))
+        except subprocess.TimeoutExpired:
+            reason = f"time budget reached after {budget_s / 3600:.2f} h: SIGINT sent"
+            p.send_signal(signal.SIGINT)
+            try:
+                rc = p.wait(timeout=600)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                rc = p.wait()
+                reason += "; killed 10 min later"
+        f.write(f"\n# {now()} exit {rc}\n")
+    log(f"  -> exit {rc} after {time.time() - t0:.0f} s" + (f" ({reason})" if reason else ""))
+    return rc, time.time() - t0, reason
+
+
+class HostSampler:
+    """Every 5 s: host RAM, free disk, and the training process's RSS and peak RSS (VmHWM), raw CSV."""
+    HEADER = "utc,mem_total_kib,mem_available_kib,disk_free_working_bytes,disk_free_tmp_bytes,train_pid,train_rss_kib,train_hwm_kib\n"
+
+    def __init__(self, path, interval=5.0):
+        self.path, self.interval, self.pid, self.stop = path, interval, None, threading.Event()
+
+    def track(self, pid):
+        self.pid = pid
+
+    def status(self, key):
+        try:
+            return next(int(l.split()[1]) for l in open(f"/proc/{self.pid}/status") if l.startswith(key))
+        except (OSError, StopIteration, TypeError, ValueError):
+            return ""
+
+    def loop(self):
+        with open(self.path, "w") as f:
+            f.write(self.HEADER)
+            while True:
+                try:
+                    mem = dict(l.split(":", 1) for l in Path("/proc/meminfo").read_text().splitlines())
+                    total, avail = (int(mem[k].split()[0]) for k in ("MemTotal", "MemAvailable"))
+                except (OSError, KeyError, ValueError):
+                    total = avail = ""
+                disk = [shutil.disk_usage(d).free if Path(d).exists() else "" for d in (WORK, TMP)]
+                f.write(f"{now()},{total},{avail},{disk[0]},{disk[1]},{self.pid or ''},{self.status('VmRSS:')},"
+                        f"{self.status('VmHWM:')}\n")
+                f.flush()
+                if self.stop.wait(self.interval):
+                    return
+
+    def __enter__(self):
+        self.thread = threading.Thread(target=self.loop, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop.set()
+        self.thread.join(timeout=30)
+        return False
+
+
+class AppsSampler:
+    """nvidia-smi per-process GPU memory every second (may list nothing in a container), raw CSV."""
+
+    def __enter__(self):
+        self.proc = None
+        if shutil.which("nvidia-smi"):
+            self.f = open(EVIDENCE / "gpu_apps.csv", "w")
+            self.proc = subprocess.Popen(["nvidia-smi", "--query-compute-apps=timestamp,pid,process_name,used_memory",
+                                          "--format=csv", "-l", "1"], stdout=self.f, stderr=subprocess.STDOUT)
+        return self
+
+    def __exit__(self, *exc):
+        if self.proc:
+            self.proc.terminate()
+            self.proc.wait(timeout=30)
+            self.f.close()
+        return False
+
+
+def csv_column(path, column):
+    """Numeric values of one column of a raw CSV (nvidia-smi or HostSampler); units such as 'MiB' are stripped."""
+    try:
+        lines = [l for l in Path(path).read_text().splitlines() if l.strip()]
+    except OSError:
+        return []
+    if not lines:
+        return []
+    header = [h.strip() for h in lines[0].split(",")]
+    idx = next((i for i, h in enumerate(header) if h.startswith(column)), None)
+    vals = []
+    for l in lines[1:]:
+        parts = l.split(",")
+        if idx is not None and idx < len(parts):
+            m = re.match(r"\s*([0-9.]+)", parts[idx])
+            if m:
+                vals.append(float(m.group(1)))
+    return vals
+
+
+def perf_summary(run, evidence):
+    """Performance and outcome of one training run from its own files plus the raw samplers (no claim is derived from
+    the allocator alone: it excludes the CUDA context)."""
+    read = lambda p: json.loads(Path(p).read_text()) if Path(p).exists() else {}
+    man, t = read(run / "manifest.json"), read(run / "training" / "training.json")
+    rows, tim, cfg = t.get("training", []), t.get("timings", []), t.get("yaml_config", {})
+    progress = read(run / "summary.json").get("progress") or {}  # training.json is written when a run ends; an
+    # interrupted run's progress is rebuilt from its last checkpoint into summary.json (its per-step rows are there too)
+    num = sorted({k for r in tim for k, v in r.items() if isinstance(v, (int, float)) and k not in
+                  ("step", "cpu_rss_bytes", "weight_bytes_copied")})
+    rewards = [r.get("mean_reward") for r in rows]
+    smi, apps, host = evidence / "gpu_memory.csv", evidence / "gpu_apps.csv", evidence / "host_resources.csv"
+    mx = lambda v: max(v) if v else None
+    mn = lambda v: min(v) if v else None
+    final = t.get("final") or {}
+    return {
+        "run": run.name, "status": man.get("status"), "status_history": man.get("status_history"),
+        "steps": len(rows) if t else progress.get("optimizer_steps", 0),
+        "max_steps": (cfg.get("training") or {}).get("max_steps") or progress.get("max_steps"),
+        "per_step_source": "training/training.json" if t else "summary.json progress (interrupted: per-step rows are in "
+                                                                "the last checkpoint's training_state.pt)",
+        "train_seconds": t.get("train_seconds"),
+        "seconds_per_step": round(sum(r.get("step_s") or 0 for r in tim) / len(tim), 3) if tim else None,
+        "timings_total_s": {k: round(sum(r.get(k) or 0 for r in tim), 2) for k in num},
+        "weight_bytes_copied_total": sum(r["weight_bytes_copied"] for r in tim if r.get("weight_bytes_copied") is not None)
+        if any(r.get("weight_bytes_copied") is not None for r in tim) else None,
+        "cpu_rss_max_bytes": mx([r["cpu_rss_bytes"] for r in tim if r.get("cpu_rss_bytes")]),
+        "allocator_gib": {"peak_allocated_max": mx([r["peak_allocated_gib"] for r in rows if r.get("peak_allocated_gib") is not None]),
+                          "peak_reserved_max": mx([r["peak_reserved_gib"] for r in rows if r.get("peak_reserved_gib") is not None]),
+                          "note": "PyTorch allocator only: excludes the CUDA context"},
+        "nvidia_smi_mib": {"device_used_max": mx(csv_column(smi, "memory.used")),
+                           "process_used_max": mx(csv_column(apps, "used_gpu_memory") or csv_column(apps, "used_memory")),
+                           "note": "device-wide every 1 s for the whole kernel; per-process may be empty in a container"},
+        "host": {"mem_total_kib": mx(csv_column(host, "mem_total_kib")), "mem_available_min_kib": mn(csv_column(host, "mem_available_kib")),
+                 "train_rss_max_kib": mx(csv_column(host, "train_rss_kib")), "train_peak_rss_kib": mx(csv_column(host, "train_hwm_kib")),
+                 "disk_free_working_min_bytes": mn(csv_column(host, "disk_free_working_bytes"))},
+        "rewards": {"per_step": rewards, "mean": round(sum(rewards) / len(rewards), 4) if rewards else None,
+                    "first_10": rewards[:10], "last_10": rewards[-10:]},
+        "evaluations": [{"step": e["step"], **{k: e["metrics"].get(k) for k in ("accuracy", "predicted_positive_rate",
+                                                                               "invalid_rate", "macro_f1")}}
+                        for e in t.get("evaluations", [])],
+        "final_validation": {k: final.get(k) for k in ("base", "trained", "accuracy_diff", "bootstrap_ci95", "auc")} if final else None,
+        "frozen_changed": t.get("frozen_changed"), "final_checkpoint": t.get("final_checkpoint"),
+        "environment": {k: (t.get("environment") or {}).get(k) for k in ("git_commit", "git_dirty", "packages", "gpu", "models",
+                                                                       "host")},
+        "resume": SUBMISSION.get("resume"),
+    }
+
+
+def train_status(rc, perf, run):
+    """PASS only for a completed run with every step, unchanged frozen weights and a final checkpoint; INCOMPLETE for an
+    interrupted run that left a resumable checkpoint; FAIL otherwise."""
+    resumable = sorted(int(p.name[4:]) for p in (run / "checkpoints").glob("step*")
+                       if p.name[4:].isdigit() and int(p.name[4:]) > 0 and (p / "training_state.pt").exists())
+    complete = (rc == 0 and perf["status"] in ("completed", "complete") and perf["steps"] == perf["max_steps"]
+                and perf["frozen_changed"] is not None and not perf["frozen_changed"] and perf["final_checkpoint"])
+    if complete:
+        return "PASS", None
+    if perf["status"] == "interrupted" and resumable:
+        return "INCOMPLETE", f"interrupted at {perf['steps']}/{perf['max_steps']} steps; resumable from step {resumable[-1]}"
+    return "FAIL", f"exit {rc}, run status {perf['status']}, {perf['steps']}/{perf['max_steps']} steps"
+
+
+def mode_gpu_train(env):
+    t = SUBMISSION["train"]
+    name = t["run_name"]
+    log(f"Mode D: training run {name} ({t['config']}, {t['backend']}, {t['dtype']}, {t['train_samples']} prompts, "
+        f"{t['max_steps']} steps)" + (f", resumed from submission {SUBMISSION['resume']['from_submission']}"
+                                       if SUBMISSION.get("resume") else ""))
+    dev = (env.get("torch") or {}).get("devices") or []
+    if not dev:
+        record("train", "FAIL", reason="no CUDA device visible to torch")
+        return
+    if t["dtype"] == "bfloat16" and not dev[0]["bf16_native"]:
+        record("train", "FAIL", reason=f"{dev[0]['name']} has no native bfloat16; precision is never switched")
+        return
+    e = base_env(cuda=True)
+    sh([PY, "-c", RESOLVE.format(path=t["config"], name=name)], "resolve_config", cwd=REPO, env=e)
+    text = (RAW / "resolve_config.log").read_text()
+    m = re.search(r"^# \S+ sha256 ([0-9a-f]{64})$", text, re.MULTILINE)
+    RESULT_EXTRA["resolved_config_sha256"] = m.group(1) if m else None
+    (EVIDENCE / "resolved_config.yaml").write_text(f"--- # {t['config']}\n" + (REPO / t["config"]).read_text() + "\n" + text)
+    if RESULT_EXTRA["resolved_config_sha256"] != t["config_sha256"]:
+        record("config_identity", "FAIL", reason=f"resolved sha256 {RESULT_EXTRA['resolved_config_sha256']} != submitted "
+                                                 f"{t['config_sha256']}")
+        return
+    record("config_identity", "PASS", config=t["config"], sha256=t["config_sha256"])
+    argv = ["scripts/run.py", "train", "--config", t["config"]]
+    if SUBMISSION.get("resume"):
+        r = SUBMISSION["resume"]
+        ok, detail = restore_run(INPUT, REPO, r["marker_sha256"], name)
+        record("restore_checkpoint", "PASS" if ok else "FAIL", reason=None if ok else detail, detail=detail,
+               from_submission=r["from_submission"], target=r["target"])
+        if not ok:
+            return
+        argv = ["scripts/run.py", "train", "--config", f"runs/{name}/config.yaml", "--resume", r["target"]]
+    budget = t["max_hours"] * 3600 - (time.time() - T0)
+    if budget < 600:
+        record("train", "FAIL", reason=f"only {budget:.0f} s of the {t['max_hours']} h budget left after setup")
+        return
+    with HostSampler(EVIDENCE / "host_resources.csv") as hs, AppsSampler():
+        rc, secs, reason = run_until([PY, *argv], "train", REPO, e, budget, on_start=hs.track)
+    run = REPO / "runs" / name
+    if run.exists():  # everything, checkpoints included: the next version resumes from this output
+        shutil.copytree(run, EVIDENCE / "artifacts" / "runs" / name, dirs_exist_ok=True)
+    perf = perf_summary(run, EVIDENCE)
+    (EVIDENCE / "performance_summary.json").write_text(json.dumps(perf, indent=1) + "\n")
+    status, why = train_status(rc, perf, run)
+    record("train", status, reason="; ".join(x for x in (why, reason) if x) or None, returncode=rc, seconds=round(secs),
+           argv=argv, precision=t["dtype"], steps=perf["steps"], max_steps=perf["max_steps"],
+           criteria="exit 0; run completed; every configured step; frozen weights unchanged; final checkpoint saved")
+
+
 # ----------------------------------------------------------------------------------------------------------- main
 
 def overall():
     statuses = [r["status"] for r in RESULTS]
     if not statuses or any(s in ("FAIL", "ERROR") for s in statuses):
         return "FAIL"
+    if "INCOMPLETE" in statuses:  # gpu-train: interrupted with a resumable checkpoint; never a pass
+        return "INCOMPLETE"
     return "PASS_WITH_SKIPS" if "SKIPPED" in statuses or any((r.get("counts") or {}).get("skipped") for r in RESULTS) \
         else "PASS"
 
@@ -423,7 +704,8 @@ def main():
             clone()
             venv("cpu" if SUBMISSION["mode"] == "cpu" else "gpu")
             env = environment()
-            {"cpu": mode_cpu, "gpu-tests": mode_gpu_tests, "gpu-short": mode_gpu_short}[SUBMISSION["mode"]](env)
+            {"cpu": mode_cpu, "gpu-tests": mode_gpu_tests, "gpu-short": mode_gpu_short,
+             "gpu-train": mode_gpu_train}[SUBMISSION["mode"]](env)
             study_plan(cuda=SUBMISSION["mode"] != "cpu")
     except Exception as e:  # noqa: BLE001 - every failure is recorded and makes the kernel fail
         error = f"{type(e).__name__}: {e}"
@@ -434,6 +716,7 @@ def main():
             "# this mode trains nothing; the repository configs it validated are listed in raw/config_validation.log\n")
     status = overall()
     res = {"submission": SUBMISSION, "utc_start": STARTED, "utc_end": now(), "overall": status, "error": error,
+           **RESULT_EXTRA,
            "steps": RESULTS, "rule": "PASS only if no step FAILED or ERRORED; skipped steps or tests are listed and "
                                      "make the overall PASS_WITH_SKIPS, never PASS"}
     (EVIDENCE / "results.json").write_text(json.dumps(res, indent=1))

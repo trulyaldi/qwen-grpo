@@ -1,0 +1,10 @@
+# Kaggle gpu-train (float32 diagnostic): kaggle_06b_fp32_train_l2l_async.yaml with disk-backed prompts and rollout
+# records and crash-consistent checkpoints, resumed with --resume latest (the highest-step checkpoint that validates).
+extends: kaggle_06b_fp32_train_l2l_async.yaml
+
+run:
+  name: kaggle_06b_fp32_train_streaming
+
+streaming:
+  enabled: true
+  directory: streaming
