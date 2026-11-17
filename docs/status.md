@@ -57,6 +57,26 @@ remaining requirement needs a GPU (`docs/deployment.md`).
 - `final_report.py` treated old evidence as current. It now reports the evidence commit and the engine files changed
   since.
 
+## Found by the GPU-readiness audit and fixed
+
+- **Device checks.** `train` (and `validate`, `test`, `final_eval`) now refuses before loading anything if:
+  - CUDA was requested but is unavailable (no CPU fallback existed or was added; it used to fail deep inside);
+  - the torch build has no kernels for the GPU (e.g. sm_61 on a cu130 wheel, observed on the audit host);
+  - bf16 weights are requested on a GPU without bf16.
+- **Pinned store released.** The trainer never released the backend, so a Qwen3-4B L2L store (~7.3 GiB page-locked
+  host memory) stayed registered after `train()` returned, including when `verify` trains an LR=0 control in the same
+  process. The store is now closed when training ends, whatever the outcome.
+- **Backend-aware evaluation.** Standalone `validate` / `test` refused L2L runs. They now evaluate through the run's
+  backend, identical predictions and label scores to resident on CPU (`tests/test_evaluation_backends.py`). The saved
+  resident baseline is not reused for L2L evaluations. `verify` remains resident-only and says so.
+- **`final_eval.py` fixes:**
+  - it always built a synchronous 2-buffer L2L backend and ignored the run's execution and evaluation settings; now
+    the run's backend (prefetch included) and decoding / batch settings are used;
+  - it now also computes ROC AUC with paired bootstrap CIs;
+  - it records decoding, backends and provenance.
+- **Per-step timings.** Rollout, old-log-prob and update seconds, rollout tokens, CPU RSS, and L2L weight bytes copied
+  are now recorded in `training.json` → `timings`, outside the bitwise-compared rows.
+
 ## Open decisions (owner)
 
 - **DFlash in the final run.** The assignment asks for DFlash-accelerated rollouts, but
@@ -91,7 +111,7 @@ Accepted but outside the evidence:
   held-out learning all lack it. Under WSL2, nvidia-smi gives no per-process memory, so budget evidence from the laptop
   can only be BLOCKED.
 - **The passing CUDA equivalence evidence (t03–t07) predates later executor changes.** These are bc5a05d and the
-  Ticket 08 refactor of `layer_stream.py`. Rerun it on the GPU host (`docs/deployment.md`, step 6).
+  Ticket 08 refactor of `layer_stream.py`. Rerun it on the GPU host (`docs/deployment.md`, step 2).
 - **The resume evidence is tiny-model only.** It covers six crash points on CPU.
 - **No forgetting check.** No general benchmark is evaluated (registry I2). Soup's ship requires one.
 - **The verification check cannot detect** semantic label noise in the dataset, paraphrased leakage, or gains that

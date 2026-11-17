@@ -12,6 +12,7 @@ configs/
     qwen3_0_6b.yaml      Qwen3-0.6B, resident, 4 GB laptop (the reference run's settings)
     qwen3_4b.yaml        Qwen3-4B, l2l_async + pinned store, 8 GiB budget, memory guard
   default.yaml, qwen.yaml   the reference run (runs/qwen); self-contained, pinned equal to profiles/qwen3_0_6b.yaml
+  gpu/*.yaml             canonical resident / l2l_sync / l2l_async comparisons for Qwen3-0.6B and Qwen3-4B
   experiments/*.yaml     small overrides of a profile or of another experiment
   budget/*.yaml          inputs of the Step-0 budget calculator (scripts/budget.py), a separate schema; preflight
                          now derives the same inputs from a training config
@@ -24,6 +25,31 @@ inherited or hashed. The result is validated as a whole: unknown keys, missing r
 an int, `"1e-4"` for a float: write `1.0e-4`) and inconsistent combinations are errors.
 
 ## Selecting a setup
+
+**Canonical comparisons (`configs/gpu/`).** Within one model, the three files differ only in `execution`; the 4B
+resident file also differs in the guard ceiling, `run.gpu_budget_gib`. Model, data, LoRA, GRPO hyperparameters,
+seed, prompt, reward and evaluation are identical. DFlash and disk streaming are off.
+
+| config | model | backend | GPU target | purpose |
+|---|---|---|---|---|
+| `gpu/qwen3_0.6b_resident.yaml` | Qwen3-0.6B | resident | any ≥ 4 GB (est. 2.2 GiB) | reference |
+| `gpu/qwen3_0.6b_l2l_sync.yaml` | Qwen3-0.6B | l2l_sync, pinned, 2 buffers | ≥ 4 GB (est. 1.4 GiB) | L2L = resident? |
+| `gpu/qwen3_0.6b_l2l_async.yaml` | Qwen3-0.6B | l2l_async, prefetch 1 | ≥ 4 GB | prefetch effect |
+| `gpu/qwen3_4b_resident.yaml` | Qwen3-4B | resident, guard 16 GiB | ≥ 16 GB (est. 9.5 GiB) | 4B reference |
+| `gpu/qwen3_4b_l2l_sync.yaml` | Qwen3-4B | l2l_sync, guard 8 GiB | 8 GiB research budget | 4B L2L, no overlap |
+| `gpu/qwen3_4b_l2l_async.yaml` | Qwen3-4B | l2l_async, guard 8 GiB | 8 GiB research budget | 4B L2L, prefetching |
+
+The estimates come from `qwen-grpo preflight` (the calculator, unmeasured). All six use `num_iterations: 1`: every
+update is taken at the sampling policy, so the importance ratio is exactly 1 and clipping never binds. That is pinned
+by `tests/test_training_invariants.py`. Use `num_iterations > 1` (e.g. `experiments/grpo_clip_k3.yaml`) to study
+clipping. `training.micro_batch_size` splits the B·G completions of one update into chunks whose gradients accumulate
+before a single optimizer step. It does not change B, G or the loss, but under L2L every chunk streams the layers
+again.
+
+**Pinned or pageable.** L2L defaults to pinned host memory. `weight_storage: pageable` is the documented fallback
+where page-locking fails; it is slower for host-to-GPU copies, and must be recorded as a different setup.
+
+**Other configs:**
 
 | goal | config | backend | notes |
 |---|---|---|---|

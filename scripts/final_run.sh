@@ -3,7 +3,7 @@
 # negative control, the held-out test evaluation of base / trained / merged / control through L2L, and the final
 # report regenerated from all evidence. Commits only evidence files (runs/ is not committed). Does not push.
 # Goes through the qwen-grpo CLI: `train` refuses to start unless a GPU preflight with the same memory signature has
-# passed (docs/deployment.md, steps 4-5), and the Qwen3-4B profile's memory guard stops a run above 8 GiB.
+# passed (docs/deployment.md, "Gated alternative"), and the Qwen3-4B profile's memory guard stops a run above 8 GiB.
 #   bash scripts/final_run.sh
 set -u
 cd "$(dirname "$0")/.."

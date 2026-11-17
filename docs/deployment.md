@@ -1,129 +1,118 @@
-# Deployment on a rented GPU (Vast.ai)
+# Running on a rented Linux GPU
 
-Nothing here rents, starts or stops an instance: every step is a command you run. Order matters. Each step is the
-cheapest one that can reveal the next problem, and none needs the full run. Commands assume the repository root with
-the virtualenv active.
+You rent the machine, connect and clone. This page lists the commands, cheapest first: each step can reveal the
+problem the next one would waste money on. Nothing here provisions or manages cloud resources.
 
-## What runs where
+## Choosing hardware
 
-| where | what | cost |
-|---|---|---|
-| any CPU machine (the 64 GB desktop) | Tier 1–2 tests, offline preflight, fault-injection tests, Soup diagnostics, CPU lab cases (H03, H08 tiny, H09 tiny), the final report | free |
-| laptop GPU (RTX 3050 Ti, 4 GB, WSL2) | CUDA tests on tiny models, Qwen3-0.6B cases (H06, H08 real, H09 real) | free; no assignment-grade memory evidence under WSL2 |
-| rented Ampere GPU, native Linux | everything Qwen3-4B: GPU preflight, smoke, DFlash, final run, verification, merge, H10–H12 | paid |
+| experiment | GPU | host RAM | disk |
+|---|---|---|---|
+| Qwen3-0.6B, all three backends | any CUDA GPU ≥ 4 GB with bf16 (compute capability ≥ 8.0 recommended) | ≥ 16 GB | ≥ 20 GB |
+| Qwen3-4B resident | ≥ 16 GB (estimated peak ~9.5 GiB, unmeasured) | ≥ 16 GB | ≥ 40 GB |
+| Qwen3-4B L2L, 8 GiB target | ≥ 8 GB | ≥ 32 GB (estimated 11.7–18.5 GiB, incl. a ~7.3 GiB pinned store) | ≥ 40 GB |
 
-## Choosing the instance
+The estimates come from `qwen-grpo preflight` (the budget calculator, no measurement). A card larger than 8 GB is fine
+for the 8 GiB target: `memory.guard` enforces the budget during training, not the hardware.
 
-- **GPU:** Ampere or newer (compute capability ≥ 8.0). A card with more than 8 GB is fine: the budget is enforced by
-  `memory.guard`, not by the hardware. Exclusive use, so no other process shares the GPU.
-- **Host RAM:** ≥ 32 GB recommended. Offline preflight estimates **11.7–18.5 GiB** for the Qwen3-4B run: a 9 GiB
-  pinned store, plus the loader's transient copy, plus the process. On a 16 GB host the result is inconclusive
-  (`cpu.estimate` NOT TESTED). The estimate is a conservative upper bound until GPU preflight measures it.
-- **Disk:** ≥ 40 GB, ideally on a persistent volume. The Qwen3-4B checkpoint is 7.5 GiB and the drafter 1 GiB. One
-  merged checkpoint is another 7.5 GiB, plus checkpoints, streaming records and the pip cache.
-- **Per-process GPU memory accounting:**
-  - Budget evidence is assignment-grade only if `nvidia-smi --query-compute-apps` reports **this** process's memory.
-  - In some containers PID namespaces hide it. The guard then falls back to the device-wide figure, which can only stop
-    a run early, never let one through. But the evidence grades as diagnostic, and `gpu.measured` stays BLOCKED.
-  - Step 4 checks this in about a minute. If it is BLOCKED, the instance cannot produce the required evidence:
-    destroy it and pick another template or host before downloading anything.
+Budget evidence counts only if `nvidia-smi --query-compute-apps=pid,used_memory` lists the training process with a
+number. Some containers hide host PIDs. The guard then falls back to the device-wide figure, which can only stop a
+run early, but the evidence is graded diagnostic. Step 3 checks this in a minute.
 
-## Before renting (CPU, free)
+## Steps
 
-```bash
-python -m pytest -q                                            # Tier 2: full CPU suite (~11 min)
-qwen-grpo faults test                                          # fault-injection tests (~25 s)
-qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke.yaml --allow-metadata-download --host-ram-gib 32
-qwen-grpo research run H03 --execute                           # CPU lab cases that are still missing
-qwen-grpo research run H09 --execute                           # (cuda entries report BLOCKED here)
-```
-
-The preflight must show no FAIL. BLOCKED items are the ones that need the GPU host, such as the tokenizer once the
-model is downloaded.
-
-## On the instance
-
-1. **Environment.** Pin the same versions as the evidence:
+1. **Environment:**
    ```bash
-   git clone <repo> && cd qwen-grpo && git checkout <commit>
-   uv venv .venv && source .venv/bin/activate
-   uv pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
-   uv pip install -e . --no-deps                                 # the qwen-grpo command
-   export HF_HOME=/workspace/hf                                  # persistent volume: download once
-   ```
-2. **Check the environment before downloading anything:**
-   ```bash
-   python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name())"
+   git clone --branch feat/l2l-streaming-research https://github.com/trulyaldi/qwen-grpo.git && cd qwen-grpo
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu126   # cuXXX matching the driver
+   pip install -r requirements.txt && pip install -e . --no-deps
+   export HF_HOME=/workspace/hf        # a persistent volume, so models download once
+   python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(), torch.cuda.is_bf16_supported())"
    nvidia-smi
    ```
-3. **Models.** About 8.5 GB, once:
+2. **Lightweight tests (CPU, ~10 min), then the CUDA variants on tiny models (minutes):**
    ```bash
-   hf download Qwen/Qwen3-4B
-   hf download z-lab/Qwen3-4B-DFlash-b16 config.json model.safetensors
-   ```
-   The dataset is `data/sentiment.json`, which is in the repository. Its sha256 is checked by preflight and recorded
-   in every run.
-4. **GPU preflight, hardware only (≈ 1 min):**
-   ```bash
-   qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke.yaml --gpu --hardware-only
-   ```
-   Must PASS: `gpu.architecture`, `gpu.capacity`, `gpu.accounting` (per-process nvidia-smi), `gpu.exclusive`,
-   `cpu.pinned` and `pcie.bandwidth`. Then rerun the estimate with the measured bandwidth (it is printed and stored
-   under `estimates.resources_measured_pcie`).
-5. **GPU preflight with the model (minutes).** One profiled step of every phase under the 8 GiB guard (setup, rollout,
-   old log-probs, forward, backward, optimizer, merge, evaluation):
-   ```bash
-   qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke.yaml --gpu
-   ```
-   `gpu.measured` PASS is the first real 8 GB evidence. It also unlocks `train` for every config with the same memory
-   signature: the smoke, final and LR=0 runs.
-   - On FAIL, do **not** start training. Read the per-phase peaks in `runs/_preflight/<run>/<UTC>_gpu/profile.json`.
-   - Change one measurable setting (for example `training.micro_batch_size`) in a new experiment file and preflight
-     that.
-   - Nothing changes batch size, sequence length, precision or DFlash on its own.
-6. **Correctness on the GPU (tiny models, minutes):**
-   ```bash
+   CUDA_VISIBLE_DEVICES="" python -m pytest -q
    python -m pytest -q tests/test_prefetch.py tests/test_backward.py tests/test_generator.py tests/test_layer_stream.py \
      tests/test_backend.py tests/test_output_head.py tests/test_weight_store.py
-   for h in H01 H02 H04 H05 H07; do qwen-grpo research run $h --execute; done
    ```
-7. **Smoke run with a crash and a resume (4 steps):**
+   The CUDA variants are the first GPU check of the current L2L code: the saved CUDA evidence predates later changes.
+3. **Hardware preflight (≈ 1 min, no model):**
    ```bash
-   QWEN_GRPO_CRASH=update@3 qwen-grpo train --config configs/experiments/qwen3_4b_smoke.yaml  # dies at update 3
-   qwen-grpo resume --run qwen3_4b_smoke                         # continues from the latest valid checkpoint
+   qwen-grpo preflight --config configs/gpu/qwen3_4b_l2l_async.yaml --gpu --hardware-only --allow-metadata-download
    ```
-   - Read `runs/qwen3_4b_smoke/report.md`.
-   - Note the step time from `training/training.json` (`step_seconds`). The final run takes about 210 × that, plus
-     evaluation.
-   - `training/memory/` holds one nvidia-smi sample file per session.
-8. **Bitwise resume on a real model:** `qwen-grpo research run H08 --execute` (Qwen3-0.6B, six crash points).
-9. **DFlash:**
-   - `qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke_dflash.yaml --gpu` checks greedy equality and the
-     budget with the drafter resident.
-   - `qwen-grpo research run H10 --execute` measures acceptance and GRPO step time with and without DFlash.
-   - Decide here whether the final run uses DFlash: `configs/experiments/qwen3_4b_final.yaml` does not. See
-     `docs/status.md`.
-10. **Budget profile (H11):** `qwen-grpo research run H11 --execute`.
-11. **Full run.** Resumable. Each script stops at the first failure:
-    ```bash
-    bash scripts/final_run.sh       # gated train of the final run + LR=0 control, test-split evaluation, report
-    ```
-12. **Verification and merge.** `final_run.sh` already ran `verify`; to run the steps by hand:
-    ```bash
-    qwen-grpo verify --run qwen3_4b_final --control qwen3_4b_final_lr0  # base / trained / merged / LR=0 on test, CIs
-    qwen-grpo merge  --run qwen3_4b_final                                 # runs/qwen3_4b_final/merged/step<N>/
-    qwen-grpo ship                                                        # evidence-derived verdict
-    qwen-grpo soup all --soup-bin <soup>                                  # optional; informational only
-    ```
-13. **Export, then stop paying.**
-    - Commit the evidence (`research/l2l/experiments/`, `research/l2l/final_*`), which is small.
-    - Copy `runs/` (checkpoints, raw nvidia-smi samples in `training/memory/`, timestamped `training.log`) to persistent
-      storage or `rsync` it home.
-    - Check the copies, then destroy the instance from the Vast console or CLI.
+   It checks the architecture, that this torch build has kernels for the GPU, per-process `nvidia-smi` accounting,
+   that the GPU is exclusive, the planned pinned allocation, and the measured H2D bandwidth.
+4. **Qwen3-0.6B, one run per backend** (downloads ~1.5 GB):
+   ```bash
+   for b in resident l2l_sync l2l_async; do
+     python scripts/run.py train --config configs/gpu/qwen3_0.6b_$b.yaml
+   done
+   python scripts/compare_runs.py qwen3_0.6b_resident qwen3_0.6b_l2l_sync   # identical, or every difference listed
+   ```
+   These are the full 100-step comparison runs.
+   - **Timing:** read `runs/<name>/training/training.json` → `timings` after the first steps. To stop early,
+     Ctrl-C; the run is `interrupted` and resumable (below).
+   - **Determinism:** bitwise identity resident vs L2L was observed on the laptop GPU. On another GPU, kernels may
+     differ between the two backends; the comparison script reports any difference.
+5. **Qwen3-4B, with a guarded profile first.** One step of every phase under the 8 GiB guard; it writes a JSON with
+   raw samples:
+   ```bash
+   python scripts/profile_run.py --config configs/gpu/qwen3_4b_l2l_async.yaml --budget-gib 8 --steps 1 --eval-n 16 \
+     --out-dir runs/_profile
+   ```
+   Go on only if its verdict is not FAIL.
+   - **On FAIL:** change one measurable setting (e.g. `training.micro_batch_size`) in a new config, and profile that.
+     Nothing is reduced automatically.
+   - **Then train:**
+     ```bash
+     python scripts/run.py train --config configs/gpu/qwen3_4b_l2l_async.yaml   # 8 GiB target, guard on
+     python scripts/run.py train --config configs/gpu/qwen3_4b_l2l_sync.yaml    # prefetching's effect
+     python scripts/run.py train --config configs/gpu/qwen3_4b_resident.yaml   # on a >= 16 GB GPU
+     ```
+6. **Resume after an interruption** (a dropped SSH session, a preemption):
+   ```bash
+   ls runs/qwen3_4b_l2l_async/checkpoints/
+   python scripts/run.py train --config runs/qwen3_4b_l2l_async/config.yaml \
+     --resume runs/qwen3_4b_l2l_async/checkpoints/step<N>
+   ```
+   - Use `tmux` or `nohup ... &` so a disconnect does not kill the run.
+   - Checkpoints are written every `evaluation.every` steps (10). Resume continues bitwise as the uninterrupted run
+     would, tested on CPU.
+7. **Evaluate and compare:**
+   ```bash
+   python scripts/run.py validate --run qwen3_4b_l2l_async
+   python scripts/final_eval.py --run qwen3_4b_l2l_async      # test split: base / adapter / streamed-merged
+   python scripts/compare_runs.py qwen3_4b_resident qwen3_4b_l2l_async
+   ```
+8. **Collect results, then stop paying:**
+   ```bash
+   tar czf results_$(date -u +%Y%m%dT%H%MZ).tgz runs/ research/l2l/experiments/
+   ```
+   - The archive holds the reports, logs with UTC timestamps, raw memory samples, checkpoints and evidence.
+   - Copy it off the machine (`scp` / `rsync`) and check the copy before destroying the instance.
 
-## Credit discipline
+## What to record from each run
 
-- Steps 4–5 exist so that an unusable instance costs minutes, not hours. Never skip them for a new instance type.
-- Keep `HF_HOME` and the pip cache on the persistent volume, so a new instance does not download again.
-- Smoke before final; one change at a time; resume instead of restarting (`qwen-grpo resume`).
-- Do not rerun lab cases whose evidence exists: `research run` skips them.
+| quantity | where |
+|---|---|
+| GPU, CUDA, driver, packages, git commit (dirty flag), config sha256, model revision, dataset sha256, host RAM | `training/training.json` → `environment`, `config_sha256` |
+| allocator allocated / peak allocated / peak reserved | `training/training.json` → `training[*]`, `memory` |
+| process / device GPU memory incl. CUDA context | `training/memory/*.json` (with `memory.guard`) |
+| rollout / old-log-prob / update time, rollout tokens, CPU RSS, weight bytes copied | `training/training.json` → `timings` |
+| phase profile, H2D bandwidth, transfer time estimate | `scripts/profile_run.py` output |
+| model quality with CIs | `evaluation/step<N>/<split>.json`, `final_eval` output |
+
+## Gated alternative
+
+`qwen-grpo train --config <yaml>` runs the same trainer, but first runs an offline preflight. For configs with
+`memory.guard` (the Qwen3-4B ones), it also requires that a GPU preflight with the same memory settings has passed:
+
+```bash
+qwen-grpo preflight --config configs/gpu/qwen3_4b_l2l_async.yaml --gpu
+```
+
+The guard itself is active in both entry points.
+
+Assignment-specific runs, kept from the earlier work, are in `configs/experiments/qwen3_4b_*` and
+`scripts/final_run.sh`: smoke, final 1024-prompt run, LR=0 control, held-out evaluation and report.
