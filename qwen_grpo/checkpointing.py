@@ -99,4 +99,6 @@ def load_training_state(checkpoint):
     path = Path(checkpoint) / STATE
     if not path.exists():
         raise SystemExit(f"{checkpoint} has no {STATE}: it holds adapter weights only and cannot resume training")
-    return torch.load(path, weights_only=True)
+    # CPU first, so a state saved on a GPU loads on any host; optimizer.load_state_dict moves each tensor to its
+    # parameter's device, and the trainer moves the pending batch to the model's device
+    return torch.load(path, map_location="cpu", weights_only=True)

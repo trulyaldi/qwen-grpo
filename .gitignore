@@ -9,6 +9,3 @@ runs/.*.lock
 runs/*
 !runs/qwen/
 
-# TRL Trainer scratch output (optimizer state, RNG); the adapters that matter are saved separately
-research/trl_reference/checkpoints/trainer_output/
-research/trl_reference/checkpoints/grad_check_output/

@@ -22,7 +22,9 @@ from scripts import run
 
 ROOT = Path(__file__).parents[1]
 QWEN = ROOT / "configs" / "qwen.yaml"
-DEFAULT = ROOT / "configs" / "default.yaml"  # historical schema (balanced B=2), kept as a record
+DEFAULT = ROOT / "configs" / "default.yaml"  # current schema since 48b2028: the successful reference run
+# The configs still in the historical schema, kept as records: they load with historical=True, never for a new run.
+HISTORICAL_CONFIGS = [ROOT / "runs" / "qwen" / "config.yaml", ROOT / "configs" / "experiments" / "grpo_1000.yaml"]
 EXPERIMENTS = ROOT / "configs" / "experiments"
 STEP90 = ROOT / "runs" / "qwen" / "checkpoints" / "step90"
 RAW = config.as_dict(config.load(QWEN))  # every key written out, current schema
@@ -162,7 +164,7 @@ def test_the_saved_config_of_the_reference_run_upgrades_to_the_reference_yaml():
 
 
 def test_new_runs_reject_the_historical_schema_with_the_offending_keys(tmp_path):
-    for path in (ROOT / "runs" / "qwen" / "config.yaml", DEFAULT, EXPERIMENTS / "grpo_clip_k3.yaml"):
+    for path in HISTORICAL_CONFIGS:
         with pytest.raises(ValueError, match="historical config schema"):
             config.load(path)
     path = write(tmp_path, lambda r: r["training"].update(batch_mode="unconstrained"))
@@ -220,12 +222,15 @@ def test_historical_batch_modes_stay_readable_and_distinct_but_cannot_be_trained
 
 
 def test_historical_configs_in_the_repository_still_load_as_records():
-    default = config.load(DEFAULT, historical=True)
-    assert (default.training.legacy_batch_mode, default.training.batch_size, default.lora.rank) == ("balanced", 2, 8)
+    for path in HISTORICAL_CONFIGS:  # records: the reference run's saved config and the 1000-sample experiment
+        rec = config.load(path, historical=True)
+        assert (rec.training.legacy_batch_mode, rec.training.batch_size, rec.lora.rank) == (None, 5, 32), path
     names = [config.load(p, historical=True).run.name for p in sorted(EXPERIMENTS.glob("*.yaml"))]
-    assert names == ["grpo_1000", "grpo_32", "grpo_clip_k3", "grpo_low_lr", "qwen3_4b"]
-    k3 = config.load(EXPERIMENTS / "grpo_clip_k3.yaml", historical=True)
+    assert names[:5] == ["grpo_1000", "grpo_32", "grpo_clip_k3", "grpo_low_lr", "qwen3_4b"]  # then the L2L experiments
+    default = config.load(DEFAULT)
+    k3 = config.load(EXPERIMENTS / "grpo_clip_k3.yaml")
     assert config.differences(config.as_dict(default), config.as_dict(k3)) == ["run.name", "training.num_iterations"]
+    assert config.differences(config.as_dict(default), config.as_dict(config.load(QWEN))) == ["run.name"]
 
 
 # --- the shuffled sampler ----------------------------------------------------------------------------------------
@@ -390,9 +395,9 @@ def test_evaluation_settings_reach_generation(tmp_path, monkeypatch):
 
 
 def test_current_configs_load_with_distinct_run_names():
-    paths = sorted((ROOT / "configs").glob("*.yaml"))
-    current = [p for p in paths if p != DEFAULT]
-    names = [config.load(p).run.name for p in current]
+    paths = sorted((ROOT / "configs").glob("*.yaml")) + sorted(EXPERIMENTS.glob("*.yaml"))
+    current = [p for p in paths if p not in HISTORICAL_CONFIGS]
+    names = [config.load(p).run.name for p in current]  # every non-record config loads in the current schema
     assert len(current) >= 2 and len(set(names)) == len(names), names
 
 

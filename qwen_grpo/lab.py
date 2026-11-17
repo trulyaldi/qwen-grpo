@@ -326,7 +326,8 @@ def check_fixture(shape, cfg):
         raise SetupError(f"missing experiment fixture {F.path(shape)} (python -m qwen_grpo.execution.fixtures)")
     meta = torch.load(F.path(shape), weights_only=True)["meta"]
     expected = {**F.metadata(), "shape": F.SHAPES[shape]}
-    if diff := sorted(k for k in expected.keys() | meta.keys() if expected.get(k) != meta.get(k)):
+    keys = (expected.keys() | meta.keys()) - {"host"}  # the CPU is recorded, not required: the reference comparison
+    if diff := sorted(k for k in keys if expected.get(k) != meta.get(k)):  # (reference_integrity) catches a change
         raise SetupError(f"fixture {shape} was built with different settings or package versions {diff}; regenerate it "
                          "deliberately and record why (bitwise tolerances assume the same versions)")
     if cfg.model.dtype != meta["dtype"]:

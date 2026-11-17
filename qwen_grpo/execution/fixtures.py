@@ -21,6 +21,7 @@ Shapes: N = B*G rows, P prompt columns, R response columns, T = P + R, V = VOCAB
 import contextlib
 import hashlib
 import importlib.metadata
+import platform
 from pathlib import Path
 
 import torch
@@ -34,6 +35,7 @@ from qwen_grpo.policy import compute_logprobs
 from qwen_grpo.training import check_grouping, grpo_update, prepare
 
 DIR = Path(__file__).resolve().parents[2] / "research" / "l2l" / "fixtures"
+SAVED_DIR = DIR  # the repository's saved fixtures (tests may redirect DIR to fixtures built for their environment)
 
 # The two tiny shapes of tests/test_qwen3_forward.py: the structural ratios of Qwen3-0.6B (GQA 2:1, attention width
 # 2H) and Qwen3-4B (GQA 4:1, attention width > H).
@@ -154,11 +156,32 @@ def path(shape):
     return DIR / f"{shape}.pt"
 
 
+def host():
+    """The CPU the fixture was computed on (CPU kernels and their reduction order can differ between CPUs)."""
+    name = platform.processor() or platform.machine()
+    try:
+        name = next(l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name"))
+    except (OSError, StopIteration):
+        pass
+    return {"cpu": name, "cpu_capability": torch.backends.cpu.get_cpu_capability()}
+
+
+def saved_environment_differences(shape):
+    """How the repository's saved fixture `shape` (SAVED_DIR: tests may redirect DIR) differs from this environment:
+    package versions and, for fixtures that record it, the CPU. [] means its bitwise reference applies."""
+    meta = torch.load(SAVED_DIR / f"{shape}.pt", weights_only=True)["meta"]
+    out = [f"{p} {meta['packages'].get(p)} (saved) vs {v}" for p, v in metadata()["packages"].items()
+           if meta["packages"].get(p) != v]
+    if "host" in meta and meta["host"] != host():
+        out.append(f"host {meta['host']} (saved) vs {host()}")
+    return out
+
+
 def save(shape):
     with isolated():
         model, fixture = build(shape)
         fixture["reference"] = reference(model, fixture)
-    fixture["meta"] = {**metadata(), "shape": SHAPES[shape]}
+    fixture["meta"] = {**metadata(), "shape": SHAPES[shape], "host": host()}
     path(shape).parent.mkdir(parents=True, exist_ok=True)
     torch.save(fixture, path(shape))
     return path(shape)

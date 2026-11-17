@@ -29,3 +29,23 @@ def outputs_untouched():
     after = snapshot()
     changed = sorted(k for k in before.keys() | after.keys() if before.get(k) != after.get(k))
     assert not changed, f"the test session changed repository outputs: {changed[:20]}"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def fixtures_for_this_environment(tmp_path_factory):
+    """The saved Ticket 00 fixtures (research/l2l/fixtures/*.pt) hold bitwise references computed with specific package
+    versions on a specific CPU. Where this environment differs, tests that only need *a* valid fixture (the lab's
+    machinery, the weight store, the fixture's coverage) use fixtures built in this session instead; the tests of the
+    saved artifact itself read research/l2l/fixtures directly and skip with the differences (tests/test_fixtures.py)."""
+    from qwen_grpo.execution import fixtures as F
+    if not any(F.saved_environment_differences(s) for s in F.SHAPES):
+        yield
+        return
+    saved_dir = F.DIR
+    F.DIR = tmp_path_factory.mktemp("fixtures")
+    for shape in F.SHAPES:
+        F.save(shape)
+    try:
+        yield
+    finally:
+        F.DIR = saved_dir

@@ -14,24 +14,34 @@ from qwen_grpo.model import lora_modules
 SHAPES = list(F.SHAPES)
 
 
+def saved(shape):
+    """The repository's saved fixture; skips (never passes) where its bitwise reference does not apply."""
+    if diff := F.saved_environment_differences(shape):
+        pytest.skip(f"the saved fixture was computed in another environment: {diff}")
+    return torch.load(F.SAVED_DIR / f"{shape}.pt", weights_only=True)
+
+
 def inputs(fixture):
     return {k: fixture[k] for k in ("state", "rollouts", "prompts", "rewards", "advantages", "old_logp")}
 
 
 @pytest.mark.parametrize("shape", SHAPES)
 def test_rebuilt_fixture_equals_the_saved_one_bitwise(shape):
-    saved = torch.load(F.path(shape), weights_only=True)
+    saved_fx = saved(shape)
     with F.isolated():
         _, rebuilt = F.build(shape)
-    assert not F.mismatches(inputs(rebuilt), inputs(saved)), F.mismatches(inputs(rebuilt), inputs(saved))[:10]
+    assert not F.mismatches(inputs(rebuilt), inputs(saved_fx)), F.mismatches(inputs(rebuilt), inputs(saved_fx))[:10]
 
 
 @pytest.mark.parametrize("shape", SHAPES)
 def test_resident_code_reproduces_the_saved_reference_bitwise(shape):
-    model, saved = F.load(shape)
+    fx = saved(shape)
     with F.isolated():
-        got = F.reference(model, saved)
-    assert not F.mismatches(got, saved["reference"]), F.mismatches(got, saved["reference"])[:10]
+        model = F.tiny_model(shape)
+    model.load_state_dict(fx["state"], strict=True)
+    with F.isolated():
+        got = F.reference(model, fx)
+    assert not F.mismatches(got, fx["reference"]), F.mismatches(got, fx["reference"])[:10]
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -57,13 +67,16 @@ def test_small_base_weight_change_is_detected_but_one_ulp_is_invisible():
     contribution is below the output's own rounding), so no downstream comparison can see it. Weight placement must
     therefore be verified on the weights themselves (digests), not only through logits and gradients."""
     name = "base_model.model.model.layers.0.self_attn.q_proj.weight"
+    model, fx = F.load("0.6b-like")
+    with F.isolated():
+        clean = F.reference(model, fx)  # the unperturbed reference in this environment
     for shift, detectable in [("ulp", False), (1e-6, True)]:
         model, saved = F.load("0.6b-like")
         w = dict(model.named_parameters())[name]
         with torch.no_grad():
             w[0, 0] = torch.nextafter(w[0, 0], torch.tensor(float("inf"))) if shift == "ulp" else w[0, 0] + shift
         with F.isolated():
-            bad = F.mismatches(F.reference(model, saved), saved["reference"])
+            bad = F.mismatches(F.reference(model, saved), clean)
         if detectable:
             assert "logits" in bad and "logp" in bad and any(k.startswith("grads.") for k in bad), bad
         else:

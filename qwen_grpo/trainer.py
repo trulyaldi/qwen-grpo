@@ -47,7 +47,7 @@ from qwen_grpo.training import (balanced_subset, check_grouping, decode, group_r
 
 ROOT = Path(__file__).resolve().parents[1]  # the git repository (provenance); outputs: runs.ROOT
 BASE_FILE = predictions_path("validation")  # saved base predictions; the final evaluation compares with them if they match
-SEED = BOOTSTRAP_SEED  # research/trl_reference imports it
+SEED = BOOTSTRAP_SEED  # kept: research/trl_reference (removed in 4424e0f) imported it
 PACKAGES = ("torch", "transformers", "peft", "datasets", "pyyaml")
 
 
