@@ -1,0 +1,46 @@
+{
+  "reference_accept": 1.0,
+  "attacks": [
+    {
+      "kind": "empty",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+    },
+    {
+      "kind": "length",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+    },
+    {
+      "kind": "repetition",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+    },
+    {
+      "kind": "sentinel",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+    },
+    {
+      "kind": "wrapped_junk",
+      "n": 1400,
+      "accepted": 0,
+      "accept_rate": 0.0
+    },
+    {
+      "kind": "answer_spray",
+      "n": 800,
+      "accepted": 0,
+      "accept_rate": 0.0
+    }
+  ],
+  "gameability": 0.0,
+  "gameable": false,
+  "threshold": 0.5,
+  "max_gameable": 0.0,
+  "sentinel": "GOLD"
+}

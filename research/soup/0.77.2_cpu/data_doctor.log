@@ -1,0 +1,47 @@
+$ soup --no-telemetry data doctor research/soup/0.77.2_cpu/data_doctor_input.jsonl --model Qwen/Qwen3-0.6B --max-length 256 --sample 200 -o research/soup/0.77.2_cpu/data_doctor.json
+exit 0
+--- stdout
+                                soup data doctor                                
+┏━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Check              ┃ Verdict ┃ Message               ┃ Evidence              ┃
+┡━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+│ chat_template      │ OK      │ tokenizer has a       │ 4168 chars            │
+│                    │         │ chat_template         │                       │
+│ template_render    │ OK      │ 0/200 rows failed to  │                       │
+│                    │         │ render through the    │                       │
+│                    │         │ chat template         │                       │
+│ generation_markers │ MINOR   │ template lacks {%     │                       │
+│                    │         │ generation %} markers │                       │
+│                    │         │ — assistant-only      │                       │
+│                    │         │ masking falls back to │                       │
+│                    │         │ a heuristic that may  │                       │
+│                    │         │ include role-prefix   │                       │
+│                    │         │ tokens in the loss    │                       │
+│ eos_in_labels      │ OK      │ 0/200 rows (0.0%)     │ eos_token_id=[151645] │
+│                    │         │ never train an        │                       │
+│                    │         │ EOS/EOT token — the   │                       │
+│                    │         │ model will not learn  │                       │
+│                    │         │ to stop generating    │                       │
+│ bos_duplication    │ OK      │ tokenizer has no      │                       │
+│                    │         │ bos_token_id          │                       │
+│ system_role        │ OK      │ no rows use a system  │                       │
+│                    │         │ message               │                       │
+│ unknown_roles      │ OK      │ 0/200 rows (0.0%)     │                       │
+│                    │         │ contain a message     │                       │
+│                    │         │ role outside          │                       │
+│                    │         │ ['assistant',         │                       │
+│                    │         │ 'function', 'system', │                       │
+│                    │         │ 'tool', 'user']       │                       │
+│ truncation_risk    │ OK      │ p95 length = 81       │ p50=61, max=92        │
+│                    │         │ tokens vs             │                       │
+│                    │         │ max_length=256; 0/200 │                       │
+│                    │         │ rows (0.0%) would be  │                       │
+│                    │         │ truncated             │                       │
+└────────────────────┴─────────┴───────────────────────┴───────────────────────┘
+╭────────── overall ───────────╮
+│ MINOR — 200/200 rows scanned │
+╰──────────────────────────────╯
+Wrote research/soup/0.77.2_cpu/data_doctor.json
+
+--- stderr
+[transformers] return_assistant_tokens_mask==True but chat template does not contain `{% generation %}` keyword.
