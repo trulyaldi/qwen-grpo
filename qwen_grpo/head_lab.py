@@ -18,7 +18,7 @@ Compared, candidate side vs full at the same parameters:
   logp.<tag>.<side>.old / .it<k>            selected log-probs [N, R]
   loss.<tag>.<side>.it<k>                   the micro-batch-accumulated GRPO loss grpo_update reports
   grads.<tag>.<side>.it<k>.<param>          every LoRA gradient
-  head_grads.<tag>.<side>.it<k>             dL/d(head input) [N, R, H], the micro-batches concatenated
+  head_grads.<tag>.<side>.it<k>             dL/d(head input) [N, R+1, H] (last column: zero), micro-batches concatenated
   hidden_grads.<tag>.<side>.it<k>.<i>       dL/d(output of decoder layer i) [N, T, H], micro-batches concatenated
                                             (per step, not per micro-batch: changed after t05_logprob_equivalence_cpu,
                                             where a fully clipped micro-batch had an exactly zero reference)

@@ -117,19 +117,28 @@ def streamed_logprobs(model, rollouts, vocab_chunk_size=None, layer_executor=Non
     """policy.compute_logprobs through explicit_forward (any layer executor, e.g. the L2L one) and the chunked head:
     log pi(o_t | q, o_<t) for the response columns -> [N, R]. Keeps autograd.
 
-    The head scores only the columns P-1 .. T-2 (the logit at column t-1 scores the token at column t), the same R
-    columns as compute_logprobs' logits_to_keep=R+1 minus its final column. head_callback(h) gets those hidden states
-    [N, R, H] (the head's input; e.g. to retain their gradient)."""
+    The head runs on exactly the columns compute_logprobs gives lm_head: the last R+1, P-1 .. T-1 (logits_to_keep=R+1),
+    of which the final one (it predicts past the sequence) is dropped afterwards. Using the same R+1 rows, not only the
+    R needed ones, keeps every matmul the same shape as the reference's: some BLAS / CPU combinations round a row
+    differently depending on the number of rows (seen on a laptop CPU: a 1e-7 relative gradient difference against
+    the resident run, absent on the development host). vocab_chunk_size None: the reference arithmetic exactly
+    (linear, then grpo.response_logprobs); C: _SelectedLogprobs over the same R+1 rows, with a dummy target for the
+    dropped column (its gradient is zero). head_callback(h) gets the head's input [N, R+1, H]."""
     ids, mask, P = rollouts["input_ids"], rollouts["attention_mask"], rollouts["prompt_len"]
     if not 1 <= P < ids.shape[1]:
         raise ValueError(f"prompt_len {P}: need at least one prompt and one response column (T = {ids.shape[1]})")
     position_ids = (mask.cumsum(dim=1) - 1).clamp(min=0)
     weight = output_head(model)
     hidden = explicit_hidden(model, ids, mask, position_ids, layer_executor, layer_callback)    # [N, T, H]
-    h = hidden[:, P - 1:-1]                                                                     # [N, R, H]
+    h = hidden[:, P - 1:]                                                                       # [N, R+1, H]
     if head_callback is not None:
         head_callback(h)
-    return selected_logprobs(h, weight, ids[:, P:], vocab_chunk_size)
+    if vocab_chunk_size is None:
+        if weight.requires_grad:
+            raise RuntimeError("the output-head weight requires grad: streamed_logprobs assumes a frozen head")
+        return response_logprobs(Fn.linear(h, weight), ids, P)                                 # [N, R]
+    targets = torch.cat([ids[:, P:], ids.new_zeros((ids.shape[0], 1))], dim=1)                 # [N, R+1]
+    return selected_logprobs(h, weight, targets, vocab_chunk_size)[:, :-1]                     # [N, R]
 
 
 def full_logits_logprobs(model, rollouts, layer_executor=None):

@@ -158,3 +158,33 @@ def test_mismatched_old_and_current_log_prob_functions_trip_the_unchanged_init_c
     raw = lambda mm, c: streamed_logprobs(mm, c, 7) + 1e-3  # a path that disagrees with the one prepare() used
     with pytest.raises(RuntimeError, match="old/current log-prob mismatch"):
         training.grpo_update(m, params, torch.optim.SGD(params.values(), lr=0.0), r, adv, old, 0.2, 0, logprobs=raw)
+
+
+def test_the_streamed_head_runs_the_same_matmul_shapes_as_compute_logprobs():
+    """Bitwise equality across machines needs identical shapes, not only identical math: some BLAS / CPU combinations
+    round a row differently depending on the number of rows (a 1e-7 gradient difference was seen on a laptop CPU when
+    the streamed head used R rows and the reference R+1). Forward and backward head matmuls are recorded and compared."""
+    from torch.utils._python_dispatch import TorchDispatchMode
+
+    class HeadShapes(TorchDispatchMode):
+        def __init__(self, V):
+            super().__init__()
+            self.V, self.shapes = V, []
+
+        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+            if func.__name__.split(".")[0] in ("mm", "addmm", "bmm", "linear", "matmul"):
+                shapes = [tuple(a.shape) for a in args if isinstance(a, torch.Tensor)]
+                if any(self.V in s for s in shapes):
+                    self.shapes.append((func.__name__, shapes))
+            return func(*args, **(kwargs or {}))
+
+    m = model()
+    r, _ = rollouts(1000, 4)
+    seen = {}
+    for name, fn in (("reference", lambda: compute_logprobs(m, r)), ("streamed", lambda: streamed_logprobs(m, r))):
+        rec = HeadShapes(1000)
+        with F.isolated(), rec:
+            fn().sum().backward()
+        seen[name] = rec.shapes
+        m.zero_grad(set_to_none=True)
+    assert seen["reference"] and seen["streamed"] == seen["reference"]

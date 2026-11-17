@@ -155,6 +155,26 @@ Before, they were compared per micro-batch. Nothing else changed: the thresholds
 `test_logprob_equivalence_compares_step_gradients_so_a_fully_clipped_micro_batch_is_not_a_zero_reference` reruns
 exactly the failing configuration. The fixed case is recorded below as `t05_logprob_equivalence_cpu_v2`.
 
+## Change: the streamed head uses the reference's matmul shapes
+
+**What was wrong.** `streamed_logprobs` ran the output head on the R columns it needs. `compute_logprobs` runs it on
+the last R+1 columns and then drops one. The arithmetic is the same, but the matmul has a different number of rows.
+- On the development host the rows came out identical either way, which is why the integrity checks passed there.
+- On the laptop CPU they did not. The L2L trainer test was off from resident by about 1e-7 in relative gradient norm
+  from step 1 on. The loss was still equal, because at iteration 0 the ratio is exactly 1.
+
+**Fix.**
+- The head now takes the same R+1 columns (`hidden[:, P−1:]`).
+- With the full head it uses the reference's own arithmetic: linear, then `grpo.response_logprobs`.
+- The chunked head runs on the same R+1 rows, with a dummy target for the dropped column (its gradient is zero).
+- `head_grads` in `logprob_equivalence` are therefore `[N, R+1, H]`, with a zero last column on every side.
+
+**Test.** `test_the_streamed_head_runs_the_same_matmul_shapes_as_compute_logprobs` records the head matmuls, forward
+and backward, and requires the same shapes as the reference. It fails on the previous code.
+
+**Caveat.** The development host could not reproduce the laptop's difference, so the fix is confirmed there only by
+the shape test. The laptop rerun is the actual confirmation.
+
 ## Not established here
 
 - **GPU peak memory and GPU time.** The local GPU is unusable with this PyTorch build. CPU allocation figures are
