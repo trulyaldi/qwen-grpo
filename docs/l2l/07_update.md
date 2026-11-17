@@ -75,7 +75,16 @@ requirement.
 
 ## Evidence
 
-See `research/l2l/experiments/t07_*`, recorded after the code commit (CPU).
+Commit `3cbd70c`, tracked tree clean, CPU. Commands: `research/l2l/experiments/ticket07_commands.log`.
+
+| run | result |
+|---|---|
+| `t07_update_equivalence_cpu` (H05) | **PASS, H05 SUPPORTED.** 6,528 comparisons, all exactly 0. Reference integrity clean, and frozen hashes unchanged on both sides |
+| `t07_update_equivalence_advantage` (fault: advantage 2 corrupted) | **FAIL as expected,** execution PASS: 5,216 of 6,528 comparisons fail |
+| CPU suite (CUDA hidden), `ticket07_tests.log` | 578 passed, 99 skipped (CUDA), 23 failed, 1 collection error. The failing set is identical to before Ticket 04, on this host |
+
+In the fault run, the iteration-0 log-probs still match, as they should: no update has happened yet. From the loss
+onward every quantity fails.
 
 ## Not established here
 

@@ -1,0 +1,550 @@
+..............s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s. [ 10%]
+s.s.s.s.s.s.s.s.s.s.s..s...s............................................ [ 20%]
+........................................................................ [ 30%]
+..F..........F.....................F.................................... [ 41%]
+......FFFF..F...s.s.s.s.s.s.s.s.s.s.s.s................................. [ 51%]
+.F.F..........................FFFF.F.FFFF......F..F......s.........s.s.s [ 61%]
+.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.s.ss.s.s.....s............... [ 72%]
+........................................................................ [ 82%]
+........................................................................ [ 92%]
+.....................s.s.sFsFs.s..s.s...ss.sss.s....                     [100%]
+==================================== ERRORS ====================================
+_________________ ERROR collecting tests/test_trl_reference.py _________________
+ImportError while importing test module '/home/trulyaldi/qwen-grpo/tests/test_trl_reference.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_trl_reference.py:18: in <module>
+    from research.trl_reference.compare_gradients import (compare, manual_gradient, manual_rollouts, make_trainer, trl_advantages,
+E   ModuleNotFoundError: No module named 'research.trl_reference'
+=================================== FAILURES ===================================
+______ test_new_runs_reject_the_historical_schema_with_the_offending_keys ______
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_new_runs_reject_the_histo0')
+
+    def test_new_runs_reject_the_historical_schema_with_the_offending_keys(tmp_path):
+        for path in (ROOT / "runs" / "qwen" / "config.yaml", DEFAULT, EXPERIMENTS / "grpo_clip_k3.yaml"):
+>           with pytest.raises(ValueError, match="historical config schema"):
+E           Failed: DID NOT RAISE ValueError
+
+tests/test_config.py:166: Failed
+_______ test_historical_configs_in_the_repository_still_load_as_records ________
+
+    def test_historical_configs_in_the_repository_still_load_as_records():
+        default = config.load(DEFAULT, historical=True)
+>       assert (default.training.legacy_batch_mode, default.training.batch_size, default.lora.rank) == ("balanced", 2, 8)
+E       AssertionError: assert (None, 5, 32) == ('balanced', 2, 8)
+E         
+E         At index 0 diff: None != 'balanced'
+E         Use -v to get more diff
+
+tests/test_config.py:224: AssertionError
+______________ test_current_configs_load_with_distinct_run_names _______________
+
+    def test_current_configs_load_with_distinct_run_names():
+        paths = sorted((ROOT / "configs").glob("*.yaml"))
+        current = [p for p in paths if p != DEFAULT]
+        names = [config.load(p).run.name for p in current]
+>       assert len(current) >= 2 and len(set(names)) == len(names), names
+E       AssertionError: ['qwen']
+E       assert (1 >= 2)
+E        +  where 1 = len([PosixPath('/home/trulyaldi/qwen-grpo/configs/qwen.yaml')])
+
+tests/test_config.py:396: AssertionError
+_________ test_rebuilt_fixture_equals_the_saved_one_bitwise[0.6b-like] _________
+
+shape = '0.6b-like'
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_rebuilt_fixture_equals_the_saved_one_bitwise(shape):
+        saved = torch.load(F.path(shape), weights_only=True)
+        with F.isolated():
+            _, rebuilt = F.build(shape)
+>       assert not F.mismatches(inputs(rebuilt), inputs(saved)), F.mismatches(inputs(rebuilt), inputs(saved))[:10]
+E       AssertionError: ['old_logp']
+E       assert not ['old_logp']
+E        +  where ['old_logp'] = <function mismatches at 0x72393dee5580>({'state': {'base_model.model.model.embed_tokens.weight': tensor([[-0.0066,  0.0273, -0.0232,  ..., -0.0118, -0.0082, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...}, {'state': {'base_model.model.model.embed_tokens.weight': tensor([[-0.0066,  0.0273, -0.0232,  ..., -0.0118, -0.0082, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...})
+E        +    where <function mismatches at 0x72393dee5580> = F.mismatches
+E        +    and   {'state': {'base_model.model.model.embed_tokens.weight': tensor([[-0.0066,  0.0273, -0.0232,  ..., -0.0118, -0.0082, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...} = inputs({'shape': '0.6b-like', 'state': {'base_model.model.model.embed_tokens.weight': tensor([[-0.0066,  0.0273, -0.0232,  .....ue,  True, False, False]]), ...}, 'prompts': tensor([[62, 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), ...})
+E        +    and   {'state': {'base_model.model.model.embed_tokens.weight': tensor([[-0.0066,  0.0273, -0.0232,  ..., -0.0118, -0.0082, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...} = inputs({'shape': '0.6b-like', 'state': {'base_model.model.model.embed_tokens.weight': tensor([[-0.0066,  0.0273, -0.0232,  .....ue,  True, False, False]]), ...}, 'prompts': tensor([[62, 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), ...})
+
+tests/test_fixtures.py:26: AssertionError
+__________ test_rebuilt_fixture_equals_the_saved_one_bitwise[4b-like] __________
+
+shape = '4b-like'
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_rebuilt_fixture_equals_the_saved_one_bitwise(shape):
+        saved = torch.load(F.path(shape), weights_only=True)
+        with F.isolated():
+            _, rebuilt = F.build(shape)
+>       assert not F.mismatches(inputs(rebuilt), inputs(saved)), F.mismatches(inputs(rebuilt), inputs(saved))[:10]
+E       AssertionError: ['old_logp']
+E       assert not ['old_logp']
+E        +  where ['old_logp'] = <function mismatches at 0x72393dee5580>({'state': {'base_model.model.model.embed_tokens.weight': tensor([[ 0.0275,  0.0111, -0.0186,  ..., -0.0109, -0.0029, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...}, {'state': {'base_model.model.model.embed_tokens.weight': tensor([[ 0.0275,  0.0111, -0.0186,  ..., -0.0109, -0.0029, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...})
+E        +    where <function mismatches at 0x72393dee5580> = F.mismatches
+E        +    and   {'state': {'base_model.model.model.embed_tokens.weight': tensor([[ 0.0275,  0.0111, -0.0186,  ..., -0.0109, -0.0029, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...} = inputs({'shape': '4b-like', 'state': {'base_model.model.model.embed_tokens.weight': tensor([[ 0.0275,  0.0111, -0.0186,  ...,...ue,  True, False, False]]), ...}, 'prompts': tensor([[62, 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), ...})
+E        +    and   {'state': {'base_model.model.model.embed_tokens.weight': tensor([[ 0.0275,  0.0111, -0.0186,  ..., -0.0109, -0.0029, -... 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), 'rewards': tensor([[1., 0., 0.],\n        [0., 1., 1.]]), ...} = inputs({'shape': '4b-like', 'state': {'base_model.model.model.embed_tokens.weight': tensor([[ 0.0275,  0.0111, -0.0186,  ...,...ue,  True, False, False]]), ...}, 'prompts': tensor([[62, 18,  4, 61, 33, 44],\n        [ 2,  2,  2, 36, 56, 21]]), ...})
+
+tests/test_fixtures.py:26: AssertionError
+_____ test_resident_code_reproduces_the_saved_reference_bitwise[0.6b-like] _____
+
+shape = '0.6b-like'
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_resident_code_reproduces_the_saved_reference_bitwise(shape):
+        model, saved = F.load(shape)
+        with F.isolated():
+            got = F.reference(model, saved)
+>       assert not F.mismatches(got, saved["reference"]), F.mismatches(got, saved["reference"])[:10]
+E       AssertionError: ['logits', 'logp', 'loss', 'grads.base_model.model.model.layers.2.self_attn.q_proj.lora_A.default.weight', 'grads.base...ttn.q_proj.lora_B.default.weight', 'grads.base_model.model.model.layers.2.self_attn.v_proj.lora_A.default.weight', ...]
+E       assert not ['logits', 'logp', 'loss', 'grads.base_model.model.model.layers.2.self_attn.q_proj.lora_A.default.weight', 'grads.base...ttn.q_proj.lora_B.default.weight', 'grads.base_model.model.model.layers.2.self_attn.v_proj.lora_A.default.weight', ...]
+E        +  where ['logits', 'logp', 'loss', 'grads.base_model.model.model.layers.2.self_attn.q_proj.lora_A.default.weight', 'grads.base...ttn.q_proj.lora_B.default.weight', 'grads.base_model.model.model.layers.2.self_attn.v_proj.lora_A.default.weight', ...] = <function mismatches at 0x72393dee5580>({'logits': tensor([[[ 0.1929, -0.0169,  0.0829,  ..., -0.0835,  0.0600,  0.1273],\n         [ 0.1787, -0.0455,  0.0667,...e-03, -2.1840e-03, -1.2481e-03,  1.6452e-03, -3.3028e-04,\n          1.8896e-03, -5.1445e-04, -1.0495e-03]]), ...}, ...}, {'logits': tensor([[[ 0.1929, -0.0169,  0.0829,  ..., -0.0835,  0.0600,  0.1273],\n         [ 0.1787, -0.0455,  0.0667,...e-03, -2.1840e-03, -1.2481e-03,  1.6452e-03, -3.3028e-04,\n          1.8896e-03, -5.1445e-04, -1.0495e-03]]), ...}, ...})
+E        +    where <function mismatches at 0x72393dee5580> = F.mismatches
+
+tests/test_fixtures.py:34: AssertionError
+______ test_resident_code_reproduces_the_saved_reference_bitwise[4b-like] ______
+
+shape = '4b-like'
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_resident_code_reproduces_the_saved_reference_bitwise(shape):
+        model, saved = F.load(shape)
+        with F.isolated():
+            got = F.reference(model, saved)
+>       assert not F.mismatches(got, saved["reference"]), F.mismatches(got, saved["reference"])[:10]
+E       AssertionError: ['logits', 'logp', 'loss', 'grads.base_model.model.model.layers.4.self_attn.q_proj.lora_A.default.weight', 'grads.base...ttn.q_proj.lora_B.default.weight', 'grads.base_model.model.model.layers.4.self_attn.v_proj.lora_A.default.weight', ...]
+E       assert not ['logits', 'logp', 'loss', 'grads.base_model.model.model.layers.4.self_attn.q_proj.lora_A.default.weight', 'grads.base...ttn.q_proj.lora_B.default.weight', 'grads.base_model.model.model.layers.4.self_attn.v_proj.lora_A.default.weight', ...]
+E        +  where ['logits', 'logp', 'loss', 'grads.base_model.model.model.layers.4.self_attn.q_proj.lora_A.default.weight', 'grads.base...ttn.q_proj.lora_B.default.weight', 'grads.base_model.model.model.layers.4.self_attn.v_proj.lora_A.default.weight', ...] = <function mismatches at 0x72393dee5580>({'logits': tensor([[[ 2.5772e-01,  1.3225e-01,  1.6443e-01,  ...,  3.6864e-02,\n          -1.4506e-01, -3.9721e-02],\n  ...e-03,  2.2907e-04, -1.5716e-03, -1.2282e-03,  2.3119e-04,\n         -1.8517e-03,  1.8225e-03,  3.4282e-04]]), ...}, ...}, {'logits': tensor([[[ 2.5772e-01,  1.3225e-01,  1.6443e-01,  ...,  3.6864e-02,\n          -1.4506e-01, -3.9721e-02],\n  ...e-03,  2.2907e-04, -1.5716e-03, -1.2282e-03,  2.3119e-04,\n         -1.8517e-03,  1.8225e-03,  3.4282e-04]]), ...}, ...})
+E        +    where <function mismatches at 0x72393dee5580> = F.mismatches
+
+tests/test_fixtures.py:34: AssertionError
+______ test_small_base_weight_change_is_detected_but_one_ulp_is_invisible ______
+
+    def test_small_base_weight_change_is_detected_but_one_ulp_is_invisible():
+        """Controlled fault: one frozen layer-0 weight (0.0046) shifted by 1e-6 must break the bitwise reference.
+    
+        Limit of output comparisons: a one-ulp shift of the same weight (~5e-10) changes no element of q_proj's output (its
+        contribution is below the output's own rounding), so no downstream comparison can see it. Weight placement must
+        therefore be verified on the weights themselves (digests), not only through logits and gradients."""
+        name = "base_model.model.model.layers.0.self_attn.q_proj.weight"
+        for shift, detectable in [("ulp", False), (1e-6, True)]:
+            model, saved = F.load("0.6b-like")
+            w = dict(model.named_parameters())[name]
+            with torch.no_grad():
+                w[0, 0] = torch.nextafter(w[0, 0], torch.tensor(float("inf"))) if shift == "ulp" else w[0, 0] + shift
+            with F.isolated():
+                bad = F.mismatches(F.reference(model, saved), saved["reference"])
+            if detectable:
+                assert "logits" in bad and "logp" in bad and any(k.startswith("grads.") for k in bad), bad
+            else:
+>               assert bad == [], bad
+E               AssertionError: ['logits', 'logp', 'loss', 'grads.base_model.model.model.layers.2.self_attn.q_proj.lora_A.default.weight', 'grads.base...ttn.q_proj.lora_B.default.weight', 'grads.base_model.model.model.layers.2.self_attn.v_proj.lora_A.default.weight', ...]
+E               assert ['logits', 'l....weight', ...] == []
+E                 
+E                 Left contains 88 more items, first extra item: 'logits'
+E                 Use -v to get more diff
+
+tests/test_fixtures.py:70: AssertionError
+_________ test_saved_log_and_checkpoint_configs_are_the_reference_yaml _________
+
+    def test_saved_log_and_checkpoint_configs_are_the_reference_yaml():
+        """The training log's yaml_config and every checkpoint's training state normalize to configs/qwen.yaml."""
+        log = json.loads((RUN / "training" / "training.json").read_text())
+        assert config.normalized(log["yaml_config"]) == config.as_dict(QWEN)
+        for ckpt in CHECKPOINTS[1:]:
+>           state = checkpointing.load_training_state(ckpt)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_historical.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+qwen_grpo/checkpointing.py:102: in load_training_state
+    return torch.load(path, weights_only=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:1605: in load
+    return _load(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2241: in _load
+    result = unpickler.load()
+             ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/_weights_only_unpickler.py:535: in load
+    self.append(self.persistent_load(pid))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:2205: in persistent_load
+    typed_storage = load_tensor(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2167: in load_tensor
+    wrap_storage = restore_location(storage, location)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:734: in default_restore_location
+    result = fn(storage, location)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:667: in _deserialize
+    device = _validate_device(location, backend_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+location = 'cuda:0', backend_name = 'cuda'
+
+    def _validate_device(location, backend_name):
+        """
+        Check whether the device index of specified backend is valid
+    
+        In case of privateuse1 backend, your must first register a device_module for
+        privateuse1 using torch._register_device_module. Implement the following
+        methods in device_module like cuda: device_module._utils._get_device_index(location, True),
+        device_module.device_count().
+    
+        Args:
+            location: string of device
+            backend_name: the backend name or the name of privateuse1, which can be renamed
+    
+        Returns:
+            device_index: int
+        """
+        if not hasattr(torch, backend_name):
+            raise RuntimeError(
+                f"The {backend_name.upper()} device module is not registered. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+        device_module = getattr(torch, backend_name)
+        if hasattr(device_module, "_utils") and hasattr(
+            device_module._utils, "_get_device_index"
+        ):
+            device_index = device_module._utils._get_device_index(location, True)
+            device = torch.device(backend_name, device_index)
+        else:
+            device = torch.device(location)
+            device_index = device.index if device.index else 0
+        if hasattr(device_module, "is_available") and not device_module.is_available():
+>           raise RuntimeError(
+                f"Attempting to deserialize object on a {backend_name.upper()} "
+                f"device but torch.{backend_name}.is_available() is False. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+E           RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available() is False. If you are running on a CPU-only machine, please use torch.load with map_location=torch.device('cpu') to map your storages to the CPU.
+
+.venv/lib/python3.12/site-packages/torch/serialization.py:634: RuntimeError
+______________ test_reference_run_resumes_under_the_current_code _______________
+
+    def test_reference_run_resumes_under_the_current_code():
+        """check_resume accepts the final checkpoint with the run's saved (historical) config and with configs/qwen.yaml, and
+        refuses an earlier one only because later checkpoints exist (the config comparison comes first)."""
+        saved = config.load(RUN / "config.yaml", historical=True)
+        last = CHECKPOINTS[-1]
+>       state = checkpointing.load_training_state(last)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_historical.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+qwen_grpo/checkpointing.py:102: in load_training_state
+    return torch.load(path, weights_only=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:1605: in load
+    return _load(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2241: in _load
+    result = unpickler.load()
+             ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/_weights_only_unpickler.py:535: in load
+    self.append(self.persistent_load(pid))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:2205: in persistent_load
+    typed_storage = load_tensor(
+.venv/lib/python3.12/site-packages/torch/serialization.py:2167: in load_tensor
+    wrap_storage = restore_location(storage, location)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:734: in default_restore_location
+    result = fn(storage, location)
+             ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/torch/serialization.py:667: in _deserialize
+    device = _validate_device(location, backend_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+location = 'cuda:0', backend_name = 'cuda'
+
+    def _validate_device(location, backend_name):
+        """
+        Check whether the device index of specified backend is valid
+    
+        In case of privateuse1 backend, your must first register a device_module for
+        privateuse1 using torch._register_device_module. Implement the following
+        methods in device_module like cuda: device_module._utils._get_device_index(location, True),
+        device_module.device_count().
+    
+        Args:
+            location: string of device
+            backend_name: the backend name or the name of privateuse1, which can be renamed
+    
+        Returns:
+            device_index: int
+        """
+        if not hasattr(torch, backend_name):
+            raise RuntimeError(
+                f"The {backend_name.upper()} device module is not registered. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+        device_module = getattr(torch, backend_name)
+        if hasattr(device_module, "_utils") and hasattr(
+            device_module._utils, "_get_device_index"
+        ):
+            device_index = device_module._utils._get_device_index(location, True)
+            device = torch.device(backend_name, device_index)
+        else:
+            device = torch.device(location)
+            device_index = device.index if device.index else 0
+        if hasattr(device_module, "is_available") and not device_module.is_available():
+>           raise RuntimeError(
+                f"Attempting to deserialize object on a {backend_name.upper()} "
+                f"device but torch.{backend_name}.is_available() is False. "
+                "If you are running on a CPU-only machine, "
+                "please use torch.load with map_location=torch.device('cpu') "
+                "to map your storages to the CPU."
+            )
+E           RuntimeError: Attempting to deserialize object on a CUDA device but torch.cuda.is_available() is False. If you are running on a CPU-only machine, please use torch.load with map_location=torch.device('cpu') to map your storages to the CPU.
+
+.venv/lib/python3.12/site-packages/torch/serialization.py:634: RuntimeError
+_______________ test_resident_vs_resident_passes_on_real_tensors _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_resident_vs_resident_pass0')
+
+    def test_resident_vs_resident_passes_on_real_tensors(tmp_path):
+        r = lab.run("fixture_equivalence", RESIDENT, "ok", root=tmp_path)
+>       assert r["status"] == "PASS" and r["reasons"] == [] and not r["fault_injection"]
+E       AssertionError: assert ('FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL)
+
+tests/test_lab.py:93: AssertionError
+_ test_a_controlled_perturbation_makes_the_same_experiment_fail_and_is_recorded _
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_a_controlled_perturbation0')
+
+    def test_a_controlled_perturbation_makes_the_same_experiment_fail_and_is_recorded(tmp_path):
+        r = lab.run("fixture_equivalence", RESIDENT, "fault", root=tmp_path, perturbation="logits=1e-6")
+        assert r["status"] == "FAIL" and r["fault_injection"]
+>       failed = [c["name"] for c in r["comparisons"] if not c["pass"]]
+                                     ^^^^^^^^^^^^^^^^
+E       KeyError: 'comparisons'
+
+tests/test_lab.py:110: KeyError
+_________ test_perturbing_one_lora_gradient_fails_that_parameter_only __________
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_perturbing_one_lora_gradi0')
+
+    def test_perturbing_one_lora_gradient_fails_that_parameter_only(tmp_path):
+        name = "grads.base_model.model.model.layers.2.self_attn.q_proj.lora_B.default.weight"
+        r = lab.run("fixture_equivalence", RESIDENT, "grad", root=tmp_path, perturbation=f"{name}=1e-4")
+        assert r["status"] == "FAIL"
+>       assert [(c["fixture"], c["name"]) for c in r["comparisons"] if not c["pass"]] == [("0.6b-like", name)]
+                                                   ^^^^^^^^^^^^^^^^
+E       KeyError: 'comparisons'
+
+tests/test_lab.py:119: KeyError
+_______________ test_a_perturbation_that_rounds_away_is_refused ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_a_perturbation_that_round0')
+
+    def test_a_perturbation_that_rounds_away_is_refused(tmp_path):
+        r = lab.run("fixture_equivalence", RESIDENT, "tiny", root=tmp_path, perturbation="logits=1e-12")
+>       assert r["status"] == "FAIL" and "not representable" in r["reasons"][0]
+E       assert ('FAIL' == 'FAIL'
+E         
+E           FAIL and 'not representable' in "setup: fixture 0.6b-like was built with different settings or package versions ['packages']; regenerate it deliberately and record why (bitwise tolerances assume the same versions)")
+
+tests/test_lab.py:124: AssertionError
+_______________ test_explicitly_blocked_candidate_inside_a_case ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_explicitly_blocked_candid0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x723900d0f170>
+
+    def test_explicitly_blocked_candidate_inside_a_case(tmp_path, monkeypatch):
+        def refuse(backend, shape):
+            raise lab.Blocked("candidate needs a GPU this host does not have")
+        monkeypatch.setattr(lab, "execute", refuse)
+        r = lab.run("fixture_equivalence", RESIDENT, "b", root=tmp_path)
+>       assert r["status"] == "BLOCKED" and r["reasons"] == ["candidate needs a GPU this host does not have"]
+E       AssertionError: assert ('FAIL' == 'BLOCKED'
+E         
+E         - BLOCKED
+E         + FAIL)
+
+tests/test_lab.py:137: AssertionError
+____ test_fixture_built_with_other_settings_or_config_dtype_mismatch_fails _____
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_fixture_built_with_other_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72390094da60>
+
+    def test_fixture_built_with_other_settings_or_config_dtype_mismatch_fails(tmp_path, monkeypatch):
+        monkeypatch.setattr(F, "LR", 1e-3)                                       # code no longer matches the saved fixture
+        r = lab.run("fixture_equivalence", RESIDENT, "lr", root=tmp_path)
+        assert r["status"] == "FAIL" and "different settings" in r["reasons"][0] and "'lr'" in r["reasons"][0]
+        monkeypatch.undo()
+        bf16 = tmp_path / "bf16.yaml"
+        bf16.write_text(f"extends: {RESIDENT}\nrun: {{name: bf16}}\nmodel: {{dtype: bfloat16}}\n")
+        r = lab.run("fixture_equivalence", bf16, "dtype", root=tmp_path)
+>       assert r["status"] == "FAIL" and "does not match fixture dtype" in r["reasons"][0]
+E       assert ('FAIL' == 'FAIL'
+E         
+E           FAIL and 'does not match fixture dtype' in "setup: fixture 0.6b-like was built with different settings or package versions ['packages']; regenerate it deliberately and record why (bitwise tolerances assume the same versions)")
+
+tests/test_lab.py:154: AssertionError
+______ test_results_are_never_overwritten_and_report_rechecks_the_status _______
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_results_are_never_overwri0')
+
+    def test_results_are_never_overwritten_and_report_rechecks_the_status(tmp_path):
+        lab.run("fixture_equivalence", RESIDENT, "once", root=tmp_path)
+        with pytest.raises(SystemExit, match="never overwritten"):
+            lab.run("fixture_equivalence", RESIDENT, "once", root=tmp_path)
+>       assert "Status: PASS" in lab.report("once", root=tmp_path)
+E       assert 'Status: PASS' in "# once: fixture_equivalence (correctness)\n\n**Status: FAIL** (execution FAIL; hypothesis -: NOT_EVALUATED, no hypoth....dtype', 'execution']; backend `resident`\n- input sha256 `cb7569af732767ae`, tolerances sha256 `35d003c20a022f64`\n\n"
+E        +  where "# once: fixture_equivalence (correctness)\n\n**Status: FAIL** (execution FAIL; hypothesis -: NOT_EVALUATED, no hypoth....dtype', 'execution']; backend `resident`\n- input sha256 `cb7569af732767ae`, tolerances sha256 `35d003c20a022f64`\n\n" = <function report at 0x72393df3dd00>('once', root=PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_results_are_never_overwri0'))
+E        +    where <function report at 0x72393df3dd00> = lab.report
+
+tests/test_lab.py:161: AssertionError
+__________ test_timing_case_records_repeated_trials_with_uncertainty ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_timing_case_records_repea0')
+
+    def test_timing_case_records_repeated_trials_with_uncertainty(tmp_path):
+        r = lab.run("fixture_timing", RESIDENT, "t", root=tmp_path, trials=6, warmup=1)
+>       assert r["status"] == "PASS" and r["kind"] == "performance"
+E       AssertionError: assert ('FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL)
+
+tests/test_lab.py:172: AssertionError
+________________________ test_cli_dispatches_to_the_lab ________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_cli_dispatches_to_the_lab0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x723900eedac0>
+
+    def test_cli_dispatches_to_the_lab(tmp_path, monkeypatch):
+        monkeypatch.setattr(lab, "RESULTS", tmp_path)
+        r = l2l_lab.main(["run", "--case", "fixture_equivalence", "--config", str(RESIDENT), "--name", "cli"])
+>       assert r["status"] == "PASS" and (tmp_path / "cli" / "result.json").exists()
+E       AssertionError: assert ('FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL)
+
+tests/test_lab.py:183: AssertionError
+----------------------------- Captured stdout call -----------------------------
+# cli: fixture_equivalence (correctness)
+
+**Status: FAIL** (execution FAIL; hypothesis -: NOT_EVALUATED, no hypothesis declared for this run)
+
+- setup: fixture 0.6b-like was built with different settings or package versions ['packages']; regenerate it deliberately and record why (bitwise tolerances assume the same versions)
+- no comparisons were produced
+- reference integrity was not checked
+
+- commit `3cbd70c20ff04894d6e88479c7d7142e50b1517b` (tracked tree dirty: False), torch 2.14.1, transformers 4.57.6, peft 0.21.3, GPU None
+- config `/home/trulyaldi/qwen-grpo/research/l2l/configs/resident.yaml` sha256 `bbd460751d39cdb7`; fields used: ['model.dtype', 'execution']; backend `resident`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `35d003c20a022f64`
+
+
+_________ test_new_results_record_both_fields_and_report_rechecks_them _________
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_new_results_record_both_f0')
+
+    def test_new_results_record_both_fields_and_report_rechecks_them(tmp_path):
+        r = lab.run("fixture_equivalence", RESIDENT, "s2", root=tmp_path)
+>       assert (r["schema"], r["execution_status"], r["hypothesis_result"]) == (2, "PASS", "NOT_EVALUATED")
+E       AssertionError: assert (2, 'FAIL', 'NOT_EVALUATED') == (2, 'PASS', 'NOT_EVALUATED')
+E         
+E         At index 1 diff: 'FAIL' != 'PASS'
+E         Use -v to get more diff
+
+tests/test_lab.py:232: AssertionError
+___ test_store_equivalence_passes_bitwise_and_a_perturbed_weight_fails_alone ___
+
+tmp_path = PosixPath('/tmp/pytest-of-trulyaldi/pytest-28/test_store_equivalence_passes_0')
+
+    def test_store_equivalence_passes_bitwise_and_a_perturbed_weight_fails_alone(tmp_path):
+        r = lab.run("store_equivalence", pageable(tmp_path), "ok", root=tmp_path)
+>       assert (r["status"], r["execution_status"]) == ("PASS", "PASS")
+E       AssertionError: assert ('FAIL', 'FAIL') == ('PASS', 'PASS')
+E         
+E         At index 0 diff: 'FAIL' != 'PASS'
+E         Use -v to get more diff
+
+tests/test_lab.py:277: AssertionError
+_ test_store_backed_model_reproduces_the_saved_reference_bitwise[0.6b-like-pageable] _
+
+shape = '0.6b-like', storage = 'pageable'
+stores = [<qwen_grpo.execution.weight_store.WeightStore object at 0x7238d0b6fa40>]
+
+    @pytest.mark.parametrize("storage", STORAGES)
+    @pytest.mark.parametrize("shape", list(F.SHAPES))
+    def test_store_backed_model_reproduces_the_saved_reference_bitwise(shape, storage, stores):
+        model, saved = F.load(shape)
+        s = build(model, storage, stores)
+        for i, sl in enumerate(s.slabs):
+            for e in sl.entries:
+                key = next(k for k in saved["state"] if k.endswith(f"layers.{i}.{e.name}"))
+                assert torch.equal(s.views(i)[e.name], saved["state"][key])
+        with F.isolated():
+>           assert F.mismatches(F.reference(model, saved), saved["reference"]) == []
+E           AssertionError: assert ['logits', 'l....weight', ...] == []
+E             
+E             Left contains 88 more items, first extra item: 'logits'
+E             Use -v to get more diff
+
+tests/test_weight_store.py:96: AssertionError
+_ test_store_backed_model_reproduces_the_saved_reference_bitwise[4b-like-pageable] _
+
+shape = '4b-like', storage = 'pageable'
+stores = [<qwen_grpo.execution.weight_store.WeightStore object at 0x723938209c10>]
+
+    @pytest.mark.parametrize("storage", STORAGES)
+    @pytest.mark.parametrize("shape", list(F.SHAPES))
+    def test_store_backed_model_reproduces_the_saved_reference_bitwise(shape, storage, stores):
+        model, saved = F.load(shape)
+        s = build(model, storage, stores)
+        for i, sl in enumerate(s.slabs):
+            for e in sl.entries:
+                key = next(k for k in saved["state"] if k.endswith(f"layers.{i}.{e.name}"))
+                assert torch.equal(s.views(i)[e.name], saved["state"][key])
+        with F.isolated():
+>           assert F.mismatches(F.reference(model, saved), saved["reference"]) == []
+E           AssertionError: assert ['logits', 'l....weight', ...] == []
+E             
+E             Left contains 97 more items, first extra item: 'logits'
+E             Use -v to get more diff
+
+tests/test_weight_store.py:96: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_config.py::test_new_runs_reject_the_historical_schema_with_the_offending_keys
+FAILED tests/test_config.py::test_historical_configs_in_the_repository_still_load_as_records
+FAILED tests/test_config.py::test_current_configs_load_with_distinct_run_names
+FAILED tests/test_fixtures.py::test_rebuilt_fixture_equals_the_saved_one_bitwise[0.6b-like]
+FAILED tests/test_fixtures.py::test_rebuilt_fixture_equals_the_saved_one_bitwise[4b-like]
+FAILED tests/test_fixtures.py::test_resident_code_reproduces_the_saved_reference_bitwise[0.6b-like]
+FAILED tests/test_fixtures.py::test_resident_code_reproduces_the_saved_reference_bitwise[4b-like]
+FAILED tests/test_fixtures.py::test_small_base_weight_change_is_detected_but_one_ulp_is_invisible
+FAILED tests/test_historical.py::test_saved_log_and_checkpoint_configs_are_the_reference_yaml
+FAILED tests/test_historical.py::test_reference_run_resumes_under_the_current_code
+FAILED tests/test_lab.py::test_resident_vs_resident_passes_on_real_tensors - ...
+FAILED tests/test_lab.py::test_a_controlled_perturbation_makes_the_same_experiment_fail_and_is_recorded
+FAILED tests/test_lab.py::test_perturbing_one_lora_gradient_fails_that_parameter_only
+FAILED tests/test_lab.py::test_a_perturbation_that_rounds_away_is_refused - a...
+FAILED tests/test_lab.py::test_explicitly_blocked_candidate_inside_a_case - A...
+FAILED tests/test_lab.py::test_fixture_built_with_other_settings_or_config_dtype_mismatch_fails
+FAILED tests/test_lab.py::test_results_are_never_overwritten_and_report_rechecks_the_status
+FAILED tests/test_lab.py::test_timing_case_records_repeated_trials_with_uncertainty
+FAILED tests/test_lab.py::test_cli_dispatches_to_the_lab - AssertionError: as...
+FAILED tests/test_lab.py::test_new_results_record_both_fields_and_report_rechecks_them
+FAILED tests/test_lab.py::test_store_equivalence_passes_bitwise_and_a_perturbed_weight_fails_alone
+FAILED tests/test_weight_store.py::test_store_backed_model_reproduces_the_saved_reference_bitwise[0.6b-like-pageable]
+FAILED tests/test_weight_store.py::test_store_backed_model_reproduces_the_saved_reference_bitwise[4b-like-pageable]
+ERROR tests/test_trl_reference.py
+23 failed, 578 passed, 99 skipped, 1 error in 298.09s (0:04:58)

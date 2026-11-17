@@ -96,8 +96,8 @@ H05:
     gradients, iteration-0 init_diff 0, Parameter identities kept, tokens clipped after iteration 0 (power).
     NOT_SUPPORTED if any comparison fails.
   tickets: ["07"]
-  status: untested
-  evidence: []
+  status: SUPPORTED  # CPU only, tiny random models; trainer integration checked bitwise on CPU (tests/test_backend.py); CUDA not yet run
+  evidence: [t07_update_equivalence_cpu]
 H06:
   statement: Double-buffered asynchronous prefetching reduces execution time without changing numerical results.
   kind: performance  # with a correctness precondition: every equivalence test still passes under l2l_async
