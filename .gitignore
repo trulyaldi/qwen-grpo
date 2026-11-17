@@ -9,3 +9,7 @@ runs/.*.lock
 runs/*
 !runs/qwen/
 
+kaggle/build/
+kaggle/outputs/
+kaggle/submissions.jsonl
+kaggle_working/
