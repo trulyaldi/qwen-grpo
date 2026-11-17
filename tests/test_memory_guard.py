@@ -70,3 +70,14 @@ def test_training_log_lines_are_timestamped(sandbox, tmp_path):  # noqa: F811
     trainer.train(make_cfg(tmp_path), device="cpu")
     lines = (runs.training_dir("tiny") / "training.log").read_text().splitlines()
     assert lines and all(line[:4].isdigit() and line[10] == "T" and line[26] == "Z" for line in lines), lines[:3]
+
+
+def test_a_guard_that_cannot_start_marks_the_run_failed(sandbox, tmp_path, monkeypatch):  # noqa: F811
+    sandbox("broken")
+
+    def broken(cfg, device):
+        raise RuntimeError("CUDA error: no kernel image is available for execution on the device")
+    monkeypatch.setattr(trainer, "memory_guard", broken)
+    with pytest.raises(RuntimeError, match="no kernel image"):
+        trainer.train(make_cfg(tmp_path), device="cpu")
+    assert runs.manifest("tiny")["status"] == "failed"  # not left as "running"

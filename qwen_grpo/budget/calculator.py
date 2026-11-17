@@ -218,8 +218,7 @@ def validate(cfg: dict, schema: dict = SCHEMA, path: str = "") -> dict:
             raise ValueError(f"{sec}.{key}: {cfg[sec][key]!r} not in {allowed}")
     if path == "":
         if cfg["dflash"]["enabled"]:
-            raise ValueError("dflash.enabled: the calculator does not model DFlash rollouts (only the drafter's weights, "
-                             "via dflash.estimate)")
+            raise ValueError("dflash.enabled: DFlash is not implemented; only dflash.estimate is available")
         g = cfg["grpo"]
         if min(g["prompt_batch_size"], g["group_size"], g["rollout_batch_size"], g["micro_batch_size"],
                g["prompt_tokens"], g["generation_tokens"], g["num_iterations"]) < 1:

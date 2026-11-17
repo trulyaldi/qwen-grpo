@@ -243,8 +243,9 @@ def train(cfg: Config, resume=None, device="cuda"):
             raise SystemExit(f"run {name!r} has no valid resumable checkpoint (rejected: {rejected})")
     with training_lock(runs.lock_path(name)):
         state = start(cfg, resume)
-        guard = memory_guard(cfg, device)
+        guard = None
         try:
+            guard = memory_guard(cfg, device)  # inside: a CUDA error here marks the run failed, not "running"
             with tee(runs.training_dir(name) / "training.log"), guard or nullcontext():
                 result = _train(cfg, resume, state, device)
         except BaseException as e:
