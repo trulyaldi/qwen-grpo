@@ -40,6 +40,7 @@ from qwen_grpo.execution.qwen3_forward import explicit_logprobs
 from qwen_grpo.grpo import grpo_loss
 from qwen_grpo import store_lab as store_cases  # Ticket 02 cases; store_lab reads lab at call time
 from qwen_grpo import forward_lab as forward_cases  # Ticket 03
+from qwen_grpo import backward_lab as backward_cases  # Ticket 04
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
@@ -421,6 +422,14 @@ def needs_forward(cfg):
     return reasons
 
 
+def needs_l2l(cfg, case):
+    """Blocked reasons of a case that runs l2l_sync on its --device (default CPU; a CUDA device is checked in the case)."""
+    reasons = needs_store(cfg)
+    if cfg.execution.backend != "l2l_sync":
+        reasons.append(f"{case} tests the l2l_sync backend, not {cfg.execution.backend!r}")
+    return reasons
+
+
 @dataclass(frozen=True)
 class Case:
     kind: str
@@ -439,6 +448,8 @@ CASES = {
                         ("model.name", "model.dtype", "lora", "execution"), needs_store),
     "forward_equivalence": Case("correctness", lambda *a, **k: forward_cases.forward_equivalence(*a, **k),
                                 ("model.dtype", "execution"), needs_forward),
+    "gradient_equivalence": Case("correctness", lambda *a, **k: backward_cases.gradient_equivalence(*a, **k),
+                                 ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "gradient_equivalence")),
     "pinned_transfer": Case("performance", lambda *a, **k: store_cases.pinned_transfer(*a, **k), ("execution",),
                             needs_store),
 }

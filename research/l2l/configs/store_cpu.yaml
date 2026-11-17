@@ -1,0 +1,7 @@
+# L2L lab, Ticket 04: synchronous L2L on CPU buffers with a pageable store (gradient_equivalence --device cpu; a
+# pinned store needs a usable CUDA device).
+extends: store.yaml
+run:
+  name: l2l_lab_store_cpu
+execution:
+  weight_storage: pageable

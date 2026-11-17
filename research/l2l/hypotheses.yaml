@@ -25,6 +25,19 @@ H01:
 H02:
   statement: Checkpointed L2L backward produces the same LoRA gradients as resident autograd.
   kind: correctness
+  criterion: >-
+    Written before the Ticket 04 acceptance run (after a disclosed CPU pilot; see docs/l2l/04_checkpointed_backward.md).
+    Case gradient_equivalence: on the same device, with the same weights and inputs, the GRPO loss of the fixture
+    rollouts (two micro-batches, one per prompt group) is back-propagated through the checkpointed L2L executor and
+    through the resident explicit forward. Every LoRA parameter's .grad after the first micro-batch and after the
+    second was accumulated, every available dL/d(decoder-layer output), the loss and the logits agree within
+    research/l2l/tolerances.yaml (gradient_equivalence: 0 for every quantity and dtype); every reference gradient is
+    nonzero. Grid: both fixture shapes x eager/sdpa x fp32/bf16 x LoRA (every projection) on the final layer, the last
+    two, a middle one, the first and last, and several distributed layers x 1 or 2 weight buffers. Reference integrity:
+    explicit resident logits equal HF bitwise, and the resident gradients are bitwise repeatable. Execution
+    requirements: no autograd tensor saved by the forward lies in a weight buffer, backward reloads exactly the layers
+    from the first adapted one upward, LoRA Parameter and optimizer identities and the store are unchanged.
+    NOT_SUPPORTED if any comparison exceeds its threshold or a candidate gradient is missing.
   tickets: ["04"]
   status: untested
   evidence: []

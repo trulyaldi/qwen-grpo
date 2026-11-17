@@ -16,8 +16,8 @@ Buffer reuse is safe because everything runs on one CUDA stream: the copy into b
 queued after layer i's kernels, and copy_to synchronizes after each copy.
 
 Forward only: the executor refuses to run with grad mode enabled. Autograd would save views of a buffer that a later
-layer overwrites, and backward would then use the wrong weights without any error (checkpointed recomputation is
-Ticket 04).
+layer overwrites, and backward would then use the wrong weights without any error. The differentiable executor is
+backward.CheckpointedLayerExecutor (Ticket 04), which reuses `bound` to reload a layer's weights for its recomputation.
 
 Shapes: N rows, T columns, H hidden size.
 """

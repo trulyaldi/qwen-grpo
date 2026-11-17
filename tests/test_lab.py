@@ -322,3 +322,33 @@ def test_store_depth_keeps_streamed_gpu_memory_constant_on_a_small_scan(tmp_path
     r = lab.run("store_depth", STORE, "d", root=tmp_path, depths=(2, 4), hypothesis_id="H07")
     assert (r["execution_status"], r["hypothesis_result"]) == ("PASS", "SUPPORTED"), r["reasons"]
     assert all(d["streamed_peak_allocated"] == d["planned_buffer_bytes"] for d in r["measurements"]["depths"])
+
+
+STORE_CPU = lab.ROOT / "research" / "l2l" / "configs" / "store_cpu.yaml"
+
+
+def test_gradient_equivalence_is_blocked_without_l2l_sync_or_a_requested_cuda_device(tmp_path, monkeypatch):
+    r = lab.run("gradient_equivalence", RESIDENT, "r", root=tmp_path)
+    assert r["status"] == "BLOCKED" and "comparisons" not in r
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    r = lab.run("gradient_equivalence", STORE_CPU, "nocuda", root=tmp_path, device="cuda")
+    assert r["status"] == "BLOCKED" and "no CUDA device" in r["reasons"][0] and "comparisons" not in r
+
+
+def test_gradient_equivalence_passes_on_cpu_and_a_detached_boundary_fails(tmp_path):
+    r = lab.run("gradient_equivalence", STORE_CPU, "ok", root=tmp_path, hypothesis_id="H02", device="cpu")
+    assert r["status"] == "PASS" and r["hypothesis_result"] == "SUPPORTED", r["reasons"][:5]
+    quantities = {c["quantity"] for c in r["comparisons"]}
+    assert quantities == {"loss", "logits", "grads", "hidden_grads"}
+    grads = [c for c in r["comparisons"] if c["quantity"] == "grads"]
+    assert all(c["ref_norm"] > 0 and c["max_abs"] == 0 and c["rel"] == 0 for c in grads)
+    steps = {next(s for s in ("mb1", "acc") if f".{s}.base_model." in c["name"]) for c in grads}
+    assert steps == {"mb1", "acc"}  # single and accumulated micro-batches
+    assert all(r["measurements"]["saved_bytes"][f"{t}.b1"] < v for t, v in r["measurements"]["resident_saved_bytes"].items())
+    f = lab.run("gradient_equivalence", STORE_CPU, "fault", root=tmp_path, perturbation="detach_boundary=3", device="cpu")
+    assert f["status"] == "FAIL" and f["execution_status"] == "PASS"  # the comparisons, not an exception, catch it
+    failed = [c for c in f["comparisons"] if not c["pass"]]
+    assert failed and all(c["reason"] == "missing in candidate" for c in failed)
+    assert {p for c in failed for p in ("last2", "first_last", "distributed") if f".{p}." in c["model"]} == \
+        {"last2", "first_last", "distributed"}
+    assert lab.report("ok", root=tmp_path) and lab.report("fault", root=tmp_path)

@@ -52,3 +52,24 @@ forward_equivalence:
         logits: {atol: 0.0, rtol: 0.0}
         layers: {atol: 0.0, rtol: 0.0}
     bfloat16: *forward_exact
+
+gradient_equivalence:
+  l2l_sync:
+    float32: &backward_exact
+      why: >-
+        Ticket 04 (docs/l2l/04_checkpointed_backward.md). Same device, same weight bytes, same shapes. The checkpointed
+        node recomputes each decoder layer from its saved input with the same kernels, so the recomputed layer graph
+        equals the resident graph's segment bitwise (checked by the node's checksum), and autograd.grad over that
+        segment runs the same backward kernels on the same operands in the same order as the resident backward:
+        within a layer each LoRA parameter is used once, and the incoming dL/dhidden is the resident one by induction
+        from the last layer. Micro-batch accumulation adds the same per-micro-batch gradients into .grad in the same
+        order. So any difference is a defect (a missing or stale gradient, wrong weights, a wrong boundary), not
+        rounding, provided the resident backward is itself deterministic; the case checks that by running the
+        reference twice (reference_integrity) and fails rather than passes otherwise. A disclosed CPU pilot measured
+        0 before this threshold was recorded.
+      quantities:
+        loss: {atol: 0.0, rtol: 0.0}
+        logits: {atol: 0.0, rtol: 0.0}
+        grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
+        hidden_grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
+    bfloat16: *backward_exact
