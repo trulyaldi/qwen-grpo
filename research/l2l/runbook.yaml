@@ -1,0 +1,74 @@
+# How each hypothesis in hypotheses.yaml is (re)tested: the exact commands, where they must run and what they write.
+# Read by `qwen-grpo research` (qwen_grpo/research_runbook.py). Commands are the ones scripts/laptop_checks.sh and
+# scripts/final_run.sh already ran or planned; nothing here changes a case, a tolerance or a criterion.
+#
+#   device   cpu: run with the GPU hidden (CUDA_VISIBLE_DEVICES=""); cuda: needs a CUDA GPU
+#   model    tiny (random, no download) | Qwen3-0.6B (~1.2 GB download) | Qwen3-4B (~8 GB, + 1 GB drafter for DFlash)
+#   output   the evidence path under research/l2l/experiments/; an existing output is never overwritten (skipped)
+#   fault    true: a fault-injection control that must FAIL (detected) for the hypothesis' detection claim
+#   argv     the command after `python`, from the repository root
+
+H01:
+  - {name: t08_forward_equivalence_async, device: cuda, model: tiny, output: t08_forward_equivalence_async,
+     argv: [scripts/l2l_lab.py, run, --name, t08_forward_equivalence_async, --case, forward_equivalence, --config,
+            research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H01]}
+  - {name: t08_forward_equivalence_async_unsafe_reuse, device: cuda, model: tiny, fault: true,
+     output: t08_forward_equivalence_async_unsafe_reuse,
+     argv: [scripts/l2l_lab.py, run, --name, t08_forward_equivalence_async_unsafe_reuse, --case, forward_equivalence,
+            --config, research/l2l/configs/async.yaml, --device, cuda, --perturb, unsafe_reuse=2]}
+H02:
+  - {name: t08_gradient_equivalence_async, device: cuda, model: tiny, output: t08_gradient_equivalence_async,
+     argv: [scripts/l2l_lab.py, run, --name, t08_gradient_equivalence_async, --case, gradient_equivalence, --config,
+            research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H02]}
+  - {name: t08_gradient_equivalence_async_unsafe_reuse, device: cuda, model: tiny, fault: true,
+     output: t08_gradient_equivalence_async_unsafe_reuse,
+     argv: [scripts/l2l_lab.py, run, --name, t08_gradient_equivalence_async_unsafe_reuse, --case, gradient_equivalence,
+            --config, research/l2l/configs/async.yaml, --device, cuda, --perturb, unsafe_reuse=2]}
+H03:
+  - {name: t05_logprob_equivalence_cpu_v2, device: cpu, model: tiny, output: t05_logprob_equivalence_cpu_v2,
+     argv: [scripts/l2l_lab.py, run, --name, t05_logprob_equivalence_cpu_v2, --case, logprob_equivalence, --config,
+            research/l2l/configs/store_cpu.yaml, --device, cpu, --hypothesis, H03]}
+  - {name: t05_logprob_equivalence_raw_logit_v2, device: cpu, model: tiny, fault: true,
+     output: t05_logprob_equivalence_raw_logit_v2,
+     argv: [scripts/l2l_lab.py, run, --name, t05_logprob_equivalence_raw_logit_v2, --case, logprob_equivalence,
+            --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --perturb, raw_logit]}
+H04:
+  - {name: t08_generation_equivalence_async, device: cuda, model: tiny, output: t08_generation_equivalence_async,
+     argv: [scripts/l2l_lab.py, run, --name, t08_generation_equivalence_async, --case, generation_equivalence,
+            --config, research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H04]}
+H05:
+  - {name: t08_update_equivalence_async, device: cuda, model: tiny, output: t08_update_equivalence_async,
+     argv: [scripts/l2l_lab.py, run, --name, t08_update_equivalence_async, --case, update_equivalence, --config,
+            research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H05]}
+H06:
+  - {name: t08_prefetch_timing, device: cuda, model: Qwen3-0.6B, output: t08_prefetch_timing,
+     argv: [scripts/l2l_lab.py, run, --name, t08_prefetch_timing, --case, prefetch_timing, --config,
+            research/l2l/configs/async_qwen3_0.6b.yaml, --device, cuda, --trials, "9", --warmup, "2", --max-new, "16",
+            --hypothesis, H06]}
+H07:
+  - {name: t11_depth_residency, device: cuda, model: tiny, output: t11_depth_residency,
+     argv: [scripts/l2l_lab.py, run, --name, t11_depth_residency, --case, depth_residency, --config,
+            research/l2l/configs/store.yaml, --device, cuda, --hypothesis, H07]}
+H08:
+  - {name: t09_resume_tiny_cpu, device: cpu, model: tiny, output: t09_resume_tiny_cpu.json,
+     argv: [scripts/resume_experiment.py, --tiny, --device, cpu, --out, t09_resume_tiny_cpu]}
+  - {name: t09_resume_qwen_stream, device: cuda, model: Qwen3-0.6B, output: t09_resume_qwen_stream.json,
+     argv: [scripts/resume_experiment.py, --config, configs/experiments/qwen_stream_short.yaml, --device, cuda]}
+H09:
+  - {name: t10_merge_equivalence_tiny, device: cpu, model: tiny, output: t10_merge_equivalence_tiny,
+     argv: [scripts/l2l_lab.py, run, --name, t10_merge_equivalence_tiny, --case, merge_equivalence, --config,
+            research/l2l/configs/store_cpu.yaml, --device, cpu, --hypothesis, H09]}
+  - {name: t10_merge_equivalence_qwen3_0.6b, device: cuda, model: Qwen3-0.6B, output: t10_merge_equivalence_qwen3_0.6b,
+     argv: [scripts/l2l_lab.py, run, --name, t10_merge_equivalence_qwen3_0.6b, --case, merge_equivalence, --config,
+            research/l2l/configs/store_qwen3_0.6b.yaml, --device, cuda, --real, --hypothesis, H09]}
+H10:
+  - {name: t12_dflash_bench, device: cuda, model: Qwen3-4B, output: t12_dflash_bench.json,
+     argv: [scripts/dflash_bench.py, --config, configs/experiments/qwen3_4b_l2l_dflash.yaml, --max-new, "4", "32"]}
+H11:
+  - {name: t11_profile_qwen3_4b_async, device: cuda, model: Qwen3-4B, output: t11_profile_qwen3_4b_async.json,
+     argv: [scripts/profile_run.py, --out, t11_profile_qwen3_4b_async, --config, configs/experiments/qwen3_4b_l2l.yaml,
+            --prediction, results/budget/predictions/qwen3-4b_8gb.json, --budget-gib, "8", --steps, "1", --eval-n, "16"]}
+H12:
+  - {name: t13_final_eval_qwen3_4b_final, device: cuda, model: Qwen3-4B, output: t13_final_eval_qwen3_4b_final.json,
+     requires_runs: [qwen3_4b_final, qwen3_4b_final_lr0],
+     argv: [scripts/final_eval.py, --run, qwen3_4b_final, --control, qwen3_4b_final_lr0, --device, cuda]}

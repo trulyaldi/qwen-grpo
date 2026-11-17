@@ -206,5 +206,65 @@
   "R13 Qwen3-4B within the 8 GB GPU budget (H11): NOT TESTED (missing t11_profile_qwen3_4b_async)",
   "R14 held-out task improvement with Qwen3-4B, 1-2k prompts (H12): NOT TESTED (missing t13_final_eval_qwen3_4b_final)",
   "R15 negative control behaves as no learning: NOT TESTED (missing control evaluation)"
+ ],
+ "evidence_freshness": [
+  {
+   "requirement": "R1",
+   "evidence": "t03_forward_equivalence",
+   "commit": "c4b391be6651fe58f4904ae7ceec6758d4efadfa",
+   "engine_files_changed_since": [
+    "qwen_grpo/execution/fixtures.py",
+    "qwen_grpo/execution/layer_stream.py",
+    "qwen_grpo/execution/qwen3_forward.py",
+    "qwen_grpo/execution/weight_store.py",
+    "qwen_grpo/policy.py",
+    "qwen_grpo/training.py"
+   ]
+  },
+  {
+   "requirement": "R2",
+   "evidence": "t04_gradient_equivalence_cuda",
+   "commit": "5cc0c0a2a0bf951cfd4a652f92e13b1ba102b327",
+   "engine_files_changed_since": [
+    "qwen_grpo/execution/fixtures.py",
+    "qwen_grpo/execution/layer_stream.py",
+    "qwen_grpo/execution/output_head.py",
+    "qwen_grpo/execution/weight_store.py",
+    "qwen_grpo/policy.py"
+   ]
+  },
+  {
+   "requirement": "R4",
+   "evidence": "t06_generation_equivalence_cuda",
+   "commit": "853091f28cbb36beb867359cff467d0d711c96b6",
+   "engine_files_changed_since": [
+    "qwen_grpo/execution/fixtures.py",
+    "qwen_grpo/execution/generator.py",
+    "qwen_grpo/execution/layer_stream.py",
+    "qwen_grpo/execution/output_head.py",
+    "qwen_grpo/execution/weight_store.py"
+   ]
+  },
+  {
+   "requirement": "R5",
+   "evidence": "t07_update_equivalence_cuda_v2",
+   "commit": "a8aab7fd1cb28fc22d68878ddb59c4bb37459b0c",
+   "engine_files_changed_since": [
+    "qwen_grpo/execution/backend.py",
+    "qwen_grpo/execution/fixtures.py",
+    "qwen_grpo/execution/layer_stream.py",
+    "qwen_grpo/execution/output_head.py",
+    "qwen_grpo/execution/weight_store.py"
+   ]
+  },
+  {
+   "requirement": "R9",
+   "evidence": "t09_resume_tiny_cpu",
+   "commit": "726e2ab03c0bb42af5714b1bd44d56b9d461bb6f",
+   "engine_files_changed_since": [
+    "qwen_grpo/execution/backend.py",
+    "qwen_grpo/execution/fixtures.py"
+   ]
+  }
  ]
 }

@@ -9,3 +9,4 @@ runs/.*.lock
 runs/*
 !runs/qwen/
 
+*.egg-info/

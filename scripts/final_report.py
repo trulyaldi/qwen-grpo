@@ -130,6 +130,43 @@ AUDIT = [  # stage, silent failure, detection, controlled fault / evidence, occu
 ]
 
 
+ENGINE = ("qwen_grpo/execution", "qwen_grpo/training.py", "qwen_grpo/grpo.py", "qwen_grpo/policy.py",
+          "qwen_grpo/model.py", "qwen_grpo/streaming", "qwen_grpo/export")  # code whose change can invalidate evidence
+
+
+def evidence_commit(name):
+    """The git commit an evidence file records (lab result provenance, or any 'git_commit' key in a JSON result)."""
+    data = lab_result(name) or jfile(name)
+    stack = [data]
+    while stack:
+        x = stack.pop()
+        if isinstance(x, dict):
+            if isinstance(x.get("git_commit"), str):
+                return x["git_commit"]
+            stack += list(x.values())
+    return None
+
+
+def freshness(reqs):
+    """For every evidence file a PASS requirement cites: its commit and the engine files changed since then. Evidence
+    produced before an engine change is reported, never silently treated as current (statuses are not changed)."""
+    import re
+    import subprocess
+    out = []
+    for r in reqs:
+        if r["status"] != "PASS":
+            continue
+        for name in dict.fromkeys(re.findall(r"t\d\d_[\w.]+", r["evidence"])):
+            commit = evidence_commit(name)
+            changed = None
+            if commit:
+                git = subprocess.run(["git", "diff", "--name-only", "--diff-filter=MD", commit, "HEAD", "--", *ENGINE], cwd=ROOT,
+                                     capture_output=True, text=True)
+                changed = sorted(git.stdout.split()) if git.returncode == 0 else None
+            out.append({"requirement": r["id"], "evidence": name, "commit": commit, "engine_files_changed_since": changed})
+    return out
+
+
 def main():
     reqs = []
 
@@ -163,7 +200,8 @@ def main():
         ("stage", "silent_failure", "detection", "fault_or_evidence", "occurred", "detected_by_tooling"), a)) for a in AUDIT],
         "held_out": None if held[2] is None else {k: held[2][k] for k in ("models", "paired", "data_separation", "lora_change",
                                                                           "merged_vs_trained_prediction_agreement", "training")},
-        "must_change": [f"{r['id']} {r['requirement']}: {r['status']} ({r['evidence']})" for r in essential_bad]}
+        "must_change": [f"{r['id']} {r['requirement']}: {r['status']} ({r['evidence']})" for r in essential_bad],
+        "evidence_freshness": freshness(reqs)}
     OUT_JSON.write_text(json.dumps(res, indent=1, default=str) + "\n")
     md = [f"# Final report: GRPO + LoRA with L2L streaming (Soup assignment)\n", f"**Verdict: {verdict}**\n",
           "Every status below is derived by `scripts/final_report.py` from the files in `research/l2l/experiments/`; "
@@ -182,6 +220,15 @@ def main():
                "against the base model, with the LR=0 control as the no-learning reference, is."]
     md += ["\n## Silent-failure audit\n", "| stage | silent failure | detection | fault / evidence | occurred | detected by tooling |",
            "|---|---|---|---|---|---|"] + [f"| {' | '.join(a)} |" for a in AUDIT]
+    md += ["\nThe full registry (every stage, Soup's observed coverage, fault-injection tests): "
+           "`docs/silent_failures.md`."]
+    md += ["\n## Evidence freshness\n", "PASS evidence and the engine files (" + ", ".join(f"`{e}`" for e in ENGINE)
+           + ") modified or deleted since it was produced (new files are not listed). A non-empty list means the result predates the current code: it is "
+           "reported, not re-labelled, and should be re-run before it is relied on.\n",
+           "| requirement | evidence | commit | engine files changed since |", "|---|---|---|---|"]
+    md += [f"| {f['requirement']} | {f['evidence']} | {(f['commit'] or 'unknown')[:10]} | "
+           + ("unknown" if f["engine_files_changed_since"] is None else ", ".join(f"`{x}`" for x in f["engine_files_changed_since"]) or "none")
+           + " |" for f in res["evidence_freshness"]]
     md += ["\n## What must change\n"] + ([f"- {m}" for m in res["must_change"]] or ["- nothing: every essential requirement passes"])
     OUT_MD.write_text("\n".join(md) + "\n")
     print(f"{verdict}: {sum(r['status'] == 'PASS' for r in reqs)}/{len(reqs)} PASS; written {OUT_JSON.name}, {OUT_MD.name}")

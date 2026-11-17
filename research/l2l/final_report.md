@@ -40,6 +40,20 @@ Every status below is derived by `scripts/final_report.py` from the files in `re
 | Merge | dropped scale, wrong module, lost delta in bf16 | half-ulp residual check; power ratio; L2L eval | merge_equivalence power requirement | no | yes (tested) |
 | Inference/memory | budget exceeded outside the allocator | nvidia-smi sampling + guard | profile runs | unknown under WSL2 | only with per-process nvidia-smi |
 
+The full registry (every stage, Soup's observed coverage, fault-injection tests): `docs/silent_failures.md`.
+
+## Evidence freshness
+
+PASS evidence and the engine files (`qwen_grpo/execution`, `qwen_grpo/training.py`, `qwen_grpo/grpo.py`, `qwen_grpo/policy.py`, `qwen_grpo/model.py`, `qwen_grpo/streaming`, `qwen_grpo/export`) modified or deleted since it was produced (new files are not listed). A non-empty list means the result predates the current code: it is reported, not re-labelled, and should be re-run before it is relied on.
+
+| requirement | evidence | commit | engine files changed since |
+|---|---|---|---|
+| R1 | t03_forward_equivalence | c4b391be66 | `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/qwen3_forward.py`, `qwen_grpo/execution/weight_store.py`, `qwen_grpo/policy.py`, `qwen_grpo/training.py` |
+| R2 | t04_gradient_equivalence_cuda | 5cc0c0a2a0 | `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/output_head.py`, `qwen_grpo/execution/weight_store.py`, `qwen_grpo/policy.py` |
+| R4 | t06_generation_equivalence_cuda | 853091f28c | `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/generator.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/output_head.py`, `qwen_grpo/execution/weight_store.py` |
+| R5 | t07_update_equivalence_cuda_v2 | a8aab7fd1c | `qwen_grpo/execution/backend.py`, `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/output_head.py`, `qwen_grpo/execution/weight_store.py` |
+| R9 | t09_resume_tiny_cpu | 726e2ab03c | `qwen_grpo/execution/backend.py`, `qwen_grpo/execution/fixtures.py` |
+
 ## What must change
 
 - R6 async prefetch keeps results exact: NOT TESTED (missing ['t08_gradient_equivalence_async', 't08_update_equivalence_async'])
