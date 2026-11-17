@@ -1,0 +1,210 @@
+{
+ "verdict": "DON'T SHIP",
+ "requirements": [
+  {
+   "id": "R1",
+   "requirement": "L2L forward equals resident (H01)",
+   "essential": true,
+   "status": "PASS",
+   "evidence": "t03_forward_equivalence"
+  },
+  {
+   "id": "R2",
+   "requirement": "checkpointed backward equals resident (H02)",
+   "essential": true,
+   "status": "PASS",
+   "evidence": "t04_gradient_equivalence_cuda"
+  },
+  {
+   "id": "R3",
+   "requirement": "memory-efficient output head (H03)",
+   "essential": false,
+   "status": "NOT TESTED",
+   "evidence": "missing ['t05_logprob_equivalence_cpu_v2']"
+  },
+  {
+   "id": "R4",
+   "requirement": "streamed generation equals resident (H04)",
+   "essential": true,
+   "status": "PASS",
+   "evidence": "t06_generation_equivalence_cuda"
+  },
+  {
+   "id": "R5",
+   "requirement": "complete GRPO update equals resident (H05)",
+   "essential": true,
+   "status": "PASS",
+   "evidence": "t07_update_equivalence_cuda_v2"
+  },
+  {
+   "id": "R6",
+   "requirement": "async prefetch keeps results exact",
+   "essential": true,
+   "status": "NOT TESTED",
+   "evidence": "missing ['t08_gradient_equivalence_async', 't08_update_equivalence_async']"
+  },
+  {
+   "id": "R7",
+   "requirement": "async prefetch is faster (H06)",
+   "essential": false,
+   "status": "NOT TESTED",
+   "evidence": "missing t08_prefetch_timing"
+  },
+  {
+   "id": "R8",
+   "requirement": "GPU weight residency bounded in depth (H07)",
+   "essential": true,
+   "status": "NOT TESTED",
+   "evidence": "missing ['t11_depth_residency']"
+  },
+  {
+   "id": "R9",
+   "requirement": "deterministic crash-consistent resume (H08)",
+   "essential": true,
+   "status": "PASS",
+   "evidence": "t09_resume_tiny_cpu (tiny model only)"
+  },
+  {
+   "id": "R10",
+   "requirement": "streaming merge preserves behaviour (H09)",
+   "essential": true,
+   "status": "NOT TESTED",
+   "evidence": "missing ['t10_merge_equivalence_tiny', 't10_merge_equivalence_qwen3_0.6b']"
+  },
+  {
+   "id": "R11",
+   "requirement": "DFlash on-policy correctness (H10)",
+   "essential": true,
+   "status": "NOT TESTED",
+   "evidence": "missing t12_dflash_bench"
+  },
+  {
+   "id": "R12",
+   "requirement": "DFlash speedup (H10)",
+   "essential": false,
+   "status": "NOT TESTED",
+   "evidence": ""
+  },
+  {
+   "id": "R13",
+   "requirement": "Qwen3-4B within the 8 GB GPU budget (H11)",
+   "essential": true,
+   "status": "NOT TESTED",
+   "evidence": "missing t11_profile_qwen3_4b_async"
+  },
+  {
+   "id": "R14",
+   "requirement": "held-out task improvement with Qwen3-4B, 1-2k prompts (H12)",
+   "essential": true,
+   "status": "NOT TESTED",
+   "evidence": "missing t13_final_eval_qwen3_4b_final"
+  },
+  {
+   "id": "R15",
+   "requirement": "negative control behaves as no learning",
+   "essential": true,
+   "status": "NOT TESTED",
+   "evidence": "missing control evaluation"
+  }
+ ],
+ "silent_failure_audit": [
+  {
+   "stage": "Data",
+   "silent_failure": "train/test overlap, unbalanced labels",
+   "detection": "split by source split + text check in final_eval; balanced_subset",
+   "fault_or_evidence": "final_eval data_separation count",
+   "occurred": "not observed",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "Tokenizer/template",
+   "silent_failure": "thinking-mode template, wrong padding side",
+   "detection": "build_prompts asserts the non-thinking block; left padding checked by check_grouping",
+   "fault_or_evidence": "test_policy / gen_lab chat prompts",
+   "occurred": "no",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "Reward",
+   "silent_failure": "reward hacking (formatting, label without content)",
+   "detection": "strict canonical-label reward; invalid-rate and prediction-distribution tracking; LR=0 control",
+   "fault_or_evidence": "t13 held-out metrics",
+   "occurred": "see held-out results",
+   "detected_by_tooling": "partly"
+  },
+  {
+   "stage": "GRPO",
+   "silent_failure": "wrong advantage / stale old log-probs / ratio != 1 at it0",
+   "detection": "INIT_TOL check; update_equivalence",
+   "fault_or_evidence": "t07 corrupted-advantage fault (caught)",
+   "occurred": "no",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "L2L forward/backward",
+   "silent_failure": "wrong layer weights, stale buffer, detached boundary",
+   "detection": "bitwise equivalence cases; recomputation checksum",
+   "fault_or_evidence": "t03 wrong_layer, t04 detach_boundary, t08 unsafe_reuse",
+   "occurred": "no",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "Output head",
+   "silent_failure": "unnormalized logit, missing remainder chunk",
+   "detection": "logprob_equivalence",
+   "fault_or_evidence": "t05 raw_logit fault",
+   "occurred": "a shape-dependent 1e-7 drift on one CPU (fixed, bc5a05d)",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "Generation",
+   "silent_failure": "stale position, attended padding, EOS handling",
+   "detection": "generation_equivalence",
+   "fault_or_evidence": "t06 faults",
+   "occurred": "no",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "Disk streaming/resume",
+   "silent_failure": "duplicate/missing samples, double-applied update, torn checkpoint",
+   "detection": "crash injection; COMMIT.json validation",
+   "fault_or_evidence": "t09 six crash points + corrupted checkpoint",
+   "occurred": "no",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "DFlash",
+   "silent_failure": "drafter replacing the policy, wrong acceptance",
+   "detection": "greedy equality; chi-square vs exact law",
+   "fault_or_evidence": "tests/test_dflash (random/oracle drafters)",
+   "occurred": "no",
+   "detected_by_tooling": "yes (tiny models only)"
+  },
+  {
+   "stage": "Merge",
+   "silent_failure": "dropped scale, wrong module, lost delta in bf16",
+   "detection": "half-ulp residual check; power ratio; L2L eval",
+   "fault_or_evidence": "merge_equivalence power requirement",
+   "occurred": "no",
+   "detected_by_tooling": "yes (tested)"
+  },
+  {
+   "stage": "Inference/memory",
+   "silent_failure": "budget exceeded outside the allocator",
+   "detection": "nvidia-smi sampling + guard",
+   "fault_or_evidence": "profile runs",
+   "occurred": "unknown under WSL2",
+   "detected_by_tooling": "only with per-process nvidia-smi"
+  }
+ ],
+ "held_out": null,
+ "must_change": [
+  "R6 async prefetch keeps results exact: NOT TESTED (missing ['t08_gradient_equivalence_async', 't08_update_equivalence_async'])",
+  "R8 GPU weight residency bounded in depth (H07): NOT TESTED (missing ['t11_depth_residency'])",
+  "R10 streaming merge preserves behaviour (H09): NOT TESTED (missing ['t10_merge_equivalence_tiny', 't10_merge_equivalence_qwen3_0.6b'])",
+  "R11 DFlash on-policy correctness (H10): NOT TESTED (missing t12_dflash_bench)",
+  "R13 Qwen3-4B within the 8 GB GPU budget (H11): NOT TESTED (missing t11_profile_qwen3_4b_async)",
+  "R14 held-out task improvement with Qwen3-4B, 1-2k prompts (H12): NOT TESTED (missing t13_final_eval_qwen3_4b_final)",
+  "R15 negative control behaves as no learning: NOT TESTED (missing control evaluation)"
+ ]
+}

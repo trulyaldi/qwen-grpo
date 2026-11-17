@@ -1,0 +1,23 @@
+# Ticket 13 / H12: the final Qwen3-4B GRPO + LoRA run on the full system: L2L with asynchronous prefetching, disk-backed
+# streaming with crash-consistent checkpoints, 8 GiB budget. 1024 balanced training prompts (the assignment's 1-2k),
+# ~210 updates of B = 5 prompts x G = 6 so that every prompt is used about once; the validation subset only monitors;
+# the held-out test split is touched only by scripts/final_eval.py after training.
+extends: qwen3_4b_l2l.yaml
+
+run:
+  name: qwen3_4b_final
+
+data:
+  train_samples: 1024
+  val_subset: 128
+
+training:
+  max_steps: 210
+
+evaluation:
+  every: 30
+  full_validation: false
+
+streaming:
+  enabled: true
+  directory: streaming

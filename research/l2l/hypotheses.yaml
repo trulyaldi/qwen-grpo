@@ -206,6 +206,13 @@ H11:
 H12:
   statement: The trained policy has meaningfully learned the intended task rather than merely changing parameters or exploiting the reward.
   kind: correctness  # scientific validation: held-out evaluation with confidence intervals and negative controls
+  criterion: >-
+    Written before the Ticket 13 run (docs/l2l/13_final.md). scripts/final_eval.py on the held-out test split (1066
+    examples, never used in training; checked by text): SUPPORTED iff the trained adapter's accuracy exceeds the base
+    model's with the paired-bootstrap 95% CI entirely above 0, the merged model agrees with the adapter-attached one
+    (merge_equivalence), the invalid-response rate does not rise and the prediction distribution does not collapse to
+    one label (reward-exploitation checks), and the LR=0 control leaves the adapter and every test prediction
+    unchanged. A rising reward curve or nonzero gradients alone never count. NOT_SUPPORTED otherwise.
   tickets: ["13"]
   status: untested
   evidence: []

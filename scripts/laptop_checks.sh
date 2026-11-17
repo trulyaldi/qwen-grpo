@@ -90,6 +90,9 @@ else
   [ -e "$EXP/t09_resume_qwen_stream.json" ] && new+=("$EXP/t09_resume_qwen_stream.json")
 fi
 
+python scripts/final_report.py 2>&1 | tee -a "$LOG"  # requirement statuses from all evidence so far
+new+=(research/l2l/final_results.json research/l2l/final_report.md)
+
 echo "== done; new results: ${new[*]:-none}" | tee -a "$LOG"
 cat "$LOG" >> "$FINAL_LOG"
 if [ ${#new[@]} -gt 0 ]; then

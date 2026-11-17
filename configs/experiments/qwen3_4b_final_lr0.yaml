@@ -1,0 +1,10 @@
+# Ticket 13 negative control: the final run with learning_rate 0 (30 steps): rollouts, rewards, gradients and optimizer
+# steps all happen, but the adapter must not change and neither may its predictions (the trainer's LR=0 control).
+extends: qwen3_4b_final.yaml
+
+run:
+  name: qwen3_4b_final_lr0
+
+training:
+  learning_rate: 0.0
+  max_steps: 30
