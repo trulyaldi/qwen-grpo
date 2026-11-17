@@ -212,3 +212,38 @@ update_equivalence:
       the previous readers' free event, compute after the copy's ready event) and verify mode (each use checks the
       buffer holds the intended layer) make a stale or overwritten buffer a defect, not rounding. So the synchronous
       thresholds apply unchanged.
+
+merge_equivalence:
+  # Streaming LoRA merge (Ticket 10): the merged checkpoint vs the adapter-attached model, both run by the L2L engine.
+  l2l_sync:
+    float32:
+      why: >-
+        weights: every merged element is one correct rounding of the exact fp32 W0 + (alpha/r) B A, so |error| <= half
+        an ulp of the element (checked element by element as an execution requirement); as a tensor comparison, rtol
+        2^-24 (half an fp32 ulp) of the tensor's largest magnitude. logits: rtol 1e-4 of the prompt's largest |logit|,
+        the existing FP32_MERGE_RTOL (qwen_grpo/verification.py): W0 x + (a/r) B (A x) and (W0 + (a/r) B A) x are
+        algebraically equal and differ in fp32 only by rounding, orders of magnitude below 1e-4, while a wrong merge
+        (missing scale, wrong module, dropped adapter) moves logits by the adapter's own effect (the power requirement:
+        at least 100 times the discrepancy). greedy: identical tokens except at near-ties (code).
+      quantities:
+        weights: {atol: 0.0, rtol: 5.96046447753906e-08}
+        logits: {atol: 0.0, rtol: 1.0e-4}
+        greedy: {atol: 0.0, rtol: 0.0}
+    bfloat16:
+      why: >-
+        bf16 has 7 explicit mantissa bits: machine epsilon 2^-7, so one correct rounding errs by at most half an ulp,
+        2^-8 of the value. weights: every merged element is one bf16 rounding of the exact fp32 sum (checked element by
+        element as an execution requirement); as a tensor comparison, rtol 2^-8 of the tensor's largest magnitude.
+        logits: rtol 2^-4. The two paths are different bf16 computations of the same function: the merged path rounds
+        W0 + dW once per element (<= 2^-8 relative); the adapter path rounds the base projection and the fp32 LoRA
+        term to bf16 separately and then their sum (<= 2^-8 each). These one-ulp (<= 2^-7) differences enter the
+        adapted projections and propagate through attention, MLP, the residual stream, the final norm and the head;
+        8 bf16 ulps (2^-4) at the largest logit are allowed. A wrong merge moves logits by the adapter's own effect,
+        required to be at least 10 times the discrepancy (power). greedy: identical tokens except at near-ties, the gate
+        the existing bf16 merge check uses (prediction agreement). A first draft of this entry used 2^-9 for half a bf16
+        ulp (an error: that is half an ulp of an 8-bit mantissa); the pilot exposed it before any recorded run
+        (docs/l2l/10_merge.md). The pilot measured logits within 1.8e-2 relative on a tiny random model.
+      quantities:
+        weights: {atol: 0.0, rtol: 0.00390625}
+        logits: {atol: 0.0, rtol: 0.0625}
+        greedy: {atol: 0.0, rtol: 0.0}

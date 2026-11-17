@@ -45,6 +45,7 @@ from qwen_grpo import head_lab as head_cases  # Ticket 05
 from qwen_grpo import gen_lab as gen_cases  # Ticket 06
 from qwen_grpo import update_lab as update_cases  # Ticket 07
 from qwen_grpo import prefetch_lab as prefetch_cases  # Ticket 08
+from qwen_grpo import merge_lab as merge_cases  # Ticket 10
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
@@ -473,6 +474,8 @@ CASES = {
     "prefetch_timing": Case("performance", lambda *a, **k: prefetch_cases.prefetch_timing(*a, **k),
                             ("model.name", "model.dtype", "lora", "training", "data.subset_seed", "execution"),
                             lambda cfg: needs_l2l(cfg, "prefetch_timing")),
+    "merge_equivalence": Case("correctness", lambda *a, **k: merge_cases.merge_equivalence(*a, **k),
+                              ("model.name", "model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "merge_equivalence")),
     "pinned_transfer": Case("performance", lambda *a, **k: store_cases.pinned_transfer(*a, **k), ("execution",),
                             needs_store),
 }

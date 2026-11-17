@@ -12,7 +12,11 @@ OUTPUTS = ("runs", "results", "checkpoints")
 
 @pytest.fixture(autouse=True)
 def no_pretrained_weights(monkeypatch):
-    def refuse(*args, **kwargs):
+    original = AutoModelForCausalLM.from_pretrained
+
+    def refuse(name, *args, **kwargs):
+        if Path(str(name)).is_dir():  # a checkpoint a test wrote itself (tiny models, e.g. a merged one)
+            return original(name, *args, **kwargs)
         raise RuntimeError("tests must not load pretrained model weights (use a tiny random model)")
     monkeypatch.setattr(AutoModelForCausalLM, "from_pretrained", refuse)
 

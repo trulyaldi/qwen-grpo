@@ -151,6 +151,18 @@ H08:
 H09:
   statement: Tensor-by-tensor merging preserves the adapter-attached model's behaviour.
   kind: correctness
+  criterion: >-
+    Written before the Ticket 10 evidence runs (after a disclosed CPU pilot; docs/l2l/10_merge.md). Case
+    merge_equivalence: export.merge.stream_merge merges the adapter into the base checkpoint tensor by tensor on the CPU
+    (a child process that never initializes CUDA); the merged checkpoint, loaded on its own as a plain Hugging Face
+    model, and the adapter-attached model run through the L2L engine on identical validation prompts. SUPPORTED iff for
+    every variant (tiny fp32, tiny bf16; the real Qwen3-0.6B bf16 with the runs/qwen step-90 adapter) every merged
+    tensor is one correct rounding of W0 + (alpha/r) B A (within half an ulp element by element; tolerances.yaml
+    merge_equivalence), merged logits agree with the adapter-attached model's within the dtype's bound (fp32 1e-4,
+    bf16 2^-4 of the largest logit), greedy tokens agree except at near-ties, the adapter's own effect is at least
+    100 (fp32) / 10 (bf16) times the merge discrepancy, every adapted tensor changed, the merged checkpoint loads
+    independently with its tied embedding / head and no LoRA tensors, and on a GPU the merged evaluation's peak
+    allocated memory stays below the model's size.
   tickets: ["10"]
   status: untested
   evidence: []

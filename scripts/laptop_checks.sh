@@ -51,6 +51,12 @@ echo "== 4. Ticket 08 performance: real Qwen3-0.6B, sync vs async" | tee -a "$LO
 lab gpu t08_prefetch_timing --case prefetch_timing --config research/l2l/configs/async_qwen3_0.6b.yaml \
   --device cuda --trials 9 --warmup 2 --max-new 16 --hypothesis H06
 
+echo "== 4b. Ticket 10: streaming LoRA merge (tiny fp32/bf16 on CPU; real Qwen3-0.6B + runs/qwen step90 on the GPU)" | tee -a "$LOG"
+lab cpu t10_merge_equivalence_tiny --case merge_equivalence --config research/l2l/configs/store_cpu.yaml --device cpu \
+  --hypothesis H09
+lab gpu t10_merge_equivalence_qwen3_0.6b --case merge_equivalence --config research/l2l/configs/store_qwen3_0.6b.yaml \
+  --device cuda --real --hypothesis H09
+
 echo "== 5. Ticket 09: crash/resume experiment on the real Qwen3-0.6B (H08)" | tee -a "$LOG"
 if [ -e "$EXP/t09_resume_qwen_stream.json" ]; then echo "skip t09_resume_qwen_stream (exists)" | tee -a "$LOG"
 else

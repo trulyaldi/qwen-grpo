@@ -460,3 +460,13 @@ def test_gradient_equivalence_under_l2l_async_passes_and_unsafe_reuse_is_caught(
     assert any(not c["pass"] for c in f["comparisons"]) or any("candidate refused" in e for e in f["errors"])
     bad = lab.run("gradient_equivalence", ASYNC_CPU, "bad", root=tmp_path, perturbation="detach_boundary=2", device="cpu")
     assert any("not 'detach_boundary=2' under l2l_async" in e for e in bad["errors"])
+
+
+def test_merge_equivalence_passes_on_the_tiny_models(tmp_path):
+    r = lab.run("merge_equivalence", STORE_CPU, "merge", root=tmp_path, hypothesis_id="H09", device="cpu",
+                n_logits=1, n_greedy=2)
+    assert r["status"] == "PASS" and r["hypothesis_result"] == "SUPPORTED", r["reasons"][:5]
+    assert {c["quantity"] for c in r["comparisons"]} == {"weights", "logits", "greedy"}
+    m = r["measurements"]
+    assert set(m) == {"tiny_float32", "tiny_bfloat16"}
+    assert all(v["cuda_initialized"] is False and v["power_ratio"] >= 10 for v in m.values())
