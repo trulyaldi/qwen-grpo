@@ -1,0 +1,26 @@
+# DIAGNOSTIC base for Qwen3-0.6B on Kaggle (Tesla T4: compute capability 7.5, no native bfloat16). Abstract: extended,
+# never trained. The Qwen3-0.6B profile with FLOAT32 base weights and a short schedule. Every result of these configs is
+# a float32 diagnostic (runs record model.dtype); it is never evidence for a bf16 claim and never replaces the bf16
+# configs qwen3_0.6b_*.yaml, which need an Ampere-or-newer GPU.
+# The backends extend this file and differ from each other in `execution` and run.name only (tests/test_profiles.py):
+#   kaggle_06b_fp32_resident -> kaggle_06b_fp32_l2l_sync -> kaggle_06b_fp32_l2l_async -> kaggle_06b_fp32_streaming
+abstract: true
+extends: ../profiles/qwen3_0_6b.yaml
+
+run:
+  name: kaggle_06b_fp32_base
+  gpu_budget_gib: 15.0         # the T4's 15 GiB; reported only (memory.guard is off)
+
+model:
+  dtype: float32               # DIAGNOSTIC precision (the hypotheses are judged in bfloat16)
+
+data:
+  train_samples: 64
+  val_subset: 32
+
+training:
+  max_steps: 8
+
+evaluation:
+  every: 4
+  full_validation: false

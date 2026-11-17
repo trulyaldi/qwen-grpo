@@ -210,10 +210,10 @@ def test_cli_dispatches_remove_with_dry_run_by_default(monkeypatch):
     from scripts import run
     calls = []
     monkeypatch.setattr("qwen_grpo.cleanup.remove", lambda cfg, root, ckpt, confirm: calls.append((cfg.run.name, ckpt.name, confirm)))
-    default = str(run.ROOT / "configs" / "default.yaml")
-    run.main(["remove", "--config", default, "--checkpoint", "checkpoints/missing_step3"])  # no adapter_config.json needed
-    run.main(["remove", "--config", default, "--checkpoint", "checkpoints/missing_step3", "--confirm"])
-    assert calls == [("default", "missing_step3", False), ("default", "missing_step3", True)]
+    reference = str(run.ROOT / "configs" / "qwen.yaml")
+    run.main(["remove", "--config", reference, "--checkpoint", "checkpoints/missing_step3"])  # no adapter_config.json needed
+    run.main(["remove", "--config", reference, "--checkpoint", "checkpoints/missing_step3", "--confirm"])
+    assert calls == [("qwen", "missing_step3", False), ("qwen", "missing_step3", True)]
 
 
 @pytest.mark.parametrize("name", [".", "..", "...", "-x", "_x"])

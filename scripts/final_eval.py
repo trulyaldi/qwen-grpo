@@ -14,7 +14,9 @@ Reported per model: accuracy, macro F1, invalid-response rate, prediction distri
 the fraction of test predictions that changed vs base; ROC AUC from label scores (log P(POSITIVE) - log P(NEGATIVE),
 through the same backend) with paired bootstrap CIs; LoRA change: norms of the trained and control adapters minus
 their step-0 adapters. Data separation: the run's training prompt ids (from its log) must not occur in the test split
-(different split, checked by text). Writes research/l2l/experiments/t13_final_eval_<run>.json.
+(different split, checked by text). Writes research/l2l/experiments/t13_final_eval_<run>.json (or --out) and refuses to
+overwrite an existing result. `scripts/run.py verify --run <run>` calls this for runs whose config selects an L2L
+backend (with --step and --out under runs/<run>/verification/).
 """
 import argparse
 import dataclasses
@@ -81,7 +83,12 @@ def main(argv=None):
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--n", type=int, help="first n test examples (default: all)")
     ap.add_argument("--storage", choices=["pinned", "pageable"], help="L2L weight storage (default: the run's)")
+    ap.add_argument("--step", type=int, help="checkpoint step of --run (default: the latest)")
+    ap.add_argument("--out", type=Path, help="result file (default research/l2l/experiments/t13_final_eval_<run>.json)")
     a = ap.parse_args(argv)
+    out = a.out or ROOT / "research" / "l2l" / "experiments" / f"t13_final_eval_{a.run}.json"
+    if out.exists():
+        raise SystemExit(f"{out} exists: evaluation results are never overwritten")
     from qwen_grpo.trainer import check_device, environment, git_state, models
     cfg = with_storage(load(runs.run_dir(a.run) / "config.yaml", historical=True), a.storage)
     check_device(cfg, a.device)
@@ -110,7 +117,8 @@ def main(argv=None):
         scores[name] = label_scores(model, tok, test, logprobs=be.logprobs, **score_kw)
         rep.setdefault("backends", {})[name] = be.name
 
-    ckpt = runs.latest_checkpoint(a.run)
+    ckpt = runs.checkpoint_path(a.run, a.step) if a.step is not None else runs.latest_checkpoint(a.run)
+    rep["checkpoint"] = runs.rel(ckpt)
     model, be = policy(cfg, ckpt, a.device)
     run_model("trained", model, be)
     with model.disable_adapter():
@@ -149,7 +157,7 @@ def main(argv=None):
         p["response"] == q["response"] for p, q in zip(preds["merged"], preds["trained"])) / len(test)
     rep["predictions"] = {k: [p["response"] for p in v] for k, v in preds.items()}
     rep["label_scores"] = {"ids": [e["id"] for e in test], **scores}
-    out = ROOT / "research" / "l2l" / "experiments" / f"t13_final_eval_{a.run}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(rep, indent=1, default=str) + "\n")
     for k, m in rep["models"].items():
         print(f"{k:8s} acc {m['accuracy']:.4f}  macro-F1 {m.get('macro_f1', 0):.4f}  AUC {m['auc']:.4f}  "

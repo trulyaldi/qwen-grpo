@@ -1,6 +1,6 @@
 """Run-level GRPO invariants of the real trainer (CPU, tiny model) that the canonical GPU configs rely on.
 
-num_iterations = 1 (every configs/gpu/ file): every update is taken at the sampling policy, so the importance ratio
+num_iterations = 1 (every backend-comparison config, tests/test_profiles.py TRIOS): every update is taken at the sampling policy, so the importance ratio
 is exactly 1 on every token and clipping never binds; the objective reduces to the group-baseline policy gradient.
 num_iterations > 1: later iterations see moved ratios, so clipping statistics carry information. Also: per-step
 phase timings are recorded outside the bitwise-compared rows, and the L2L weight store is released after training."""

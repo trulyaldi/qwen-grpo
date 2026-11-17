@@ -1,0 +1,10 @@
+# Kaggle T4 diagnostic (float32), Qwen3-0.6B, asynchronous L2L: kaggle_06b_fp32_l2l_sync.yaml plus prefetching of the
+# next layer on a separate CUDA stream (prefetch_depth 1, two buffers).
+extends: kaggle_06b_fp32_l2l_sync.yaml
+
+run:
+  name: kaggle_06b_fp32_l2l_async
+
+execution:
+  backend: l2l_async
+  prefetch_depth: 1

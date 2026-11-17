@@ -1,0 +1,15 @@
+# Kaggle T4 diagnostic (float32), Qwen3-0.6B, synchronous L2L: kaggle_06b_fp32_resident.yaml with the frozen decoder
+# weights in pinned CPU memory, copied into two GPU buffers when needed, checkpointed backward, streamed generation.
+extends: kaggle_06b_fp32_resident.yaml
+
+run:
+  name: kaggle_06b_fp32_l2l_sync
+
+execution:
+  backend: l2l_sync
+  weight_storage: pinned
+  resident_layers: 0
+  weight_buffers: 2
+  prefetch_depth: 0
+  activation_checkpointing: true
+  kv_cache: gpu

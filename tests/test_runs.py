@@ -119,7 +119,7 @@ def test_cli_accepts_run_names_and_the_older_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(runs, "ROOT", tmp_path)
     runs.write_json(runs.checkpoint_path("qwen", 10) / "adapter_config.json", {})
     runs.write_json(runs.checkpoint_path("qwen", 20) / "adapter_config.json", {})
-    shutil.copy(REPO / "configs" / "default.yaml", runs.run_dir("qwen") / "config.yaml")
+    shutil.copy(REPO / "configs" / "qwen.yaml", runs.run_dir("qwen") / "config.yaml")
     calls = []
     monkeypatch.setattr(run, "evaluate_checkpoint", lambda cfg, c, split: calls.append((split, cfg.run.name, runs.rel(c))))
     monkeypatch.setattr(run, "verify", lambda cfg, c: calls.append(("verify", cfg.run.name, runs.rel(c))))
@@ -131,10 +131,10 @@ def test_cli_accepts_run_names_and_the_older_paths(tmp_path, monkeypatch):
     run.main(["remove", "--run", "qwen", "--confirm"])
     legacy = tmp_path / "checkpoints" / "grpo_lora_last2_b2_balanced_step30"  # a run from before runs/, historical config
     runs.write_json(legacy / "adapter_config.json", {})
-    run.main(["validate", "--config", str(REPO / "configs" / "default.yaml"), "--checkpoint", str(legacy)])
-    assert calls == [("validation", "default", "runs/qwen/checkpoints/step20"), ("test", "default", "runs/qwen/checkpoints/step10"),
-                     ("verify", "default", "runs/qwen/checkpoints/step20"), ("remove", "qwen", False), ("remove", "qwen", True),
-                     ("validation", "default", "checkpoints/grpo_lora_last2_b2_balanced_step30")]
+    run.main(["validate", "--config", str(REPO / "configs" / "qwen.yaml"), "--checkpoint", str(legacy)])
+    assert calls == [("validation", "qwen", "runs/qwen/checkpoints/step20"), ("test", "qwen", "runs/qwen/checkpoints/step10"),
+                     ("verify", "qwen", "runs/qwen/checkpoints/step20"), ("remove", "qwen", False), ("remove", "qwen", True),
+                     ("validation", "qwen", "checkpoints/grpo_lora_last2_b2_balanced_step30")]
     for argv in (["verify"], ["verify", "--run", "qwen", "--config", "c.yaml"], ["verify", "--config", "c.yaml"],
                  ["verify", "--config", "c.yaml", "--checkpoint", "x", "--step", "3"], ["train", "--run", "qwen"]):
         with pytest.raises(SystemExit):
@@ -178,7 +178,7 @@ def test_report_of_a_run_that_failed_before_its_first_checkpoint(tmp_path, monke
     monkeypatch.setattr(runs, "ROOT", tmp_path)
     runs.create("early", "0" * 64, {"git_commit": None, "git_dirty": None})
     runs.set_status("early", "failed", error="RuntimeError: CUDA out of memory")
-    shutil.copy(REPO / "configs" / "default.yaml", runs.run_dir("early") / "config.yaml")
+    shutil.copy(REPO / "configs" / "qwen.yaml", runs.run_dir("early") / "config.yaml")
     run.main(["report", "--run", "early"])
     s = runs.read_json(runs.run_dir("early") / "summary.json")
     assert s["status"] == "failed" and s["checkpoints"] == [] and s["training_log"] is None

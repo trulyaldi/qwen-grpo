@@ -56,7 +56,7 @@ def main(argv=None):
     ap.add_argument("--budget-gib", type=float, default=8.0)
     ap.add_argument("--out", default="t12_dflash_bench")
     ap.add_argument("--out-dir", type=Path, help="directory of the JSON result (default research/l2l/experiments; "
-                    "qwen-grpo preflight --gpu writes under runs/_preflight/)")
+                    "e.g. an evidence/<id>/ directory)")
     a = ap.parse_args(argv)
     cfg = config.load(a.config)
     if not cfg.dflash.enabled:

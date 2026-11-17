@@ -1,8 +1,0 @@
-extends: ../default.yaml
-
-run:
-  name: grpo_low_lr
-
-training:
-  learning_rate: 1.0e-5
-  max_steps: 200

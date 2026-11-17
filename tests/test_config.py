@@ -22,9 +22,8 @@ from scripts import run
 
 ROOT = Path(__file__).parents[1]
 QWEN = ROOT / "configs" / "qwen.yaml"
-DEFAULT = ROOT / "configs" / "default.yaml"  # current schema since 48b2028: the successful reference run
 # The configs still in the historical schema, kept as records: they load with historical=True, never for a new run.
-HISTORICAL_CONFIGS = [ROOT / "runs" / "qwen" / "config.yaml", ROOT / "configs" / "experiments" / "grpo_1000.yaml"]
+HISTORICAL_CONFIGS = [ROOT / "runs" / "qwen" / "config.yaml"]
 EXPERIMENTS = ROOT / "configs" / "experiments"
 STEP90 = ROOT / "runs" / "qwen" / "checkpoints" / "step90"
 RAW = config.as_dict(config.load(QWEN))  # every key written out, current schema
@@ -174,6 +173,19 @@ def test_new_runs_reject_the_historical_schema_with_the_offending_keys(tmp_path)
         config.load(write(tmp_path, lambda r: r["training"].update(legacy_batch_mode="balanced", batch_size=2)))
 
 
+def test_a_historical_key_reached_through_extends_is_detected_and_upgraded(tmp_path):
+    """A child config in the historical schema (training.eval_every, the form of the deleted grpo_* experiments) on a
+    current parent: refused for a new run, upgraded explicitly as a record."""
+    (tmp_path / "parent.yaml").write_text(QWEN.read_text())
+    (tmp_path / "child.yaml").write_text("extends: parent.yaml\nrun: {name: old_1000}\n"
+                                         "data: {train_samples: 1000, val_subset: 1000}\n"
+                                         "training: {learning_rate: 5.0e-5, max_steps: 200, eval_every: 20}\n")
+    with pytest.raises(ValueError, match=r"\['training.eval_every'\] belong to the historical config schema"):
+        config.load(tmp_path / "child.yaml")
+    rec = config.load(tmp_path / "child.yaml", historical=True)
+    assert (rec.evaluation.every, rec.training.max_steps, rec.data.train_samples) == (20, 200, 1000)
+
+
 HISTORICAL = yaml.safe_load((ROOT / "runs" / "qwen" / "config.yaml").read_text())  # every historical key, written out
 
 
@@ -222,15 +234,16 @@ def test_historical_batch_modes_stay_readable_and_distinct_but_cannot_be_trained
 
 
 def test_historical_configs_in_the_repository_still_load_as_records():
-    for path in HISTORICAL_CONFIGS:  # records: the reference run's saved config and the 1000-sample experiment
+    for path in HISTORICAL_CONFIGS:  # records: the reference run's saved config
         rec = config.load(path, historical=True)
         assert (rec.training.legacy_batch_mode, rec.training.batch_size, rec.lora.rank) == (None, 5, 32), path
-    names = [config.load(p, historical=True).run.name for p in sorted(EXPERIMENTS.glob("*.yaml"))]
-    assert names[:5] == ["grpo_1000", "grpo_32", "grpo_clip_k3", "grpo_low_lr", "qwen3_4b"]  # then the L2L experiments
-    default = config.load(DEFAULT)
-    k3 = config.load(EXPERIMENTS / "grpo_clip_k3.yaml")
-    assert config.differences(config.as_dict(default), config.as_dict(k3)) == ["run.name", "training.num_iterations"]
-    assert config.differences(config.as_dict(default), config.as_dict(config.load(QWEN))) == ["run.name"]
+    qwen = config.as_dict(config.load(QWEN))
+    records = sorted((ROOT / "configs" / "historical").glob("*.yaml"))  # the configs of the recorded H05 runs (compare_*)
+    assert [p.stem for p in records] == ["qwen_l2l", "qwen_l2l_short", "qwen_resident", "qwen_resident_short"]
+    for path in records:  # configs/qwen.yaml, shortened and/or on the synchronous L2L backend, nothing else
+        diff = config.differences(qwen, config.as_dict(config.load(path)))
+        assert all(d.startswith(("run.", "execution.")) or d in ("training.max_steps", "evaluation.every",
+                                                                   "evaluation.full_validation") for d in diff), (path, diff)
 
 
 # --- the shuffled sampler ----------------------------------------------------------------------------------------
@@ -395,8 +408,8 @@ def test_evaluation_settings_reach_generation(tmp_path, monkeypatch):
 
 
 def test_current_configs_load_with_distinct_run_names():
-    paths = sorted((ROOT / "configs").glob("*.yaml")) + sorted(EXPERIMENTS.glob("*.yaml"))
-    current = [p for p in paths if p not in HISTORICAL_CONFIGS]
+    paths = [p for d in ("", "experiments", "historical") for p in sorted((ROOT / "configs" / d).glob("*.yaml"))]
+    current = [p for p in paths if p not in HISTORICAL_CONFIGS and not config.is_abstract(p)]
     names = [config.load(p).run.name for p in current]  # every non-record config loads in the current schema
     assert len(current) >= 2 and len(set(names)) == len(names), names
 
@@ -560,6 +573,8 @@ def test_dflash_loads_only_for_its_target_model(tmp_path):
 def test_existing_config_hashes_are_unchanged_and_execution_settings_change_the_hash(tmp_path):
     recorded = json.loads((ROOT / "research" / "l2l" / "baseline.json").read_text())["configs"]  # Ticket 00, before Ticket 01
     for path, entry in recorded.items():
+        if path == "configs/default.yaml":  # deleted in the cleanup: it was configs/qwen.yaml with run.name default
+            path = write(tmp_path, lambda r: r["run"].update(name="default"))
         assert config.sha256(config.load(ROOT / path)) == entry["sha256"], path
     explicit = config.load(write(tmp_path, with_section("execution", {"backend": "resident"})))
     assert config.sha256(explicit) == config.sha256(config.load(QWEN))         # writing the defaults out changes nothing

@@ -66,7 +66,7 @@ def main(argv=None):
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out")
     ap.add_argument("--out-dir", type=Path, help="directory of the JSON result (default research/l2l/experiments; "
-                    "qwen-grpo preflight --gpu writes under runs/_preflight/)")
+                    "e.g. an evidence/<id>/ directory)")
     a = ap.parse_args(argv)
     cfg = config.load(a.config)
     x = cfg.execution

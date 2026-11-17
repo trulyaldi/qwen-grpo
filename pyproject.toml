@@ -11,8 +11,6 @@ requires-python = ">=3.12"
 # Pinned in requirements.txt (torch comes from the CUDA wheel index); `pip install -e . --no-deps` after it.
 dependencies = []
 
-[project.scripts]
-qwen-grpo = "qwen_grpo.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["qwen_grpo*"]

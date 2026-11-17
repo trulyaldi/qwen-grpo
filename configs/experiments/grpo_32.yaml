@@ -1,7 +1,0 @@
-extends: ../default.yaml
-
-run:
-  name: grpo_32
-
-data:
-  train_samples: 32

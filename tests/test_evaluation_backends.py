@@ -2,8 +2,8 @@
 
 The same checkpoint evaluated through the resident backend and through synchronous L2L (CPU, pageable store) gives
 identical greedy predictions and label scores; the L2L evaluation never calls model.generate(), records its backend,
-and evaluates the base model through L2L instead of reusing the resident engine's saved baseline. verify stays
-resident-only and says where the L2L verification is."""
+and evaluates the base model through L2L instead of reusing the resident engine's saved baseline. verify follows the
+configured backend too: resident runs use verification.py, L2L runs scripts/final_eval.py."""
 import pytest
 import torch
 import transformers
@@ -52,15 +52,25 @@ def test_validate_runs_through_the_configured_backend(sandbox, tmp_path, monkeyp
     assert a["decoding"] == b["decoding"] == {"do_sample": False, "max_new_tokens": resident.evaluation.max_new_tokens}
 
 
-def test_verify_of_an_l2l_run_points_to_the_l2l_verification(tmp_path, monkeypatch):
+def test_verify_follows_the_configured_backend(tmp_path, monkeypatch):
+    """verify of an L2L run is scripts/final_eval.py on that run and step (through its L2L backend), never the resident
+    verification; a resident run keeps verification.py, and --control becomes its checked control checkpoint."""
     monkeypatch.setattr(runs, "ROOT", tmp_path)
-    cfg = make_cfg(tmp_path, L2L_CPU)
     import shutil
-    runs.write_json(runs.checkpoint_path("tiny", 2) / "adapter_config.json", {})
-    shutil.copy(tmp_path / "tiny_l2l.yaml", runs.run_dir("tiny") / "config.yaml")
-    with pytest.raises(SystemExit, match="resident backend only.*scripts/final_eval.py --run tiny"):
-        run.main(["verify", "--run", "tiny"])
-    assert cfg.execution.backend == "l2l_sync"
+    calls = []
+    monkeypatch.setattr(run, "final_eval_main", lambda argv: calls.append(("final_eval", argv)))
+    monkeypatch.setattr(run, "verify", lambda cfg, ckpt: calls.append(("resident", cfg.verification.control_checkpoint)))
+    monkeypatch.setattr(run, "updated", lambda checkpoint: None)
+    for name, cfg in (("tiny", make_cfg(tmp_path, L2L_CPU)), ("res", make_cfg(tmp_path)), ("ctl", make_cfg(tmp_path))):
+        runs.write_json(runs.checkpoint_path(name, 2) / "adapter_config.json", {})
+        shutil.copy(tmp_path / ("tiny_l2l.yaml" if name == "tiny" else "tiny_resident.yaml"), runs.run_dir(name) / "config.yaml")
+    run.main(["verify", "--run", "tiny", "--control", "ctl"])
+    run.main(["verify", "--run", "res", "--control", "ctl"])
+    out = str(runs.verification_dir("tiny", 2) / "final_eval_test.json")
+    assert calls == [("final_eval", ["--run", "tiny", "--step", "2", "--device", "cuda", "--out", out, "--control", "ctl"]),
+                     ("resident", "runs/ctl/checkpoints/step2")]
+    with pytest.raises(SystemExit, match="give --run"):
+        run.main(["verify", "--config", str(tmp_path / "tiny_l2l.yaml"), "--checkpoint", str(runs.checkpoint_path("tiny", 2))])
 
 
 def test_cuda_is_never_silently_replaced(monkeypatch):

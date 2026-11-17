@@ -1,5 +1,5 @@
 """Pure checks on data, reward, adapters and run artifacts: each returns a list of problems (empty = holds). Used by
-preflight and by the silent-failure fault-injection tests (tests/silent_failures/), never by the training math."""
+the fault-injection tests (tests/silent_failures/), never by the training math."""
 import re
 
 from qwen_grpo.sentiment import LABELS, reward

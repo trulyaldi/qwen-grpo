@@ -1,8 +1,0 @@
-{
- "task": {
-  "mode": "metric",
-  "base": 0.7486,
-  "tuned": 0.8096
- },
- "benchmarks": {}
-}

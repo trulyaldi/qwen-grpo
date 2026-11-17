@@ -4,7 +4,7 @@
 extends: ../qwen.yaml
 
 run:
-  name: qwen_stream
+  name: qwen3_0.6b_resume
 
 data:
   val_subset: 64

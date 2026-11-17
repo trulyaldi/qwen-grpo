@@ -155,7 +155,7 @@ H08:
     completed epoch covers every sample; no interrupted publication is left and every remaining checkpoint validates.
     A corrupted checkpoint must be rejected in favour of the last valid one (tests/test_streaming.py).
   tickets: ["09"]
-  status: SUPPORTED  # CPU, tiny random Qwen3 (real tokenizer and data); the real-model run is in scripts/laptop_checks.sh
+  status: SUPPORTED  # CPU, tiny random Qwen3 (real tokenizer and data); the real-model run is study entry H08.resume_qwen3_0.6b (configs/studies/assignment.yaml)
   evidence: [t09_resume_tiny_cpu]
 H09:
   statement: Tensor-by-tensor merging preserves the adapter-attached model's behaviour.

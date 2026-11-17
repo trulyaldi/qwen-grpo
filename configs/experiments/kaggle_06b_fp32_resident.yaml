@@ -1,0 +1,7 @@
+# Kaggle T4 diagnostic (float32), Qwen3-0.6B, RESIDENT: the whole model on the GPU, HF generate for rollouts. The
+# reference of the fp32 backend comparison (scripts/compare_runs.py kaggle_06b_fp32_resident kaggle_06b_fp32_l2l_sync).
+#   python scripts/run.py train --config configs/experiments/kaggle_06b_fp32_resident.yaml
+extends: kaggle_06b_fp32_base.yaml
+
+run:
+  name: kaggle_06b_fp32_resident

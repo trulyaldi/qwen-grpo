@@ -2,8 +2,7 @@
 # disk streaming with crash-consistent checkpoints, the memory guard, subset evaluations and a checkpoint every 2 steps.
 # Batch shape (B = 5 prompts x G = 6 completions, 4 new tokens, no micro-batching) equals the final run's, so its GPU
 # peaks are the final run's training peaks; only the number of steps and prompts is smaller.
-#   qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke.yaml --gpu   # first, on the rented GPU
-#   qwen-grpo train     --config configs/experiments/qwen3_4b_smoke.yaml
+#   python scripts/experiment.py run --entry H11.smoke     # or: python scripts/run.py train --config <this file>
 extends: qwen3_4b_final.yaml
 
 run:

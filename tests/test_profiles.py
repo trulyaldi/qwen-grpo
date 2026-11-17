@@ -2,7 +2,10 @@
 
 Pins (1) that introducing the profiles and the memory section changed no existing resolved config or hash, (2) that
 the standalone reference configs equal their profile, (3) that the smoke runs exercise the final run's batch shape,
-and (4) the new validation rules (abstract bases, memory, unsupported combinations)."""
+(4) the new validation rules (abstract bases, memory, unsupported combinations), and (5) that the backend comparisons
+differ in execution only and that float32 appears only in configs labelled as diagnostics.
+configs/default.yaml and configs/experiments/qwen3_4b.yaml were deleted in the cleanup (duplicates); the Ticket 00 hash
+of default.yaml is still checked in tests/test_config.py."""
 from pathlib import Path
 
 import pytest
@@ -17,10 +20,8 @@ EXP = CONFIGS / "experiments"
 
 # sha256 of the resolved configs at commit 3bc4cbe, before configs/profiles/ and the memory section existed
 HASHES_BEFORE = {
-    "default.yaml": "80b9c9f03414b999c4c67a969567c92d9579d29d1bd299979da7c8bc670db813",
     "qwen.yaml": "3c9cd5190cb8835d0b03e2a4ab70a79ab48658571a2ccc9ee7f06f47743da2a4",
-    "experiments/qwen_l2l.yaml": "a13007a61c0599df048fe975d8dbe04dd97bb838bb0de45a391667039b197084",
-    "experiments/qwen3_4b.yaml": "5b8156810da75bab7333c1a98afa9f37055edfa80d2dc38d810122d2abf8f13f",
+    "historical/qwen_l2l.yaml": "a13007a61c0599df048fe975d8dbe04dd97bb838bb0de45a391667039b197084",  # was experiments/
 }
 
 
@@ -39,7 +40,7 @@ def test_existing_configs_keep_their_hash(rel):
 
 def test_reference_configs_equal_the_0_6b_profile():
     profile = load("profiles/qwen3_0_6b.yaml")
-    for rel in ("default.yaml", "qwen.yaml"):
+    for rel in ("qwen.yaml",):
         assert "extends" not in yaml.safe_load((CONFIGS / rel).read_text()), rel  # copied as a run's config.yaml
         assert diff(profile, load(rel)) == ["run.name"], rel
 
@@ -71,11 +72,11 @@ def test_smoke_runs_have_the_final_runs_batch_shape():
     assert smoke.streaming.enabled and smoke.memory.guard and smoke.execution == final.execution
     dflash = load("experiments/qwen3_4b_smoke_dflash.yaml")
     assert diff(smoke, dflash) == ["dflash.draft_model", "dflash.enabled", "run.name"]
-    assert not final.dflash.enabled  # the final run's DFlash decision is open (docs/status.md)
+    assert not final.dflash.enabled  # the final run's DFlash decision is open (H10 untested)
 
 
 def test_local_experiment_runs_the_l2l_path_on_the_small_model():
-    local = load("experiments/qwen_local.yaml")
+    local = load("experiments/qwen3_0.6b_streaming.yaml")
     assert local.model.name == "Qwen/Qwen3-0.6B" and local.execution.backend == "l2l_async" and local.streaming.enabled
     assert config.unimplemented(local) == []
 
@@ -105,7 +106,7 @@ def write_variant(tmp_path, rel, **sections):
 
 
 def test_the_4b_drafter_is_refused_for_the_small_model(tmp_path):
-    p = write_variant(tmp_path, "experiments/qwen_local.yaml",
+    p = write_variant(tmp_path, "experiments/qwen3_0.6b_streaming.yaml",
                       dflash={"enabled": True, "draft_model": "z-lab/Qwen3-4B-DFlash-b16"})
     with pytest.raises(ValueError, match="drafts for Qwen/Qwen3-4B, not model.name 'Qwen/Qwen3-0.6B'"):
         config.load(p)
@@ -134,6 +135,35 @@ def test_unknown_memory_keys_are_errors(tmp_path):
 
 
 def test_memory_at_its_defaults_leaves_the_hash_unchanged():
-    cfg = load("default.yaml")
+    cfg = load("qwen.yaml")
     assert cfg.memory == config.Memory() and "memory" in config.as_dict(cfg)
-    assert config.sha256(cfg) == HASHES_BEFORE["default.yaml"]
+    assert config.sha256(cfg) == HASHES_BEFORE["qwen.yaml"]
+
+
+TRIOS = {  # backend comparison: reference first; what else may differ besides execution.* and run.name
+    "qwen3_0.6b": (["qwen3_0.6b_resident", "qwen3_0.6b_l2l_sync", "qwen3_0.6b_l2l_async"], set()),
+    "kaggle_06b_fp32": (["kaggle_06b_fp32_resident", "kaggle_06b_fp32_l2l_sync", "kaggle_06b_fp32_l2l_async"], set()),
+    "qwen3_4b": (["qwen3_4b_resident", "qwen3_4b_l2l_sync", "qwen3_4b_l2l"], {"run.gpu_budget_gib"}),  # resident: 16 GiB
+}
+
+
+@pytest.mark.parametrize("trio", sorted(TRIOS))
+def test_backend_comparisons_differ_in_execution_only(trio):
+    names, extra = TRIOS[trio]
+    cfgs = [load(f"experiments/{n}.yaml") for n in names]
+    assert [c.execution.backend for c in cfgs] == ["resident", "l2l_sync", "l2l_async"]
+    for c in cfgs[1:]:
+        d = diff(cfgs[0], c)
+        assert d and all(k.startswith("execution.") or k == "run.name" or k in extra for k in d), (c.run.name, d)
+        assert c.training == cfgs[0].training and c.data == cfgs[0].data and c.model == cfgs[0].model
+        assert c.lora == cfgs[0].lora and c.evaluation == cfgs[0].evaluation and config.unimplemented(c) == []
+
+
+def test_float32_appears_only_in_configs_labelled_as_diagnostics():
+    """No silent precision substitution: every experiment runs bf16 except the kaggle_06b_fp32_* diagnostics, which
+    say so in their name (and the T4 has no native bf16)."""
+    for p in sorted(EXP.glob("*.yaml")):
+        if config.is_abstract(p):
+            continue
+        assert (config.load(p).model.dtype == "float32") == p.name.startswith("kaggle_06b_fp32_"), p.name
+    assert config.is_abstract(EXP / "kaggle_06b_fp32_base.yaml")

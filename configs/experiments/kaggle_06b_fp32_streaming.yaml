@@ -1,0 +1,12 @@
+# Kaggle T4 diagnostic (float32), Qwen3-0.6B, asynchronous L2L with disk-backed prompt and rollout streaming and
+# crash-consistent checkpoints (resume with --resume latest). The disk-backed sampler reproduces the in-memory one
+# (training.shuffled_batches) exactly; whether a streaming run equals the non-streaming kaggle_06b_fp32_l2l_async run is
+# a measurement (scripts/compare_runs.py), not an assumption.
+extends: kaggle_06b_fp32_l2l_async.yaml
+
+run:
+  name: kaggle_06b_fp32_streaming
+
+streaming:
+  enabled: true
+  directory: streaming

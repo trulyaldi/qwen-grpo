@@ -168,11 +168,15 @@ def host():
 
 def saved_environment_differences(shape):
     """How the repository's saved fixture `shape` (SAVED_DIR: tests may redirect DIR) differs from this environment:
-    package versions and, for fixtures that record it, the CPU. [] means its bitwise reference applies."""
+    package versions and the CPU (a fixture without a recorded CPU never matches). [] means its bitwise reference
+    applies; otherwise the test suite builds fixtures in-session (tests/conftest.py) and the saved-artifact tests skip."""
     meta = torch.load(SAVED_DIR / f"{shape}.pt", weights_only=True)["meta"]
     out = [f"{p} {meta['packages'].get(p)} (saved) vs {v}" for p, v in metadata()["packages"].items()
            if meta["packages"].get(p) != v]
-    if "host" in meta and meta["host"] != host():
+    if "host" not in meta:  # the saved Ticket 00 fixtures predate the host record: their CPU is unknown, so equal
+        # package versions are not enough (Kaggle, same packages on another CPU: 4 bitwise mismatches, commit 3bc4cbe)
+        out.append(f"host not recorded in the saved fixture (CPU-bitwise reference; this host: {host()['cpu']})")
+    elif meta["host"] != host():
         out.append(f"host {meta['host']} (saved) vs {host()}")
     return out
 

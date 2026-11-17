@@ -1,7 +1,7 @@
 """Fault injection for the pipeline stages data -> template -> reward -> GRPO grouping -> LoRA -> streaming -> config.
 
-Every test runs the unaffected control and the injected fault through the same check (registry:
-qwen_grpo/diagnostics/silent_failures.py). CPU only, no model weights."""
+Every test runs the unaffected control and the injected fault through the same check. CPU only, no model weights.
+The LoRA tests read the reference run's step-0 and step-90 adapters (runs/qwen, kept in the repository)."""
 import copy
 from pathlib import Path
 

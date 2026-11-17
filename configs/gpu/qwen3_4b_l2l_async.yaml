@@ -1,9 +1,0 @@
-# Canonical GPU comparison, Qwen3-4B, asynchronous L2L under the 8 GiB research budget: the Qwen3-4B profile as is
-# (pinned store ~7.3 GiB of host RAM, two GPU buffers, prefetch depth 1, KV cache on the GPU, memory.guard stopping
-# the run at the first nvidia-smi sample above 8 GiB, CUDA context included). The budget is a target to be measured,
-# not a guarantee: no Qwen3-4B L2L run has been made yet. Same data / GRPO / LoRA / evaluation as the 0.6B configs.
-#   python scripts/run.py train --config configs/gpu/qwen3_4b_l2l_async.yaml
-extends: ../profiles/qwen3_4b.yaml
-
-run:
-  name: qwen3_4b_l2l_async

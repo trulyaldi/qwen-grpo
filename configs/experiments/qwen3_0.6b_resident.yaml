@@ -2,7 +2,8 @@
 # Every setting comes from the Qwen3-0.6B profile (the reference run's: 512 prompts, B=5 x G=6, 100 updates,
 # num_iterations 1, lr 5e-4, LoRA r32/a64 on q/v/o of the last two layers, full validation at the end). The two L2L
 # configs next to this file differ from it in `execution` and run.name only (tests/test_profiles.py pins that).
-#   python scripts/run.py train --config configs/gpu/qwen3_0.6b_resident.yaml
+#   python scripts/run.py train --config configs/experiments/qwen3_0.6b_resident.yaml
+# On a GPU without native bf16 (Kaggle T4) use the float32 diagnostics kaggle_06b_fp32_*.yaml instead.
 extends: ../profiles/qwen3_0_6b.yaml
 
 run:

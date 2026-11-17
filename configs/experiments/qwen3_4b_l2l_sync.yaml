@@ -1,6 +1,6 @@
 # Canonical GPU comparison, Qwen3-4B, synchronous L2L (no copy/compute overlap); otherwise identical to
-# qwen3_4b_l2l_async.yaml, guard and budget included. The pair measures what prefetching buys on this GPU.
-extends: qwen3_4b_l2l_async.yaml
+# qwen3_4b_l2l.yaml (asynchronous), guard and budget included. The pair measures what prefetching buys on this GPU.
+extends: qwen3_4b_l2l.yaml
 
 run:
   name: qwen3_4b_l2l_sync

@@ -1,0 +1,393 @@
+# Assignment study: which existing experiment tests each hypothesis H01-H12, where it can run, and what it needs.
+# Read by scripts/experiment.py (plan | run | report). Operational only. The scientific definitions stay where they
+# are and cannot be overridden from here:
+#   statement, criterion, recorded status, cited evidence   research/l2l/hypotheses.yaml
+#   numerical thresholds                                    research/l2l/tolerances.yaml
+#   pairing, statuses, fault injection, memory evidence      research/l2l/protocol.md
+#
+# Entry fields
+#   id            <hypothesis>.<short name>; `run --entry` selects it
+#   name          the evidence name: a lab case writes research/l2l/experiments/<name>/ (never overwritten). If it
+#                 exists the entry is DONE; `run --again` re-runs it as <name>_r<UTC stamp>
+#   model         tiny (random, no download) | Qwen3-0.6B | Qwen3-4B
+#   precision     the dtype(s) the entry runs in. diagnostic: true marks an entry run in another precision than the
+#                 hypothesis is judged in (e.g. float32 on a T4): it is recorded under its own id, never as the
+#                 hypothesis' evidence
+#   requires      hardware/software capabilities (scripts/experiment.py probe):
+#                   cuda             a CUDA GPU the installed torch has kernels for
+#                   bf16             native bfloat16 (compute capability >= 8.0); Kaggle T4 and P100 have none
+#                   fixture_packages torch/transformers/peft exactly as in research/l2l/fixtures (torch 2.14.1+cu126):
+#                                    the lab's saved Ticket 00 fixtures refuse other versions
+#                   linux_native     Linux outside WSL2
+#                   per_process_smi  nvidia-smi lists this process with a numeric memory figure (assignment-grade
+#                                    memory evidence; WSL2 and many containers fail this); the profiler still grades
+#                                    the evidence it actually got
+#   min_vram_gib  smallest GPU the entry needs
+#   prerequisites runs: training runs that must be completed with frozen weights unchanged; lab: lab results that
+#                 must exist with status PASS (fault runs: FAIL with execution PASS, i.e. the fault was detected).
+#                 Anything missing makes the entry BLOCKED, never PASS
+#   steps         commands run from the repository root with this Python, in order; a step with `creates` is skipped
+#                 when that output already exists (run:<name> = a completed training run). {name} is the evidence
+#                 name, {evidence} this execution's evidence directory
+#   judge         how the entry's outcome is read (by scripts/experiment.py, from what the tools wrote):
+#                   lab          the lab result's status / execution_status / hypothesis_result
+#                   lab_fault    a fault-injection control: PASS iff the lab result FAILs with execution PASS
+#                   pass_key     a JSON result's boolean `pass`
+#                   exit_codes   every step exits 0 (compare_runs.py exits 0 iff the runs are identical)
+#                   requirements statuses derived by scripts/final_report.py (e.g. R13 for the 8 GB budget)
+#   supplementary true: evidence beside the hypothesis' criterion, not the criterion itself (e.g. real-model
+#                 training compared bitwise, while the H05 criterion is defined on the lab fixtures)
+
+protocol: research/l2l/protocol.md
+hypotheses: research/l2l/hypotheses.yaml
+tolerances: research/l2l/tolerances.yaml
+
+entries:
+  # ---------------------------------------------------------------------------------------------------- H01 forward
+  - id: H01.lab_sync
+    name: t03_forward_equivalence
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, fixture_packages]          # pinned store (page-locking needs the CUDA runtime)
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, forward_equivalence, --config, research/l2l/configs/store.yaml, --hypothesis, H01]
+    judge: lab
+  - id: H01.fault_wrong_layer
+    name: t03_forward_equivalence_wrong_layer
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, forward_equivalence, --config, research/l2l/configs/store.yaml, --perturb, wrong_layer=0]
+    judge: lab_fault
+  - id: H01.lab_async_cuda
+    name: t08_forward_equivalence_async
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, forward_equivalence, --config, research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H01]
+    judge: lab
+  - id: H01.fault_unsafe_reuse
+    name: t08_forward_equivalence_async_unsafe_reuse
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, forward_equivalence, --config, research/l2l/configs/async.yaml, --device, cuda, --perturb, unsafe_reuse=2]
+    judge: lab_fault
+
+  # ----------------------------------------------------------------------------------------- H02 checkpointed backward
+  - id: H02.lab_sync_cpu
+    name: t04_gradient_equivalence_cpu
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, gradient_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --hypothesis, H02]
+    judge: lab
+  - id: H02.lab_sync_cuda
+    name: t04_gradient_equivalence_cuda
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, gradient_equivalence, --config, research/l2l/configs/store.yaml, --device, cuda, --hypothesis, H02]
+    judge: lab
+  - id: H02.fault_detach_boundary
+    name: t04_gradient_equivalence_detach_boundary
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, gradient_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --perturb, detach_boundary=3]
+    judge: lab_fault
+  - id: H02.lab_async_cuda
+    name: t08_gradient_equivalence_async
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, gradient_equivalence, --config, research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H02]
+    judge: lab
+  - id: H02.fault_unsafe_reuse
+    name: t08_gradient_equivalence_async_unsafe_reuse
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, gradient_equivalence, --config, research/l2l/configs/async.yaml, --device, cuda, --perturb, unsafe_reuse=2]
+    judge: lab_fault
+
+  # ------------------------------------------------------------------------------------------------- H03 output head
+  # v1 (t05_logprob_equivalence_cpu, NOT_SUPPORTED by its power rule) is kept as recorded and cannot be re-run: the lab
+  # design was fixed in 5300146. v2 below is the versioned follow-up (unchanged criterion and thresholds).
+  - id: H03.lab_v2_cpu
+    name: t05_logprob_equivalence_cpu_v2
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, logprob_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --hypothesis, H03]
+    judge: lab
+  - id: H03.fault_raw_logit
+    name: t05_logprob_equivalence_raw_logit_v2
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, logprob_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --perturb, raw_logit]
+    judge: lab_fault
+
+  # ---------------------------------------------------------------------------------------------- H04 generation
+  - id: H04.lab_sync_cpu
+    name: t06_generation_equivalence_cpu
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, generation_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --hypothesis, H04]
+    judge: lab
+  - id: H04.lab_sync_cuda
+    name: t06_generation_equivalence_cuda
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, generation_equivalence, --config, research/l2l/configs/store.yaml, --device, cuda, --hypothesis, H04]
+    judge: lab
+  - id: H04.fault_stale_position
+    name: t06_generation_equivalence_stale_position
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, generation_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --perturb, stale_position]
+    judge: lab_fault
+  - id: H04.fault_no_padding_mask
+    name: t06_generation_equivalence_no_padding_mask
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, generation_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --perturb, no_padding_mask]
+    judge: lab_fault
+  - id: H04.lab_async_cuda
+    name: t08_generation_equivalence_async
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, generation_equivalence, --config, research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H04]
+    judge: lab
+
+  # -------------------------------------------------------------------------------------- H05 complete GRPO update
+  - id: H05.lab_sync_cpu
+    name: t07_update_equivalence_cpu_v2
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, update_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --hypothesis, H05]
+    judge: lab
+  - id: H05.lab_sync_cuda
+    name: t07_update_equivalence_cuda_v2
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, update_equivalence, --config, research/l2l/configs/store.yaml, --device, cuda, --hypothesis, H05]
+    judge: lab
+  - id: H05.fault_advantage
+    name: t07_update_equivalence_advantage
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, update_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --perturb, advantage=2]
+    judge: lab_fault
+  - id: H05.lab_async_cuda
+    name: t08_update_equivalence_async
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, update_equivalence, --config, research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H05]
+    judge: lab
+  # Real-model training, the three backends on identical inputs (configs differ in execution and run.name only).
+  # Tolerance: update_equivalence is 0 for l2l_sync and l2l_async, so compare_runs.py's exact comparison is the rule.
+  - id: H05.real_0.6b_bf16
+    name: h05_real_0.6b_bf16
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    configs: [configs/experiments/qwen3_0.6b_resident.yaml, configs/experiments/qwen3_0.6b_l2l_sync.yaml, configs/experiments/qwen3_0.6b_l2l_async.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_resident.yaml], creates: "run:qwen3_0.6b_resident"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_l2l_sync.yaml], creates: "run:qwen3_0.6b_l2l_sync"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_l2l_async.yaml], creates: "run:qwen3_0.6b_l2l_async"}
+      - argv: [scripts/compare_runs.py, qwen3_0.6b_resident, qwen3_0.6b_l2l_sync, --out, "{evidence}/compare_resident_vs_l2l_sync.json"]
+      - argv: [scripts/compare_runs.py, qwen3_0.6b_resident, qwen3_0.6b_l2l_async, --out, "{evidence}/compare_resident_vs_l2l_async.json"]
+    judge: exit_codes
+  - id: H05.real_0.6b_fp32_diagnostic
+    name: h05_real_0.6b_fp32_diagnostic
+    model: Qwen3-0.6B
+    precision: [float32]
+    diagnostic: true                             # float32 base weights: the T4 has no native bfloat16
+    requires: [cuda]
+    min_vram_gib: 6
+    supplementary: true
+    configs: [configs/experiments/kaggle_06b_fp32_resident.yaml, configs/experiments/kaggle_06b_fp32_l2l_sync.yaml, configs/experiments/kaggle_06b_fp32_l2l_async.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/kaggle_06b_fp32_resident.yaml], creates: "run:kaggle_06b_fp32_resident"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/kaggle_06b_fp32_l2l_sync.yaml], creates: "run:kaggle_06b_fp32_l2l_sync"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/kaggle_06b_fp32_l2l_async.yaml], creates: "run:kaggle_06b_fp32_l2l_async"}
+      - argv: [scripts/compare_runs.py, kaggle_06b_fp32_resident, kaggle_06b_fp32_l2l_sync, --out, "{evidence}/compare_resident_vs_l2l_sync.json"]
+      - argv: [scripts/compare_runs.py, kaggle_06b_fp32_resident, kaggle_06b_fp32_l2l_async, --out, "{evidence}/compare_resident_vs_l2l_async.json"]
+    judge: exit_codes
+
+  # ------------------------------------------------------------------------------------------- H06 async prefetch
+  - id: H06.prefetch_timing
+    name: t08_prefetch_timing
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    min_vram_gib: 4
+    prerequisites:                               # the criterion's correctness precondition, with the unsafe-reuse fault
+      lab: [t08_forward_equivalence_async, t08_gradient_equivalence_async, t08_generation_equivalence_async,
+            t08_update_equivalence_async, t08_forward_equivalence_async_unsafe_reuse, t08_gradient_equivalence_async_unsafe_reuse]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, prefetch_timing, --config, research/l2l/configs/async_qwen3_0.6b.yaml, --device, cuda, --trials, "9", --warmup, "2", --max-new, "16", --hypothesis, H06]
+    judge: lab
+
+  # ------------------------------------------------------------------------------------ H07 bounded GPU residency
+  # t02_store_depth supports the Ticket 02 statement only (copy-only, allocator statistics). The execution-level
+  # statement (statement_ticket11) needs t11_depth_residency.
+  - id: H07.store_depth_copy_only
+    name: t02_store_depth
+    model: tiny
+    precision: [float32]
+    requires: [cuda, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, store_depth, --config, research/l2l/configs/store.yaml, --depths, "2,4,8,16,32", --hypothesis, H07]
+    judge: lab
+  - id: H07.depth_residency_execution
+    name: t11_depth_residency
+    model: tiny
+    precision: [float32]
+    requires: [cuda, fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, depth_residency, --config, research/l2l/configs/store.yaml, --device, cuda, --hypothesis, H07]
+    judge: lab
+
+  # -------------------------------------------------------------------------------- H08 disk streaming and resume
+  - id: H08.resume_tiny_cpu
+    name: t09_resume_tiny_cpu
+    model: tiny
+    precision: [float32]
+    requires: []
+    steps:
+      - argv: [scripts/resume_experiment.py, --tiny, --device, cpu, --out, "{name}"]
+        creates: research/l2l/experiments/{name}.json
+    judge: {pass_key: "research/l2l/experiments/{name}.json"}
+  - id: H08.resume_qwen3_0.6b
+    name: t09_resume_qwen_stream
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    configs: [configs/experiments/qwen3_0.6b_resume.yaml]
+    steps:
+      - argv: [scripts/resume_experiment.py, --config, configs/experiments/qwen3_0.6b_resume.yaml, --device, cuda, --out, "{name}"]
+        creates: research/l2l/experiments/{name}.json
+    judge: {pass_key: "research/l2l/experiments/{name}.json"}
+
+  # ----------------------------------------------------------------------------------------- H09 streaming merge
+  - id: H09.merge_tiny_cpu
+    name: t10_merge_equivalence_tiny
+    model: tiny
+    precision: [float32, bfloat16]
+    requires: [fixture_packages]
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, merge_equivalence, --config, research/l2l/configs/store_cpu.yaml, --device, cpu, --hypothesis, H09]
+    judge: lab
+  - id: H09.merge_qwen3_0.6b
+    name: t10_merge_equivalence_qwen3_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    min_vram_gib: 4
+    steps:                                       # adapter: runs/qwen/checkpoints/step90 (kept in the repository)
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, merge_equivalence, --config, research/l2l/configs/store_qwen3_0.6b.yaml, --device, cuda, --real, --hypothesis, H09]
+    judge: lab
+
+  # ------------------------------------------------------------------------------------------------- H10 DFlash
+  - id: H10.dflash_bench
+    name: t12_dflash_bench
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    configs: [configs/experiments/qwen3_4b_l2l_dflash.yaml]
+    steps:
+      - argv: [scripts/dflash_bench.py, --config, configs/experiments/qwen3_4b_l2l_dflash.yaml, --max-new, "4", "32", --out, "{name}"]
+        creates: research/l2l/experiments/{name}.json
+    judge: {requirements: [R11, R12]}
+
+  # ------------------------------------------------------------------------------------ H11 Qwen3-4B under 8 GB
+  - id: H11.smoke
+    name: h11_qwen3_4b_smoke
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true                          # the whole 4B training path, guarded, before profiling it
+    configs: [configs/experiments/qwen3_4b_smoke.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_smoke.yaml], creates: "run:qwen3_4b_smoke"}
+    judge: exit_codes
+  - id: H11.profile
+    name: t11_profile_qwen3_4b_async
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native, per_process_smi]   # otherwise H11 can only be INCONCLUSIVE
+    min_vram_gib: 8
+    prerequisites: {runs: [qwen3_4b_smoke]}
+    configs: [configs/experiments/qwen3_4b_l2l.yaml]
+    steps:
+      - argv: [scripts/profile_run.py, --out, "{name}", --config, configs/experiments/qwen3_4b_l2l.yaml, --prediction, results/budget/predictions/qwen3-4b_8gb.json, --budget-gib, "8", --steps, "1", --eval-n, "16"]
+        creates: research/l2l/experiments/{name}.json
+    judge: {requirements: [R13], blocked_means: INCONCLUSIVE}   # criterion: diagnostic-only evidence is INCONCLUSIVE
+
+  # ---------------------------------------------------------------------- H12 held-out learning vs base and control
+  - id: H12.train_final
+    name: h12_train_final
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true
+    prerequisites: {runs: [qwen3_4b_smoke]}
+    configs: [configs/experiments/qwen3_4b_final.yaml, configs/experiments/qwen3_4b_final_lr0.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final.yaml], creates: "run:qwen3_4b_final"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final_lr0.yaml], creates: "run:qwen3_4b_final_lr0"}
+    judge: exit_codes
+  - id: H12.final_eval
+    name: t13_final_eval_qwen3_4b_final
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    prerequisites: {runs: [qwen3_4b_final, qwen3_4b_final_lr0]}
+    steps:
+      - argv: [scripts/final_eval.py, --run, qwen3_4b_final, --control, qwen3_4b_final_lr0, --device, cuda]
+        creates: research/l2l/experiments/t13_final_eval_qwen3_4b_final.json
+    judge:
+      requirements: [R14, R15]                   # held-out CI vs base, data separation; LR=0 control
+      unchecked_clauses:                         # in the H12 criterion, not derived by scripts/final_report.py
+        - the merged model agrees with the adapter-attached one
+        - the invalid-response rate does not rise
+        - the prediction distribution does not collapse to one label

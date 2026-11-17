@@ -4,7 +4,7 @@ python scripts/run.py train    --config configs/experiments/<exp>.yaml
 python scripts/run.py train    --config runs/<run>/config.yaml --resume runs/<run>/checkpoints/step<N>
 python scripts/run.py validate --run <run> [--step N]            held-out validation split -> runs/<run>/evaluation/step<N>/
 python scripts/run.py test     --run <run> [--step N]            test split (final report only)
-python scripts/run.py verify   --run <run> [--step N]            -> runs/<run>/verification/step<N>/
+python scripts/run.py verify   --run <run> [--step N] [--control <lr0 run>]   -> runs/<run>/verification/step<N>/
 python scripts/run.py report   --run <run>                       rebuild plots, summary.json, report.md (no model, no GPU)
 python scripts/run.py remove   --run <run> [--confirm]           dry run unless --confirm
 
@@ -15,9 +15,14 @@ from before runs/ existed (checkpoints/<run>_step<N>/), whose outputs stay in re
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
 evaluation section) through the backend the run's config selects (resident, l2l_sync or l2l_async; DFlash is never
 used for evaluation), and compare it with the base model (paired: the saved baseline predictions only for the
-resident backend when they match model and decoding, else the base evaluated in-process through the same backend). verify compares base, adapter-attached, merged and (if configured) an
-LR=0 control on verification.split. Neither retrains the checkpoint; only verification.train_control runs a
-(control) training, as the separate run <run>_lr0. remove lists what it would delete with sizes and deletes only with
+resident backend when they match model and decoding, else the base evaluated in-process through the same backend).
+verify compares base, adapter-attached, merged and an LR=0 control, through the backend the config selects:
+  resident  qwen_grpo/verification.py on verification.split: PEFT merge_and_unload, full-logit merge checks, an fp32
+            copy of the model on the CPU (control: verification.control_checkpoint / train_control, or --control)
+  l2l_*     scripts/final_eval.py on the test split: the streamed tensor-by-tensor merge, every model executed through
+            the run's L2L backend (the full model is never placed on the GPU), paired bootstrap CIs and AUC;
+            written to runs/<run>/verification/step<N>/final_eval_test.json (needs --run)
+Neither retrains the checkpoint; only verification.train_control runs a (control) training, as the run <run>_lr0. remove lists what it would delete with sizes and deletes only with
 --confirm; it refuses when ownership is uncertain (qwen_grpo/cleanup.py).
 """
 import argparse
@@ -160,6 +165,39 @@ def verify(cfg, checkpoint):
     return evidence
 
 
+def with_control(cfg, control_run):
+    """cfg with verification.control_checkpoint set to the latest checkpoint of `control_run` (checked by
+    control_checkpoint() like a configured one)."""
+    import dataclasses
+
+    from qwen_grpo import runs
+    ckpt = runs.rel(runs.latest_checkpoint(control_run))
+    return dataclasses.replace(cfg, verification=dataclasses.replace(cfg.verification, control_checkpoint=ckpt,
+                                                                     train_control=False))
+
+
+def verify_streamed(run_name, checkpoint, control=None, device="cuda"):
+    """verify for a run whose config selects an L2L backend: scripts/final_eval.py (the same models and statistics,
+    executed through the run's backend, test split), next to the run's other verification outputs."""
+    from qwen_grpo import runs
+    _, step, _ = runs.parse_checkpoint(checkpoint)
+    out = runs.verification_dir(run_name, step) / "final_eval_test.json"
+    print(f"verify {run_name} step {step}: L2L config -> scripts/final_eval.py through its backend (test split), {runs.rel(out)}")
+    argv = ["--run", run_name, "--step", str(step), "--device", device, "--out", str(out)]
+    final_eval_main(argv + (["--control", control] if control else []))
+    updated(checkpoint)
+    return out
+
+
+def final_eval_main(argv):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("final_eval", ROOT / "scripts" / "final_eval.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.main(argv)
+
+
 def report(checkpoint):
     """Rebuild one verification report (plots and report.md) from its saved evidence."""
     from qwen_grpo import reporting, runs
@@ -196,6 +234,8 @@ def parse(argv=None):
         p.add_argument("--run", help="a run under runs/ (instead of --config and --checkpoint)")
         if name not in ("report", "remove"):
             p.add_argument("--step", type=int, help="checkpoint step of --run (default: the latest)")
+        if name == "verify":
+            p.add_argument("--control", help="the LR=0 control run (its latest checkpoint)")
         if name == "remove":
             p.add_argument("--confirm", action="store_true", help="delete the listed paths (default: dry run)")
     args = ap.parse_args(argv)
@@ -239,16 +279,15 @@ def main(argv=None):
         from qwen_grpo.config import require_implemented
 
         require_implemented(cfg)
-        if args.command == "verify" and cfg.execution.backend != "resident":  # no silent resident fallback
-            raise SystemExit(
-                f"verify evaluates checkpoints with the resident backend only (verification.py: PEFT merge_and_unload, "
-                f"full-logit merge checks, an fp32 copy of the whole model on the CPU); config {cfg.run.name!r} selects {cfg.execution.backend!r}. For "
-                f"L2L runs use the L2L verification (base / adapter / streamed-merged / LR=0 control on the test "
-                f"split, through the configured backend): python scripts/final_eval.py --run {cfg.run.name} "
-                f"[--control <lr0 run>]. validate and test support every backend.")
     if not (checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {checkpoint}")
     if args.command == "verify":
+        if cfg.execution.backend != "resident":
+            if args.run is None:
+                raise SystemExit("verify of an L2L config runs scripts/final_eval.py on a run: give --run <name>")
+            return verify_streamed(args.run, checkpoint, args.control)
+        if args.control:
+            cfg = with_control(cfg, args.control)
         return verify(cfg, checkpoint)
     if args.command == "report":
         return report(checkpoint)

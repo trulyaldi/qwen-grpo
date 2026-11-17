@@ -108,12 +108,16 @@ def test_config_gates(tmp_path):
     assert config.unimplemented(make_cfg(tmp_path, {**L2L_CPU, "vocab_chunk_size": 4096}))
 
 
-def test_checkpoint_evaluation_commands_refuse_an_l2l_config_instead_of_running_resident(tmp_path):
+def test_checkpoint_evaluation_commands_never_run_an_l2l_config_through_the_resident_engine(tmp_path, monkeypatch):
     from scripts import run
     cfg_path = tmp_path / "tiny_l2l.yaml"
     make_cfg(tmp_path, L2L_CPU)
-    with pytest.raises(SystemExit, match="resident backend only"):  # verify stays resident-only, and says so
-        run.main(["verify", "--config", str(cfg_path), "--checkpoint", str(tmp_path / "missing")])
+    monkeypatch.setattr(run, "verify", lambda *a: pytest.fail("resident verification used for an L2L config"))
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    (ckpt / "adapter_config.json").write_text("{}")
+    with pytest.raises(SystemExit, match="give --run"):  # L2L verify is scripts/final_eval.py on a run
+        run.main(["verify", "--config", str(cfg_path), "--checkpoint", str(ckpt)])
     # validate / test now evaluate through the configured L2L backend (tests/test_evaluation_backends.py): no resident
     # refusal any more; here they get as far as the missing checkpoint
     with pytest.raises(SystemExit, match="not a LoRA checkpoint"):
@@ -128,9 +132,17 @@ def test_compare_runs_reports_identical_runs_and_catches_a_different_one(sandbox
     trainer.train(make_cfg(tmp_path, L2L_CPU, name="tiny_lr", learning_rate=1e-3), device="cpu")
     assert compare_runs.main(["tiny_res", "tiny_l2l", "--out", str(tmp_path / "same.json")]) == 0
     rep = json.loads((tmp_path / "same.json").read_text())
-    assert rep["identical"] and rep["backends"] == ["resident", "l2l_sync"] and len(rep["checkpoints"]) >= 2
+    num = rep["numerical_equivalence"]
+    assert rep["identical"] and rep["backends"] == ["resident", "l2l_sync"] and len(num["checkpoints"]) >= 2
+    assert rep["configs"]["comparable"] and all(d.startswith(("run.", "execution.")) for d in rep["configs"]["differences"])
+    assert rep["tolerance"]["exact"] and "update_equivalence.l2l_sync" in rep["tolerance"]["source"]
+    assert all(num["checks"].values()) and "performance" in rep and "train_seconds" in rep["performance"]["tiny_res"]
+    assert {"loss", "rewards", "rollout_sha256", "clip_frac", "grad_norm_A", "update_norm"} <= set(num["training_rows"]["fields"])
+    assert not {"step_seconds", "peak_reserved_gib"} & set(num["training_rows"]["fields"])  # performance, not equivalence
     assert compare_runs.main(["tiny_res", "tiny_lr", "--out", str(tmp_path / "diff.json")]) == 1
-    assert json.loads((tmp_path / "diff.json").read_text())["training_rows"]["first_differing_step"] is not None
+    diff = json.loads((tmp_path / "diff.json").read_text())
+    assert diff["configs"]["not_allowed"] == ["training.learning_rate"] and not diff["configs"]["comparable"]
+    assert diff["numerical_equivalence"]["training_rows"]["first_differing_step"] is not None
 
 
 def test_an_l2l_async_training_run_equals_the_resident_run_bitwise(sandbox, tmp_path, monkeypatch):
