@@ -97,7 +97,7 @@ H05:
     NOT_SUPPORTED if any comparison fails.
   tickets: ["07"]
   status: SUPPORTED  # CPU only, tiny random models; trainer integration checked bitwise on CPU (tests/test_backend.py); CUDA not yet run
-  evidence: [t07_update_equivalence_cpu]
+  evidence: [t07_update_equivalence_cpu, t07_update_equivalence_cpu_v2]  # t07_update_equivalence_cuda: execution FAIL (lab design, fixed after it; docs/l2l/07_update.md)
 H06:
   statement: Double-buffered asynchronous prefetching reduces execution time without changing numerical results.
   kind: performance  # with a correctness precondition: every equivalence test still passes under l2l_async

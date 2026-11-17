@@ -106,6 +106,11 @@ micro-batches of 1, 2 or 4, with `init_diff` = 4.8e-7, identical on both sides.
 `init_diff == 0` requirement stays. The failed result stays in the repository. The fixed case needs a new CUDA run
 under a new name.
 
+The fixed case on CPU, `t07_update_equivalence_cpu_v2` (commit `ce0b4d4`, clean tree): **PASS, H05 SUPPORTED**, 6,528
+comparisons, all exactly 0.
+
+**Still to run on the GPU.** The fixed CUDA run has not been recorded yet.
+
 ## Not established here
 
 - **CUDA.** Not run on this machine; the commands are in the hand-off.
