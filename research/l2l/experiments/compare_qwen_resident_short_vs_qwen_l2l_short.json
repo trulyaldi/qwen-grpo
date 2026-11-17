@@ -1,0 +1,127 @@
+{
+ "a": "qwen_resident_short",
+ "b": "qwen_l2l_short",
+ "backends": [
+  "resident",
+  "l2l_sync"
+ ],
+ "training_rows": {
+  "steps": [
+   10,
+   10
+  ],
+  "equal": true,
+  "first_differing_step": null
+ },
+ "zero_signal_equal": true,
+ "evaluations": {
+  "count": [
+   3,
+   3
+  ],
+  "equal": true,
+  "accuracy": [
+   [
+    0,
+    0.736328125
+   ],
+   [
+    5,
+    0.724609375
+   ],
+   [
+    10,
+    0.73828125
+   ]
+  ],
+  "accuracy_b": [
+   [
+    0,
+    0.736328125
+   ],
+   [
+    5,
+    0.724609375
+   ],
+   [
+    10,
+    0.73828125
+   ]
+  ]
+ },
+ "checkpoints": {
+  "0": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "5": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "10": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  }
+ },
+ "checkpoints_only_in_one": [],
+ "final": {
+  "a": null,
+  "b": null
+ },
+ "controls": {
+  "qwen_resident_short": {
+   "frozen_changed": [],
+   "params_equal_init": false,
+   "status": "complete"
+  },
+  "qwen_l2l_short": {
+   "frozen_changed": [],
+   "params_equal_init": false,
+   "status": "complete"
+  }
+ },
+ "resources": {
+  "qwen_resident_short": {
+   "train_seconds": 27.243900775909424,
+   "steps": 10,
+   "seconds_per_step": 2.724390077590942,
+   "memory": {
+    "peak_allocated_gib": 1.6270532608032227,
+    "peak_reserved_gib": 2.1484375,
+    "device_gib": 3.99957275390625,
+    "within_budget": true
+   }
+  },
+  "qwen_l2l_short": {
+   "train_seconds": 51.404738664627075,
+   "steps": 10,
+   "seconds_per_step": 5.140473866462708,
+   "memory": {
+    "peak_allocated_gib": 0.807403564453125,
+    "peak_reserved_gib": 1.35546875,
+    "device_gib": 3.99957275390625,
+    "within_budget": true
+   }
+  }
+ },
+ "identical": true
+}

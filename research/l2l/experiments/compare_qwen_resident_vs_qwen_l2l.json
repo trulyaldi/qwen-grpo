@@ -1,0 +1,337 @@
+{
+ "a": "qwen_resident",
+ "b": "qwen_l2l",
+ "backends": [
+  "resident",
+  "l2l_sync"
+ ],
+ "training_rows": {
+  "steps": [
+   100,
+   100
+  ],
+  "equal": true,
+  "first_differing_step": null
+ },
+ "zero_signal_equal": true,
+ "evaluations": {
+  "count": [
+   11,
+   11
+  ],
+  "equal": true,
+  "accuracy": [
+   [
+    0,
+    0.736328125
+   ],
+   [
+    10,
+    0.73828125
+   ],
+   [
+    20,
+    0.7578125
+   ],
+   [
+    30,
+    0.76171875
+   ],
+   [
+    40,
+    0.79296875
+   ],
+   [
+    50,
+    0.791015625
+   ],
+   [
+    60,
+    0.6328125
+   ],
+   [
+    70,
+    0.546875
+   ],
+   [
+    80,
+    0.60546875
+   ],
+   [
+    90,
+    0.611328125
+   ],
+   [
+    100,
+    0.728515625
+   ]
+  ],
+  "accuracy_b": [
+   [
+    0,
+    0.736328125
+   ],
+   [
+    10,
+    0.73828125
+   ],
+   [
+    20,
+    0.7578125
+   ],
+   [
+    30,
+    0.76171875
+   ],
+   [
+    40,
+    0.79296875
+   ],
+   [
+    50,
+    0.791015625
+   ],
+   [
+    60,
+    0.6328125
+   ],
+   [
+    70,
+    0.546875
+   ],
+   [
+    80,
+    0.60546875
+   ],
+   [
+    90,
+    0.611328125
+   ],
+   [
+    100,
+    0.728515625
+   ]
+  ]
+ },
+ "checkpoints": {
+  "0": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "10": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "20": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "30": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "40": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "50": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "60": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "70": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "80": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "90": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  },
+  "100": {
+   "adapter": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   },
+   "optimizer": {
+    "equal": true,
+    "differing": {},
+    "n_differing": 0
+   }
+  }
+ },
+ "checkpoints_only_in_one": [],
+ "final_validation": {
+  "predictions_equal": true,
+  "label_scores_equal": true
+ },
+ "final": {
+  "a": {
+   "n": 1066,
+   "accuracy": 0.7166979362101313,
+   "invalid_rate": 0.0009380863039399625,
+   "predicted_positive_rate": 0.7288930581613509,
+   "predicted_negative_rate": 0.2701688555347092,
+   "recall_NEGATIVE": 0.4878048780487805,
+   "recall_POSITIVE": 0.9455909943714822,
+   "macro_f1": 0.7014197915407574,
+   "confusion": {
+    "NEGATIVE": {
+     "NEGATIVE": 260,
+     "POSITIVE": 28
+    },
+    "POSITIVE": {
+     "NEGATIVE": 273,
+     "POSITIVE": 504
+    },
+    "None": {
+     "NEGATIVE": 0,
+     "POSITIVE": 1
+    }
+   }
+  },
+  "b": {
+   "n": 1066,
+   "accuracy": 0.7166979362101313,
+   "invalid_rate": 0.0009380863039399625,
+   "predicted_positive_rate": 0.7288930581613509,
+   "predicted_negative_rate": 0.2701688555347092,
+   "recall_NEGATIVE": 0.4878048780487805,
+   "recall_POSITIVE": 0.9455909943714822,
+   "macro_f1": 0.7014197915407574,
+   "confusion": {
+    "NEGATIVE": {
+     "NEGATIVE": 260,
+     "POSITIVE": 28
+    },
+    "POSITIVE": {
+     "NEGATIVE": 273,
+     "POSITIVE": 504
+    },
+    "None": {
+     "NEGATIVE": 0,
+     "POSITIVE": 1
+    }
+   }
+  }
+ },
+ "controls": {
+  "qwen_resident": {
+   "frozen_changed": [],
+   "params_equal_init": false,
+   "status": "complete"
+  },
+  "qwen_l2l": {
+   "frozen_changed": [],
+   "params_equal_init": false,
+   "status": "complete"
+  }
+ },
+ "resources": {
+  "qwen_resident": {
+   "train_seconds": 200.55198884010315,
+   "steps": 100,
+   "seconds_per_step": 2.0055198884010315,
+   "memory": {
+    "peak_allocated_gib": 1.6868553161621094,
+    "peak_reserved_gib": 2.1875,
+    "device_gib": 3.99957275390625,
+    "within_budget": true
+   }
+  },
+  "qwen_l2l": {
+   "train_seconds": 359.96722173690796,
+   "steps": 100,
+   "seconds_per_step": 3.5996722173690796,
+   "memory": {
+    "peak_allocated_gib": 0.8108181953430176,
+    "peak_reserved_gib": 1.3671875,
+    "device_gib": 3.99957275390625,
+    "within_budget": true
+   }
+  }
+ },
+ "identical": true
+}
