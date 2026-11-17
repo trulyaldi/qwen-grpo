@@ -47,7 +47,8 @@ def explicit_forward(model, input_ids, attention_mask=None, position_ids=None, l
     input_ids      [N, T]
     attention_mask [N, T] 1 = token, 0 = padding (None: no padding)
     position_ids   [N, T] or None for 0..T-1 (HF's default); left-padded rows need cumsum(mask) - 1 as generate() uses
-    logits_to_keep int (0 = all T columns, k = last k) or index tensor, sliced as Qwen3ForCausalLM does
+    logits_to_keep int (0 = all T columns, k = last k) or index tensor, sliced as Qwen3ForCausalLM does; None: return
+                   the final-norm hidden states [N, T, H] instead of logits (explicit_hidden)
     layer_executor object with execute(index, layer, hidden, **layer_kwargs) -> hidden, called once per decoder layer
                    in order; None = ResidentLayerExecutor()
     layer_callback callable(index, hidden) run after decoder layer `index` with its output [N, T, H] (before the final
@@ -73,8 +74,15 @@ def explicit_forward(model, input_ids, attention_mask=None, position_ids=None, l
             layer_callback(index, hidden)
 
     hidden = decoder.norm(hidden)                                                 # [N, T, H]
+    if logits_to_keep is None:
+        return hidden
     keep = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
     return lm_head(hidden[:, keep, :])                                            # [N, K, V]
+
+
+def explicit_hidden(model, input_ids, attention_mask=None, position_ids=None, layer_executor=None, layer_callback=None):
+    """The final-norm output [N, T, H] that explicit_forward feeds to the LM head (the same computation, without it)."""
+    return explicit_forward(model, input_ids, attention_mask, position_ids, None, layer_executor, layer_callback)
 
 
 def explicit_logprobs(model, rollouts):

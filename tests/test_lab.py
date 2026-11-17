@@ -352,3 +352,36 @@ def test_gradient_equivalence_passes_on_cpu_and_a_detached_boundary_fails(tmp_pa
     assert {p for c in failed for p in ("last2", "first_last", "distributed") if f".{p}." in c["model"]} == \
         {"last2", "first_last", "distributed"}
     assert lab.report("ok", root=tmp_path) and lab.report("fault", root=tmp_path)
+
+
+@pytest.fixture
+def small_head_grid(monkeypatch):
+    from qwen_grpo import head_lab
+    monkeypatch.setattr(head_lab, "VOCABS", {64: (7, 64)})
+    monkeypatch.setattr(head_lab, "LENGTHS", (4,))
+    monkeypatch.setattr(head_lab, "MICRO", (None, 2))
+    monkeypatch.setattr(head_lab, "QWEN3_VOCAB", 3000)
+    monkeypatch.setattr(head_lab, "REAL_HEAD", {"hidden": 64, "vocab": 3000, "rows": 2, "R": 8, "chunk": 256})
+
+
+def test_logprob_equivalence_is_blocked_without_l2l_sync(tmp_path):
+    r = lab.run("logprob_equivalence", RESIDENT, "r", root=tmp_path)
+    assert r["status"] == "BLOCKED" and "comparisons" not in r
+
+
+def test_logprob_equivalence_passes_on_a_small_grid_and_a_raw_logit_fails(tmp_path, small_head_grid):
+    r = lab.run("logprob_equivalence", STORE_CPU, "ok", root=tmp_path, hypothesis_id="H03", trials=2, warmup=0)
+    assert r["status"] == "PASS" and r["hypothesis_result"] == "SUPPORTED", r["reasons"][:5]
+    assert {c["quantity"] for c in r["comparisons"]} == {"logp", "loss", "grads", "head_grads", "hidden_grads"}
+    names = " ".join(c["name"] for c in r["comparisons"])
+    assert all(s in names for s in (".chunked7.", ".chunked64.", ".streamed_full.", ".streamed7.", ".it3.", ".old"))
+    assert all(c["max_abs"] == 0 for c in r["comparisons"] if ".streamed_full." in c["name"])  # L2L itself is exact
+    head = r["measurements"]["head"]
+    assert all(v["chunked"]["saved_bytes"] < v["full"]["saved_bytes"] for v in head.values())
+    f = lab.run("logprob_equivalence", STORE_CPU, "fault", root=tmp_path, perturbation="raw_logit", trials=2, warmup=0)
+    assert f["status"] == "FAIL" and f["execution_status"] == "PASS"
+    failed = {c["quantity"] for c in f["comparisons"] if not c["pass"]}
+    assert {"logp", "grads"} <= failed
+    for side in (".chunked7.", ".chunked64.", ".streamed_full.", ".streamed7."):  # every candidate side is caught
+        assert any(not c["pass"] for c in f["comparisons"] if side in c["name"]), side
+    assert lab.report("ok", root=tmp_path) and lab.report("fault", root=tmp_path)

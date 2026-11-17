@@ -73,3 +73,47 @@ gradient_equivalence:
         grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
         hidden_grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
     bfloat16: *backward_exact
+
+logprob_equivalence:
+  # Candidates: the chunked output head (resident and L2L) and L2L with the full head, each against the full-logits
+  # resident reference at the same parameters. L2L itself is exact (gradient_equivalence); the chunked head changes
+  # only the fp32 summation order of (a) the log-sum-exp over the V vocabulary rows and (b) dL/dh = sum_v dL/dz_v W_v.
+  # Every log-prob is computed in fp32 for both dtypes (response_logprobs upcasts), so (a) is an fp32 error in both.
+  # A disclosed pilot measured the errors before these thresholds were recorded (docs/l2l/05_output_head.md); the
+  # thresholds below follow from the derivations, not from the measured values.
+  l2l_sync:
+    float32:
+      why: >-
+        logp: atol 1e-4. A reordered fp32 sum of V <= 151,936 positive terms has a relative error far below 1e-4, and
+        log turns a relative error of the sum into an absolute error of the log-prob. The full-logits reference's own
+        error against an fp64 computation is ~2e-5 at V = 151,936. So 1e-4 bounds the disagreement of two fp32
+        orderings, and it is 1/2000 of the clip range eps = 0.2, so no clipping decision can hinge on it except a
+        ratio within 1e-4 of 1 +- eps. loss: atol 4e-4, derived from logp: the per-token surrogate is ratio * A,
+        ratio = exp(logp - old) with both logp and old shifted by <= 1e-4, so |d ratio| <= e^{2e-4} - 1 ~ 2e-4, and
+        |A| <= sqrt(2) for G = 3 population-std advantages: 2e-4 * 1.42 * (1 + eps) < 4e-4, and the mean over tokens
+        and sequences does not increase it. Gradients (LoRA, head input, decoder-layer outputs): rtol 1e-4 of the
+        tensor's largest reference magnitude. dL/dz differs by at most the logp-level error times the softmax, and
+        dL/dh is an fp32 sum over V reordered by chunk; propagated through the unchanged layer backward, the relative
+        perturbation stays at fp32 summation level, orders of magnitude below 1e-4.
+      quantities:
+        logp: {atol: 1.0e-4, rtol: 0.0}
+        loss: {atol: 4.0e-4, rtol: 0.0}
+        grads: {atol: 0.0, rtol: 1.0e-4, require_nonzero: true}
+        head_grads: {atol: 0.0, rtol: 1.0e-4, require_nonzero: true}
+        hidden_grads: {atol: 0.0, rtol: 1.0e-4, require_nonzero: true}
+    bfloat16:
+      why: >-
+        logp and loss: as for float32 (the log-softmax is computed in fp32 from the same bf16 logits: the chunk matmul
+        rounds each logit to bf16 exactly as lm_head does). Gradients: rtol 2^-6 of the tensor's largest reference
+        magnitude. The reference casts the fp32 dL/dz to bf16 and rounds the fp32-accumulated dL/dh to bf16 once; the
+        chunked head does the same, but on fp32 values summed in another order, so a value next to a bf16 rounding
+        boundary can round to the neighbouring bf16 number: one ulp, at most 2^-7 of the element's magnitude. Such
+        one-ulp flips enter the bf16 layer backward, where an output element combines them, so 2 ulps at the largest
+        magnitude, 2^-6, is allowed. An error of the method (a missing chunk, an unnormalized logit, a wrong row)
+        changes gradients by O(1) relative, far above this bound.
+      quantities:
+        logp: {atol: 1.0e-4, rtol: 0.0}
+        loss: {atol: 4.0e-4, rtol: 0.0}
+        grads: {atol: 0.0, rtol: 0.015625, require_nonzero: true}
+        head_grads: {atol: 0.0, rtol: 0.015625, require_nonzero: true}
+        hidden_grads: {atol: 0.0, rtol: 0.015625, require_nonzero: true}

@@ -81,33 +81,40 @@ def micro_batches(rollouts, size=None):
         yield rows, {k: v[rows] if isinstance(v, torch.Tensor) else v for k, v in rollouts.items()}
 
 
-def prepare(model, rollouts, rewards, micro_batch_size=None):
+def prepare(model, rollouts, rewards, micro_batch_size=None, logprobs=None):
     """Fixed targets of one rollout batch -> (advantages [B*G], old_logp [B*G, R]), or None if no group has mixed
     rewards. old_logp is the sampling policy's log-prob, computed once (no graph) and reused by every update, in the
-    same micro-batches as the updates: bf16 outputs depend on batch shape, and iteration 0 needs ratio exactly 1."""
+    same micro-batches as the updates: bf16 outputs depend on batch shape, and iteration 0 needs ratio exactly 1.
+    logprobs: (model, rollouts) -> [n, R], default compute_logprobs; grpo_update must be given the same one."""
+    logprobs = logprobs or compute_logprobs
     if (rewards == rewards[:, :1]).all():
         return None
     adv = group_advantages(rewards).flatten().to(rollouts["input_ids"].device)
     with torch.no_grad():
-        old_logp = torch.cat([compute_logprobs(model, c) for _, c in micro_batches(rollouts, micro_batch_size)])
+        old_logp = torch.cat([logprobs(model, c) for _, c in micro_batches(rollouts, micro_batch_size)])
     return adv, old_logp
 
 
-def grpo_update(model, params, optimizer, rollouts, adv, old_logp, clip_eps=0.2, iteration=0, micro_batch_size=None):
+def grpo_update(model, params, optimizer, rollouts, adv, old_logp, clip_eps=0.2, iteration=0, micro_batch_size=None,
+                logprobs=None):
     """One AdamW update of the clipped objective against the fixed old_logp -> scalar logs. Iteration 0 must see
     ratio 1 (same parameters as the sampling policy); later iterations recompute log-probs under the updated adapter.
 
     Micro-batches: the loss is -(1/N) sum_i J_i over all N = B*G completions (J_i: completion i's length-normalized
     clipped surrogate). grpo_loss of a chunk c of n_c completions is -(1/n_c) sum_{i in c} J_i, so (n_c / N) times it,
     summed over chunks, is exactly the full-batch loss; each chunk is backpropagated (and its graph freed) before the
-    next, and the gradients accumulate to the full-batch gradient. A single chunk is not rescaled at all."""
+    next, and the gradients accumulate to the full-batch gradient. A single chunk is not rescaled at all.
+
+    logprobs: (model, rollouts) -> [n, R] with autograd, default compute_logprobs (e.g. output_head.streamed_logprobs
+    for the L2L / chunked-head path); it must be the function prepare() used, or the INIT_TOL check fails."""
+    logprobs = logprobs or compute_logprobs
     if not torch.isfinite(adv).all():
         raise RuntimeError(f"non-finite advantages {adv.tolist()}")
     N = adv.shape[0]
     out, loss, new_logp = {"iteration": iteration}, None, []
     optimizer.zero_grad(set_to_none=True)
     for rows, chunk in micro_batches(rollouts, micro_batch_size):
-        logp = compute_logprobs(model, chunk)
+        logp = logprobs(model, chunk)
         mask = chunk["completion_mask"]
         if iteration == 0:
             out["init_diff"] = max(out.get("init_diff", 0.0), masked_max(logp.detach() - old_logp[rows], mask))

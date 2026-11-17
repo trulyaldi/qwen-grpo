@@ -50,9 +50,9 @@ def placements(n):
             "distributed": sorted({0, n // 3, (2 * n) // 3, n - 1})}
 
 
-def build(shape, attn, dtype, layers):
+def build(shape, attn, dtype, layers, vocab=F.VOCAB):
     """Seeded tiny Qwen3 with LoRA on every projection of `layers`; B ~ N(0, LORA_B_STD). Call inside isolated()."""
-    m = Qwen3ForCausalLM(Qwen3Config(vocab_size=F.VOCAB, tie_word_embeddings=True, attn_implementation=attn,
+    m = Qwen3ForCausalLM(Qwen3Config(vocab_size=vocab, tie_word_embeddings=True, attn_implementation=attn,
                                      **F.SHAPES[shape])).to(dtype).eval()
     targets = [f"model.layers.{i}.self_attn.{p}" for i in layers for p in ATTN_PROJ]
     targets += [f"model.layers.{i}.mlp.{p}" for i in layers for p in MLP_PROJ]

@@ -44,6 +44,20 @@ H02:
 H03:
   statement: Memory-efficient output-head computation preserves GRPO log-probabilities and gradients.
   kind: correctness
+  criterion: >-
+    Written before the Ticket 05 acceptance run (after a disclosed CPU pilot; see docs/l2l/05_output_head.md). Case
+    logprob_equivalence: at the same parameters and inputs, the chunked output head (resident and with the L2L
+    executor) and L2L with the full head give selected-token log-probabilities (old and current), the GRPO loss
+    reported by the unchanged training.grpo_update, every LoRA gradient, the head-input gradient and every
+    decoder-layer-output gradient that agree with the full-logits resident reference within research/l2l/tolerances.yaml
+    (logprob_equivalence: logp 1e-4, loss 4e-4 absolute; gradients 1e-4 (fp32) / 2^-6 (bf16) of the largest reference
+    magnitude); every reference gradient is nonzero. Grid: V in {64, 1000, 151936} x fp32/bf16 x R in {1, 4, 16} x
+    whole batch / micro-batches of 2 x two chunk sizes per V (one leaving a remainder chunk) x 4 AdamW iterations
+    (reference snapshots; some tokens must clip). Reference integrity: the full-logits path equals
+    policy.compute_logprobs bitwise, and the probe loss equals the training run's. Execution requirements: every side
+    passes the unchanged iteration-0 old/current check (training.INIT_TOL), and the chunked head's largest allocation
+    is bounded by its chunk and its saved bytes do not grow with V. NOT_SUPPORTED if any comparison exceeds its
+    threshold.
   tickets: ["05"]
   status: untested
   evidence: []
