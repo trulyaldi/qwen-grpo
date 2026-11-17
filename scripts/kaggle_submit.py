@@ -48,6 +48,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))  # gpu-train validates configs and checkpoints with qwen_grpo
 KAGGLE = ROOT / "kaggle"
 LEDGER = KAGGLE / "submissions.jsonl"
 BUILD = KAGGLE / "build"
@@ -130,7 +131,6 @@ def resolve_at_commit(sha, path):
         tarfile.open(fileobj=io.BytesIO(r.stdout)).extractall(tmp, filter="data")
         if not (Path(tmp) / path).is_file():
             sys.exit(f"{path} is not in commit {sha[:12]}: commit and push the config first (Kaggle runs the commit)")
-        sys.path.insert(0, str(ROOT))
         from qwen_grpo import config
         try:
             cfg = config.load(Path(tmp) / path)
@@ -171,7 +171,6 @@ def resume_target(run_dir, streaming):
     """(argument for `run.py train --resume`, step) of a downloaded run, or (None, why). Streaming runs: the
     highest-step checkpoint whose COMMIT.json validates (the kernel passes `latest`, which picks the same one); other
     runs: the highest step that saved its optimizer state."""
-    sys.path.insert(0, str(ROOT))
     from qwen_grpo.checkpointing import STATE
     steps = sorted((int(p.name[4:]), p) for p in (Path(run_dir) / "checkpoints").glob("step*") if p.name[4:].isdigit())
     if streaming:
