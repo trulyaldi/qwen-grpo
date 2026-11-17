@@ -113,3 +113,11 @@ See `docs/l2l/02_weight_store.md` for the measured values:
 - pinned vs pageable H2D at 6.58 vs 4.44 GB/s;
 - `RLIMIT_MEMLOCK` not binding `cudaHostRegister` under WSL2;
 - the unmeasured WSL2 page-locked ceiling (≥ 512 MiB).
+
+## Ticket 03: synchronous layer-streamed forward
+
+No new sources were read for this ticket. The forward follows L2L §2.1 as recorded above: only the executing layer's
+weights are on the device, plus transit buffers. It also follows MegaTrain §3.4, binding views of a flat buffer to a
+layer's weight slots per layer, which we do by re-pointing the HF/PEFT modules' own parameters. Not taken yet:
+L2L's micro-batch-inside-layer loop (§2.2, Algorithm 2) and any prefetch or overlap (MegaTrain §3.1; Ticket 08). The
+measurements are in `docs/l2l/03_sync_forward.md`.

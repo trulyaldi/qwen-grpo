@@ -20,8 +20,8 @@ H01:
     after the first, and after the forward it equals its value before the forward. NOT_SUPPORTED if any comparison
     exceeds its threshold.
   tickets: ["03"]
-  status: untested
-  evidence: []
+  status: SUPPORTED  # tiny random Qwen3 models, forward only, use_cache=False; not yet real weights or generation
+  evidence: [t03_forward_equivalence]
 H02:
   statement: Checkpointed L2L backward produces the same LoRA gradients as resident autograd.
   kind: correctness
