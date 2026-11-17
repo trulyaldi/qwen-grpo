@@ -110,7 +110,31 @@ head).
 
 ## Evidence
 
-Recorded after the code commit; see `research/l2l/experiments/t05_*` and the table appended below.
+Commit `95693aa`, tracked tree clean, CPU. Commands: `research/l2l/experiments/ticket05_commands.log`.
+
+| run | result |
+|---|---|
+| `t05_logprob_equivalence_cpu` (H03) | **FAIL, H03 NOT_SUPPORTED** (execution PASS). 23,064 of 23,184 comparisons pass; 120 fail (details below) |
+| `t05_logprob_equivalence_raw_logit` (fault: unnormalized selected logit) | **FAIL as expected** (execution PASS) |
+| full test suite | not recorded: the run was stopped before it finished |
+
+**The 120 failures are a flaw in the experiment design, not numerical disagreements.**
+- All 120 have max_abs = 0. The candidate equals the reference exactly.
+- They fail because the reference tensor is identically zero, and `require_nonzero` rejects a comparison against a
+  zero reference (it has no power).
+- All of them are `head_grads` (24) and `hidden_grads` (96) at V = 1000, R = 1, micro-batches of 2, in iterations after
+  the first. In those iterations every token of one micro-batch is clipped, so that micro-batch's gradient with
+  respect to the head input and the layer outputs is genuinely zero, for every side alike. This includes L2L with the
+  full head, which is exact.
+- The pilot did not show this because it ran with non-binding thresholds that have no `require_nonzero`.
+
+**Status and next step.** By the recorded rule the hypothesis is NOT_SUPPORTED, and that result stays on record.
+The protocol forbids loosening a rule after a failing run without saying so. A fix still has to be decided, for
+example:
+- require nonzero gradients summed over a step's micro-batches, rather than per micro-batch;
+- or change the grid so that no micro-batch is fully clipped.
+
+Either fix must be recorded as a change made after this failure, followed by a new run.
 
 ## Not established here
 

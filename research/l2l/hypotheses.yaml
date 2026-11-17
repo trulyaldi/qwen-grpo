@@ -59,8 +59,9 @@ H03:
     is bounded by its chunk and its saved bytes do not grow with V. NOT_SUPPORTED if any comparison exceeds its
     threshold.
   tickets: ["05"]
-  status: untested
-  evidence: []
+  status: NOT_SUPPORTED  # by the recorded rule; all 120 failures are zero-reference power-rule failures with
+  # max_abs 0, not numerical disagreements (docs/l2l/05_output_head.md). Unresolved: needs a design fix and a re-run.
+  evidence: [t05_logprob_equivalence_cpu]
 H04:
   statement: Streamed generation follows the same target-policy distribution as resident generation.
   kind: correctness
