@@ -74,6 +74,14 @@ prof t11_profile_qwen3_0.6b_async_kvcpu "${P06[@]}" --backend l2l_async --kv-cac
 prof t11_profile_qwen3_4b_async --config configs/experiments/qwen3_4b_l2l.yaml \
   --prediction results/budget/predictions/qwen3-4b_8gb.json --budget-gib 8 --steps 1 --eval-n 16
 
+echo "== 4d. Ticket 12: DFlash vs plain streamed generation on Qwen3-4B (downloads the 4B model and the drafter)" | tee -a "$LOG"
+if [ -e "$EXP/t12_dflash_bench.json" ]; then echo "skip t12_dflash_bench (exists)" | tee -a "$LOG"
+else
+  python scripts/dflash_bench.py --config configs/experiments/qwen3_4b_l2l_dflash.yaml --max-new 4 32 2>&1 \
+    | grep -vE "Warning|warn" | tail -12 | tee -a "$LOG"
+  [ -e "$EXP/t12_dflash_bench.json" ] && new+=("$EXP/t12_dflash_bench.json")
+fi
+
 echo "== 5. Ticket 09: crash/resume experiment on the real Qwen3-0.6B (H08)" | tee -a "$LOG"
 if [ -e "$EXP/t09_resume_qwen_stream.json" ]; then echo "skip t09_resume_qwen_stream (exists)" | tee -a "$LOG"
 else

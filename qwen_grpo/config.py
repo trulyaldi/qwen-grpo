@@ -289,7 +289,8 @@ def unimplemented(cfg: Config) -> list:
             + ["execution.resident_layers > 0 (L2L streams every decoder layer)"] * bool(sync and x.resident_layers)
             + ["execution.vocab_chunk_size (H03 unresolved)"] * (x.vocab_chunk_size is not None)
             + ["execution.kv_cache 'cpu'"] * (x.kv_cache != "gpu" and not sync)
-            + ["dflash"] * cfg.dflash.enabled)  # streaming: Ticket 09 (qwen_grpo/streaming/)
+            + ["dflash with the resident backend"] * bool(cfg.dflash.enabled and x.backend == "resident"))
+    # streaming: Ticket 09 (qwen_grpo/streaming/); dflash with an L2L backend: Ticket 12 (execution/dflash.py)
 
 
 def require_implemented(cfg: Config):

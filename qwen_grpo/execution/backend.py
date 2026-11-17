@@ -94,6 +94,15 @@ def make_backend(cfg, model, device):
         return ResidentBackend(model)
     if x.backend in ("l2l_sync", "l2l_async"):
         kv = torch.device(device) if x.kv_cache == "gpu" else torch.device("cpu")
-        return L2LBackend(model, device, x.weight_storage, x.weight_buffers, kv_device=kv,
-                          prefetch_depth=x.prefetch_depth if x.backend == "l2l_async" else 0)
+        be = L2LBackend(model, device, x.weight_storage, x.weight_buffers, kv_device=kv,
+                        prefetch_depth=x.prefetch_depth if x.backend == "l2l_async" else 0)
+        if cfg.dflash.enabled:  # rollouts drafted by DFlash, verified token by token by the current LoRA policy
+            from qwen_grpo.execution.dflash import DFlashDrafter, DFlashGenerator
+            dtype = next(p for p in model.parameters() if not p.requires_grad).dtype
+            drafter = DFlashDrafter.from_pretrained(cfg.dflash.draft_model, dtype=dtype, device=device)
+            be.sampler = DFlashGenerator(drafter, be.executor, kv)
+            be.name += "+dflash"
+        return be
+    if cfg.dflash.enabled:
+        raise SystemExit("dflash.enabled needs an L2L backend (the drafter runs beside the streamed target)")
     raise SystemExit(f"execution.backend {x.backend!r} is not implemented")

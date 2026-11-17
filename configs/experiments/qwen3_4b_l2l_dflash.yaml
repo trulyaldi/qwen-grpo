@@ -1,0 +1,10 @@
+# Ticket 12 / H10: Qwen3-4B on the L2L backend with DFlash drafting (z-lab/Qwen3-4B-DFlash-b16, about 1.08 GB in
+# bf16, GPU-resident) for rollouts; the current LoRA policy verifies every token. Budget 8 GiB (drafter included).
+extends: qwen3_4b_l2l.yaml
+
+run:
+  name: qwen3_4b_l2l_dflash
+
+dflash:
+  enabled: true
+  draft_model: z-lab/Qwen3-4B-DFlash-b16

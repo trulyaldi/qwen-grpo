@@ -176,6 +176,16 @@ H09:
 H10:
   statement: DFlash reduces target-model execution overhead while preserving the current LoRA policy's output distribution.
   kind: performance  # with a correctness precondition: distribution preservation
+  criterion: >-
+    Written before the Ticket 12 runs (docs/l2l/12_dflash.md). Correctness (tests/test_dflash.py, CPU, tiny models with
+    random and oracle drafters): DFlash greedy outputs equal plain streamed generation exactly, including partial
+    acceptance and rejections; sampled outputs follow the target's exact law (chi-square on the joint law of the first
+    two tokens, reject at p < 1e-3, plain sampler as control). Real model (scripts/dflash_bench.py, Qwen3-4B, L2L,
+    z-lab/Qwen3-4B-DFlash-b16, LoRA policies at B scales 0 / 0.01 / 0.03): greedy tokens equal plain generation at every
+    policy (the verifier is the current LoRA policy). The efficiency claim is SUPPORTED only where measured target
+    passes per generated token are below 1 and the DFlash generation and GRPO step wall times are below plain ones in
+    the same run; otherwise NOT_SUPPORTED, with the measured bottleneck reported. The 8 GB budget needs assignment-grade
+    evidence (H11's rule).
   tickets: ["12"]
   status: untested
   evidence: []
