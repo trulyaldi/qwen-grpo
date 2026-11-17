@@ -1,0 +1,20 @@
+# Canonical GPU comparison, Qwen3-4B, RESIDENT: the reference for the L2L runs, on a larger GPU. The bf16 weights alone
+# are ~7.5 GiB and preflight estimates a ~9.5 GiB device peak (calculator, unmeasured), so this cannot meet the 8 GiB
+# target: use a card with >= 16 GB. The guard stays on with a 16 GiB ceiling so the run records nvidia-smi samples
+# (CUDA context included) and stops if the estimate is badly wrong. Identical to the Qwen3-4B L2L configs apart from
+# execution, the budget and run.name.
+#   python scripts/run.py train --config configs/gpu/qwen3_4b_resident.yaml
+extends: qwen3_4b_l2l_async.yaml
+
+run:
+  name: qwen3_4b_resident
+  gpu_budget_gib: 16.0            # guard ceiling, not a prediction (estimate ~9.5 GiB)
+
+execution:                        # resident: every L2L-only key must be null
+  backend: resident
+  weight_storage: null
+  resident_layers: null
+  weight_buffers: null
+  prefetch_depth: null
+  activation_checkpointing: null
+  kv_cache: gpu

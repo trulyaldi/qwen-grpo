@@ -1,0 +1,17 @@
+# Canonical GPU comparison, Qwen3-0.6B, synchronous L2L: frozen decoder weights in pinned CPU memory, each layer
+# copied into one of two GPU buffers when it is needed (no copy/compute overlap), layer-boundary checkpoints with
+# recomputation in backward, streamed generation with the KV cache on the GPU. Otherwise identical to the resident
+# config. Fallback when page-locking fails (e.g. a container limit): weight_storage: pageable (slower copies; record it).
+extends: qwen3_0.6b_resident.yaml
+
+run:
+  name: qwen3_0.6b_l2l_sync
+
+execution:
+  backend: l2l_sync
+  weight_storage: pinned
+  resident_layers: 0              # every decoder layer streamed (> 0 is not implemented)
+  weight_buffers: 2
+  prefetch_depth: 0               # synchronous: required 0
+  activation_checkpointing: true  # required: the L2L executors always checkpoint
+  kv_cache: gpu

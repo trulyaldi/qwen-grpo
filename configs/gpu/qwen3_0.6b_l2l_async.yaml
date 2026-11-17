@@ -1,0 +1,11 @@
+# Canonical GPU comparison, Qwen3-0.6B, asynchronous L2L: as l2l_sync, plus the next layer is copied on a separate
+# CUDA stream while the current one computes (prefetch_depth 1, two buffers). Numerically identical to l2l_sync by
+# design (CPU tests); whether it is faster on a given GPU is a measurement (H06), not an assumption.
+extends: qwen3_0.6b_l2l_sync.yaml
+
+run:
+  name: qwen3_0.6b_l2l_async
+
+execution:
+  backend: l2l_async
+  prefetch_depth: 1               # weight_buffers >= prefetch_depth + 1

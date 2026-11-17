@@ -137,3 +137,41 @@ def test_memory_at_its_defaults_leaves_the_hash_unchanged():
     cfg = load("default.yaml")
     assert cfg.memory == config.Memory() and "memory" in config.as_dict(cfg)
     assert config.sha256(cfg) == HASHES_BEFORE["default.yaml"]
+
+
+# --- canonical GPU comparison configs (configs/gpu/) ------------------------------------------------------------
+
+GPU = CONFIGS / "gpu"
+PAIRS = {"qwen3_0.6b": "Qwen/Qwen3-0.6B", "qwen3_4b": "Qwen/Qwen3-4B"}
+
+
+@pytest.mark.parametrize("model", sorted(PAIRS))
+def test_gpu_configs_differ_only_in_execution(model):
+    cfgs = {b: config.load(GPU / f"{model}_{b}.yaml") for b in ("resident", "l2l_sync", "l2l_async")}
+    allowed = {"run.name", "run.gpu_budget_gib"} if model == "qwen3_4b" else {"run.name"}
+    for b in ("l2l_sync", "l2l_async"):
+        changed = set(diff(cfgs["resident"], cfgs[b]))
+        assert {k for k in changed if not k.startswith("execution.")} <= allowed, (b, changed)
+    assert diff(cfgs["l2l_sync"], cfgs["l2l_async"]) == ["execution.backend", "execution.prefetch_depth", "run.name"]
+    for b, c in cfgs.items():
+        assert c.model.name == PAIRS[model] and c.run.name == f"{model}_{b}" and c.execution.backend == b
+        assert not c.dflash.enabled and not c.streaming.enabled and c.execution.kv_cache == "gpu"
+        assert c.execution.vocab_chunk_size is None and config.unimplemented(c) == []
+        assert c.training.num_iterations == 1 and c.training.micro_batch_size is None
+    x = cfgs["l2l_sync"].execution
+    assert (x.weight_storage, x.resident_layers, x.weight_buffers, x.activation_checkpointing) == ("pinned", 0, 2, True)
+    assert (x.prefetch_depth, cfgs["l2l_async"].execution.prefetch_depth) == (0, 1)
+    r = cfgs["resident"].execution
+    assert all(getattr(r, k) is None for k in config.L2L_ONLY)
+
+
+def test_the_4b_l2l_configs_carry_the_8_gib_guard():
+    for b in ("l2l_sync", "l2l_async"):
+        c = config.load(GPU / f"qwen3_4b_{b}.yaml")
+        assert c.run.gpu_budget_gib == 8.0 and c.memory.guard and c.memory.allocator_cap
+
+
+def test_every_run_name_in_the_repository_is_unique():
+    paths = [p for p in sorted(CONFIGS.rglob("*.yaml")) if "budget" not in p.parts and not config.is_abstract(p)]
+    names = [config.load(p, historical=True).run.name for p in paths]
+    assert len(names) == len(set(names)), sorted(n for n in names if names.count(n) > 1)
