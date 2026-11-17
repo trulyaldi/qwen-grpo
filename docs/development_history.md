@@ -38,7 +38,8 @@ Each ticket's design notes, measurements and decisions:
 
 Raw results are in `research/l2l/experiments/`; per-ticket command and test logs are named `ticketNN_*.log`. The
 hypotheses, protocol and tolerances are in `research/l2l/` (`hypotheses.yaml`, `protocol.md`, `tolerances.yaml`); the
-commands that test each hypothesis are in `research/l2l/runbook.yaml`.
+commands that test each hypothesis are in `configs/studies/assignment.yaml` (run by `scripts/experiment.py`;
+the earlier `research/l2l/runbook.yaml` was folded into it).
 
 **Notes in the ticket documents that are now out of date:**
 - "training refuses `l2l_sync` / `l2l_async`" (03, 07);
@@ -46,8 +47,8 @@ commands that test each hypothesis are in `research/l2l/runbook.yaml`.
 
 **The refactor after Ticket 13** added:
 - configuration profiles and the `memory` section;
-- the `qwen-grpo` CLI with preflight;
-- Soup diagnostics and the silent-failure registry.
+- the `qwen-grpo` CLI with preflight, Soup diagnostics and the silent-failure registry (all removed again in the
+  cleanup: `docs/cleanup_report.md`; git history keeps them, e.g. commit 20e7315).
 
 See `git log` from `c123f7e`.
 
@@ -63,5 +64,5 @@ repository:
 The code still accepts the old layout (`scripts/run.py <cmd> --config <yaml> --checkpoint checkpoints/<run>_step<N>`),
 and such runs cannot be resumed into `runs/`.
 
-`research/train_grpo.py` and `research/train_lora.py` are the Stage 1–2 scripts: legacy, imported by nothing, and
-not to be ported. `research/baseline.py` still produces `results/baseline/`.
+`research/train_grpo.py` and `research/train_lora.py` were the Stage 1–2 single-step scripts, imported by nothing; they
+were removed in the cleanup (git history: commit 20e7315). `research/baseline.py` still produces `results/baseline/`.

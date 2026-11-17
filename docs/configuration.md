@@ -8,14 +8,14 @@ so what ran is always explicit.
 ```
 configs/
   profiles/
-    shared.yaml          abstract: model-independent defaults (GRPO, LoRA rank, data, evaluation); cannot be run
-    qwen3_0_6b.yaml      Qwen3-0.6B, resident, 4 GB laptop (the reference run's settings)
-    qwen3_4b.yaml        Qwen3-4B, l2l_async + pinned store, 8 GiB budget, memory guard
-  default.yaml, qwen.yaml   the reference run (runs/qwen); self-contained, pinned equal to profiles/qwen3_0_6b.yaml
-  gpu/*.yaml             canonical resident / l2l_sync / l2l_async comparisons for Qwen3-0.6B and Qwen3-4B
-  experiments/*.yaml     small overrides of a profile or of another experiment
-  budget/*.yaml          inputs of the Step-0 budget calculator (scripts/budget.py), a separate schema; preflight
-                         now derives the same inputs from a training config
+    shared.yaml            abstract: model-independent defaults (GRPO, LoRA rank, data, evaluation); cannot be run
+    qwen3_0_6b.yaml        Qwen3-0.6B, resident (the reference run's settings)
+    qwen3_4b.yaml          Qwen3-4B, l2l_async + pinned store, 8 GiB budget, memory guard
+  qwen.yaml                the reference run runs/qwen; self-contained, pinned equal to profiles/qwen3_0_6b.yaml
+  experiments/*.yaml       runnable experiments: small overrides of a profile or of another experiment
+  historical/*.yaml        configs of recorded runs (the H05 resident-vs-L2L evidence), kept to reproduce them
+  studies/assignment.yaml  hypothesis -> experiment manifest (scripts/experiment.py), operational fields only
+  budget/*.yaml            inputs of the Step-0 budget calculator (scripts/budget.py), a separate schema
 ```
 
 `extends: <path relative to this file>` loads the parent first; mappings merge key by key, any other value (list,
@@ -26,40 +26,48 @@ an int, `"1e-4"` for a float: write `1.0e-4`) and inconsistent combinations are 
 
 ## Selecting a setup
 
-**Canonical comparisons (`configs/gpu/`).** Within one model, the three files differ only in `execution`; the 4B
-resident file also differs in the guard ceiling, `run.gpu_budget_gib`. Model, data, LoRA, GRPO hyperparameters,
-seed, prompt, reward and evaluation are identical. DFlash and disk streaming are off.
+**Backend comparisons.** Within one comparison the files differ only in `execution` and `run.name` (the 4B resident
+file also in its guard ceiling, `run.gpu_budget_gib`), pinned by `tests/test_profiles.py`. Model, precision, data,
+LoRA, GRPO hyperparameters, seeds, prompt, reward and evaluation are identical; DFlash and disk streaming are off.
 
-| config | model | backend | GPU target | purpose |
-|---|---|---|---|---|
-| `gpu/qwen3_0.6b_resident.yaml` | Qwen3-0.6B | resident | any ≥ 4 GB (est. 2.2 GiB) | reference |
-| `gpu/qwen3_0.6b_l2l_sync.yaml` | Qwen3-0.6B | l2l_sync, pinned, 2 buffers | ≥ 4 GB (est. 1.4 GiB) | L2L = resident? |
-| `gpu/qwen3_0.6b_l2l_async.yaml` | Qwen3-0.6B | l2l_async, prefetch 1 | ≥ 4 GB | prefetch effect |
-| `gpu/qwen3_4b_resident.yaml` | Qwen3-4B | resident, guard 16 GiB | ≥ 16 GB (est. 9.5 GiB) | 4B reference |
-| `gpu/qwen3_4b_l2l_sync.yaml` | Qwen3-4B | l2l_sync, guard 8 GiB | 8 GiB research budget | 4B L2L, no overlap |
-| `gpu/qwen3_4b_l2l_async.yaml` | Qwen3-4B | l2l_async, guard 8 GiB | 8 GiB research budget | 4B L2L, prefetching |
+| config (`configs/experiments/`) | model | backend | precision | GPU | purpose |
+|---|---|---|---|---|---|
+| `qwen3_0.6b_resident.yaml` | 0.6B | resident | bf16 | ≥ 4 GB, native bf16 | reference (100 steps) |
+| `qwen3_0.6b_l2l_sync.yaml` | 0.6B | l2l_sync, pinned, 2 buffers | bf16 | same | L2L = resident? |
+| `qwen3_0.6b_l2l_async.yaml` | 0.6B | l2l_async, prefetch 1 | bf16 | same | prefetching |
+| `kaggle_06b_fp32_{resident,l2l_sync,l2l_async}.yaml` | 0.6B | the three | **float32 diagnostic** | Kaggle T4 (no bf16) | the same comparison, 8 steps |
+| `qwen3_4b_resident.yaml` | 4B | resident, guard 16 GiB | bf16 | ≥ 16 GB (est. 9.5 GiB) | 4B reference |
+| `qwen3_4b_l2l_sync.yaml` | 4B | l2l_sync, guard 8 GiB | bf16 | 8 GiB budget | 4B L2L, no overlap |
+| `qwen3_4b_l2l.yaml` | 4B | l2l_async, guard 8 GiB | bf16 | 8 GiB budget | 4B L2L (H11 names this file) |
 
-The estimates come from `qwen-grpo preflight` (the calculator, unmeasured). All six use `num_iterations: 1`: every
-update is taken at the sampling policy, so the importance ratio is exactly 1 and clipping never binds. That is pinned
-by `tests/test_training_invariants.py`. Use `num_iterations > 1` (e.g. `experiments/grpo_clip_k3.yaml`) to study
-clipping. `training.micro_batch_size` splits the B·G completions of one update into chunks whose gradients accumulate
-before a single optimizer step. It does not change B, G or the loss, but under L2L every chunk streams the layers
-again.
+GPU estimates come from the Step-0 calculator (`scripts/budget.py`), not measurements. float32 appears only in the
+`kaggle_06b_fp32_*` files (pinned by a test): they are diagnostics for a GPU without native bf16, never evidence for a
+bf16 claim, and never a silent substitute. The comparison configs use `num_iterations: 1`: every update is taken at
+the sampling policy, so the importance ratio is exactly 1 and clipping never binds (pinned by
+`tests/test_training_invariants.py`); set `num_iterations > 1` to study clipping (`qwen3_0.6b_resume.yaml` uses 2).
+`training.micro_batch_size` splits the B·G completions of one update into chunks whose gradients accumulate before a
+single optimizer step; it does not change B, G or the loss, but under L2L every chunk streams the layers again.
 
 **Pinned or pageable.** L2L defaults to pinned host memory. `weight_storage: pageable` is the documented fallback
 where page-locking fails; it is slower for host-to-GPU copies, and must be recorded as a different setup.
 
-**Other configs:**
+**Other experiments:**
 
 | goal | config | backend | notes |
 |---|---|---|---|
-| Qwen3-0.6B reference (resident) | `configs/profiles/qwen3_0_6b.yaml` (or `configs/default.yaml`) | `resident` | 100 steps, full validation |
-| Qwen3-0.6B through the 4B code path | `configs/experiments/qwen_local.yaml` | `l2l_async` + streaming | 10 steps; laptop development |
-| resident vs synchronous L2L | `configs/experiments/qwen_resident.yaml` vs `qwen_l2l.yaml` | `resident` / `l2l_sync` | bitwise comparison: `scripts/compare_runs.py` |
-| Qwen3-4B smoke | `configs/experiments/qwen3_4b_smoke.yaml` | `l2l_async` + streaming + guard | 4 steps, the final run's batch shape |
-| Qwen3-4B smoke with DFlash | `configs/experiments/qwen3_4b_smoke_dflash.yaml` | + `dflash` | drafter `z-lab/Qwen3-4B-DFlash-b16` |
-| Qwen3-4B final | `configs/experiments/qwen3_4b_final.yaml` | `l2l_async` + streaming + guard | 1024 prompts, 210 steps; DFlash off (see docs/status.md) |
-| LR=0 negative control | `configs/experiments/qwen3_4b_final_lr0.yaml` | as final | 30 steps, `learning_rate: 0.0` |
+| 0.6B through the 4B code path | `qwen3_0.6b_streaming.yaml` | `l2l_async` + disk streaming | 10 steps; `--resume latest` |
+| 0.6B on a T4, same path | `kaggle_06b_fp32_streaming.yaml` | `l2l_async` + streaming | float32 diagnostic |
+| H08 on the real model | `qwen3_0.6b_resume.yaml` | resident + streaming | `scripts/resume_experiment.py` |
+| Qwen3-4B smoke | `qwen3_4b_smoke.yaml` | `l2l_async` + streaming + guard | 4 steps, the final run's batch shape |
+| Qwen3-4B smoke with DFlash | `qwen3_4b_smoke_dflash.yaml` | + `dflash` | drafter `z-lab/Qwen3-4B-DFlash-b16` |
+| Qwen3-4B final | `qwen3_4b_final.yaml` | `l2l_async` + streaming + guard | 1024 prompts, 210 steps; DFlash off (open: H10) |
+| LR=0 negative control | `qwen3_4b_final_lr0.yaml` | as final | 30 steps, `learning_rate: 0.0` |
+| H10 benchmark | `qwen3_4b_l2l_dflash.yaml` | `l2l_async` + DFlash | `scripts/dflash_bench.py` |
+
+**From 0.6B to 4B** the profiles differ in `model.name`, the LoRA module selection (the preset `last2-attention` is
+resolved for 0.6B; 4B names q/v/o of its last two layers explicitly), the backend, `run.gpu_budget_gib` and the
+`memory` guard. Data, GRPO and evaluation come from `shared.yaml` for both (`test_shared_settings_live_in_one_place`);
+the 0.6B hyperparameters were not re-tuned for 4B.
 
 Execution backends (`execution` section):
 
@@ -82,7 +90,7 @@ dflash: {enabled: true, draft_model: z-lab/Qwen3-4B-DFlash-b16}  # with an l2l b
 | `data` | `train_samples`, `val_subset`, `subset_seed` (42) | balanced subsets of `data/sentiment.json` |
 | `training` | `batch_size`, `group_size`, `learning_rate`, `max_steps`, `max_attempts`, `max_new_tokens`, `seed`, `clip_eps` (0.2), `num_iterations` (1), `micro_batch_size` (null) | `learning_rate: 0.0` is the negative control; `null` micro-batch = all B·G rows at once |
 | `evaluation` | `every`, `full_validation`, `max_new_tokens` (4), `batch_size` (32), `score_batch_size` (8), `bootstrap_samples` (10000) | greedy; defaults match the saved baseline |
-| `verification` | `split` (validation), `control_checkpoint` (null), `train_control` (false) | `verify` of resident runs |
+| `verification` | `split` (validation), `control_checkpoint` (null), `train_control` (false) | `verify` of resident runs (L2L runs: `scripts/final_eval.py`, test split) |
 | `execution` | `backend` (resident), `weight_storage`, `resident_layers`, `weight_buffers`, `prefetch_depth`, `activation_checkpointing`, `vocab_chunk_size`, `kv_cache` (gpu) | the null keys are required for `l2l_*` and must stay null for `resident` |
 | `streaming` | `enabled` (false), `directory` (null) | disk-backed prompts and rollout records, crash-consistent checkpoints, `resume` from the latest valid one |
 | `dflash` | `enabled` (false), `draft_model` (null) | the drafter must be trained for `model.name` |
@@ -107,5 +115,5 @@ and every evaluation output. Optional sections (`execution`, `streaming`, `dflas
 while at their defaults, so configs older than a section keep their hash (pinned by `tests/test_profiles.py`). Each
 training session also records the git commit and dirty flag, Python and package versions, the dataset file's sha256
 and split sizes, the device and GPU, host CPU count and RAM, and the cached revision of the target model (and drafter);
-seeds and the backend are part of the resolved config. `preflight` records the memory signature (model, LoRA,
-execution, DFlash, memory, budget and batch shape): a GPU preflight vouches for every config with the same signature.
+seeds and the backend are part of the resolved config. `scripts/experiment.py run` adds, per execution, the hardware
+probe, the commands with UTC times and exit codes, and nvidia-smi samples (`evidence/<id>/manifest.json`).

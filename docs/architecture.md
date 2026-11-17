@@ -43,7 +43,7 @@ backend. A backend (`execution/backend.py`) supplies only three things:
 
 **Scheduling is micro-batch-major.** Each micro-batch of the old-log-prob pass and of the update, each prefill or
 decode step, and each backward sweep streams the layers again. The weight traffic per step is roughly
-(1 + new tokens + 2 + backward fraction) × model size; preflight reports the estimate. Bitwise equality with the
+(1 + new tokens + 2 + backward fraction) × model size; `scripts/budget.py` reports the estimate. Bitwise equality with the
 resident backend is the acceptance criterion (`research/l2l/tolerances.yaml`: 0 for these cases).
 
 **DFlash** (`execution/dflash.py`, `dflash.enabled`):
@@ -70,8 +70,8 @@ resident backend is the acceptance criterion (`research/l2l/tolerances.yaml`: 0 
 - **Resources.** `execution/profiler.py` samples nvidia-smi, `cudaMemGetInfo`, the allocator and RSS, with a guard
   that stops the run. `memory.guard` turns it on for training. `budget/` estimates memory and PCIe time from config and
   safetensors headers.
-- **Diagnostics** (`diagnostics/`): preflight, invariants, and the silent-failure registry. Soup is called only through
-  `integrations/soup.py`.
+- **Diagnostics** (`diagnostics/invariants.py`): pure checks on data, reward, adapters and run artifacts, exercised
+  by the fault-injection tests in `tests/silent_failures/`.
 
 Imports point downward: `grpo` ← `policy` ← `training` ← `trainer`, and `execution/*` never imports the trainer.
 Research lab modules (`*_lab.py`, `lab.py`) and `diagnostics/` / `integrations/` are not imported by the training path.

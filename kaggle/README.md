@@ -41,17 +41,18 @@ python scripts/kaggle_submit.py summary  --mode cpu                 # pass / fai
 |---|---|---|
 | `cpu` | CPU | Import checks. Every repository config loaded and validated. pytest: config, sentiment data and reward, GRPO maths, policy, explicit forward, L2L layer streaming, checkpointed backward, trainer (checkpoints, bitwise resume), disk streaming and crash-consistent resume, correctness audit, run reports. `--scope full`: the whole suite. Qwen weights are never downloaded (`tests/conftest.py` forbids it). |
 | `gpu-tests` | T4 (device 0) | pytest on every file with CUDA-parametrized tests (resident vs L2L forward, checkpointed backward and LoRA gradients, sync vs async prefetch, buffer reuse and synchronization, pinned weight store, streamed generation, DFlash exactness, profiler). The lab cases (`forward / gradient / generation / update_equivalence`, async, CUDA) run only on a GPU with native bf16, because each lab grid mixes fp32 and bf16. |
-| `gpu-short` | T4 (device 0) | Two 4-step GRPO + LoRA runs of Qwen3-0.6B: resident (`configs/experiments/qwen_resident.yaml`) and L2L sync (`qwen_l2l.yaml`), each shortened by a Kaggle-only config. Then `scripts/compare_runs.py` checks them for identity. They cover model loading, rollouts, reward, advantages, LoRA gradient flow, optimizer steps, checkpoint save/reload and subset evaluation. |
+| `gpu-short` | T4 (device 0) | Three 8-step GRPO + LoRA runs of Qwen3-0.6B in **float32** (diagnostic), one per backend: `configs/experiments/kaggle_06b_fp32_resident.yaml`, `_l2l_sync.yaml`, `_l2l_async.yaml` (identical except `execution` and `run.name`). Then `scripts/compare_runs.py` compares sync and async with resident (bitwise rule of `tolerances.yaml` `update_equivalence`). They cover model loading, rollouts, reward, advantages, LoRA gradient flow, optimizer steps, checkpoint save/reload and subset evaluation. |
 
 ### bfloat16 on T4 (never silently replaced)
 
 - The runner records `torch.cuda.is_bf16_supported(including_emulation=False)`. Where it is False:
   - CUDA × bfloat16 pytest items are **SKIPPED**, with the GPU name and compute capability as the reason.
   - The bf16 lab cases are **SKIPPED**.
-  - The bf16 variant of `gpu-short` is **SKIPPED**.
-- `gpu-short` always runs one separately labelled diagnostic experiment with the base weights in **float32**:
-  `configs/experiments/kaggle/kaggle_short_*_fp32.yaml`, written on Kaggle next to the unchanged originals and saved
-  in the evidence.
+  - The bf16 backend comparison (`compare_backends_bf16`) is **SKIPPED**; it is study entry `H05.real_0.6b_bf16`.
+- `gpu-short` runs the committed, separately labelled float32 diagnostics `configs/experiments/kaggle_06b_fp32_*.yaml`
+  (their resolved form and sha256 are saved in the evidence). float32 results are never evidence for a bf16 claim.
+- Every mode also records `python scripts/experiment.py plan --target local` (`raw/study_plan.log`): which study entries
+  this machine could run, and why the others are blocked.
 - The production configs, tolerances and training code are not changed.
 - Only device 0 is used (`CUDA_VISIBLE_DEVICES=0`). Kaggle's two T4s are two separate 16 GB devices, not a pool.
 
@@ -64,7 +65,7 @@ python scripts/kaggle_submit.py summary  --mode cpu                 # pass / fai
 | `execution.log` | every command with UTC timestamps and exit codes |
 | `raw/` | raw output of every step, pytest JUnit XML, `pip freeze` |
 | `gpu_memory.csv` | `nvidia-smi` sampled every second for the whole run (a note if no GPU) |
-| `resolved_config.yaml` | `gpu-short`: the diagnostic configs and their resolved form and sha256 |
+| `resolved_config.yaml` | `gpu-short`: the three diagnostic configs and their resolved form and sha256 |
 | `artifacts/` | `gpu-short`: the runs' directories (training.json with per-step allocator peaks, checkpoints, reports), the comparison |
 | `results.json`, `test_results.txt` | derived: per-step status and test counts, skipped tests with reasons, overall |
 
@@ -79,5 +80,6 @@ python scripts/kaggle_submit.py summary  --mode cpu                 # pass / fai
 
 - Qwen3-4B in bf16 under the 8 GB cap, with per-process nvidia-smi.
 - The bf16 lab cases (H01, H02, H04, H05 async).
-- H06 prefetch timing, H07, H09 real, H10 DFlash, H11 budget.
+- H06 prefetch timing, H09 real, H10 DFlash, H11 budget (`python scripts/experiment.py plan --target ampere`).
+- H07's execution-level case (`t11_depth_residency`, float32) can run on the T4.
 - The final run with its LR=0 control and the held-out evaluation.

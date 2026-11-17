@@ -1,118 +1,88 @@
 # Running on a rented Linux GPU
 
-You rent the machine, connect and clone. This page lists the commands, cheapest first: each step can reveal the
-problem the next one would waste money on. Nothing here provisions or manages cloud resources.
+Only after the Qwen3-0.6B evidence from Kaggle (`kaggle/README.md`) is in. You rent the machine, connect and clone;
+nothing here provisions cloud resources. The steps go cheapest first: each can reveal the problem the next one would
+waste money on. Use `tmux` (or `nohup ... &`) so a disconnect does not kill a run.
 
 ## Choosing hardware
 
 | experiment | GPU | host RAM | disk |
 |---|---|---|---|
-| Qwen3-0.6B, all three backends | any CUDA GPU ≥ 4 GB with bf16 (compute capability ≥ 8.0 recommended) | ≥ 16 GB | ≥ 20 GB |
-| Qwen3-4B resident | ≥ 16 GB (estimated peak ~9.5 GiB, unmeasured) | ≥ 16 GB | ≥ 40 GB |
-| Qwen3-4B L2L, 8 GiB target | ≥ 8 GB | ≥ 32 GB (estimated 11.7–18.5 GiB, incl. a ~7.3 GiB pinned store) | ≥ 40 GB |
+| Qwen3-0.6B, all three backends (bf16) | Ampere or newer (native bf16), ≥ 8 GB | ≥ 16 GB | ≥ 20 GB |
+| Qwen3-4B L2L, 8 GiB target (H10–H12) | Ampere or newer, ≥ 8 GB (larger is fine: the guard enforces the budget) | ≥ 32 GB (estimated 11.7–18.5 GiB incl. a ~7.3 GiB pinned store) | ≥ 40 GB |
+| Qwen3-4B resident reference (optional) | ≥ 16 GB (estimated peak ~9.5 GiB) | ≥ 16 GB | ≥ 40 GB |
 
-The estimates come from `qwen-grpo preflight` (the budget calculator, no measurement). A card larger than 8 GB is fine
-for the 8 GiB target: `memory.guard` enforces the budget during training, not the hardware.
-
-Budget evidence counts only if `nvidia-smi --query-compute-apps=pid,used_memory` lists the training process with a
-number. Some containers hide host PIDs. The guard then falls back to the device-wide figure, which can only stop a
-run early, but the evidence is graded diagnostic. Step 3 checks this in a minute.
+Estimates are from the Step-0 calculator (`scripts/budget.py`), not measurements. **Budget evidence (H11) counts only
+if `nvidia-smi` lists the training process with a number**: many containers hide host PIDs. Step 2 checks this.
 
 ## Steps
 
-1. **Environment:**
+1. **Environment** (the lab fixtures require exactly these packages):
    ```bash
-   git clone --branch feat/l2l-streaming-research https://github.com/trulyaldi/qwen-grpo.git && cd qwen-grpo
-   python3 -m venv .venv && source .venv/bin/activate
-   pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu126   # cuXXX matching the driver
-   pip install -r requirements.txt && pip install -e . --no-deps
+   git clone https://github.com/trulyaldi/qwen-grpo.git && cd qwen-grpo && git checkout <pushed commit>
+   python3.12 -m venv .venv && source .venv/bin/activate
+   pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu126
+   pip install -r requirements.txt
    export HF_HOME=/workspace/hf        # a persistent volume, so models download once
-   python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(), torch.cuda.is_bf16_supported())"
-   nvidia-smi
    ```
-2. **Lightweight tests (CPU, ~10 min), then the CUDA variants on tiny models (minutes):**
+2. **What can run here (≈ 1 min, no model):**
+   ```bash
+   python scripts/experiment.py plan --target local
+   ```
+   The header must show a usable GPU, `bf16 True`, `fixture packages True`, and `per-process nvidia-smi True`. If the
+   last is False, H11 can only be INCONCLUSIVE (its entry is blocked): use another host for H11.
+3. **Tests (CPU ~11 min, then the CUDA variants on tiny models):**
    ```bash
    CUDA_VISIBLE_DEVICES="" python -m pytest -q
    python -m pytest -q tests/test_prefetch.py tests/test_backward.py tests/test_generator.py tests/test_layer_stream.py \
-     tests/test_backend.py tests/test_output_head.py tests/test_weight_store.py
+     tests/test_backend.py tests/test_output_head.py tests/test_weight_store.py tests/test_dflash.py
    ```
-   The CUDA variants are the first GPU check of the current L2L code: the saved CUDA evidence predates later changes.
-3. **Hardware preflight (≈ 1 min, no model):**
+4. **Correctness on this GPU (tiny models, minutes):** the async cases, then the sync CUDA cases again, because their
+   recorded evidence predates later executor changes (`research/l2l/final_report.md`, evidence freshness):
    ```bash
-   qwen-grpo preflight --config configs/gpu/qwen3_4b_l2l_async.yaml --gpu --hardware-only --allow-metadata-download
+   python scripts/experiment.py run --entry H01.lab_async_cuda H01.fault_unsafe_reuse H02.lab_async_cuda \
+     H02.fault_unsafe_reuse H04.lab_async_cuda H05.lab_async_cuda
+   python scripts/experiment.py run --again --entry H01.lab_sync H02.lab_sync_cuda H04.lab_sync_cuda H05.lab_sync_cuda
+   python scripts/experiment.py run --entry H07.depth_residency_execution
    ```
-   It checks the architecture, that this torch build has kernels for the GPU, per-process `nvidia-smi` accounting,
-   that the GPU is exclusive, the planned pinned allocation, and the measured H2D bandwidth.
-4. **Qwen3-0.6B, one run per backend** (downloads ~1.5 GB):
+5. **Qwen3-0.6B in bf16** (downloads ~1.5 GB): the three backends on identical inputs and their comparison, prefetch
+   timing (needs step 4's async evidence), the real-model merge and resume:
    ```bash
-   for b in resident l2l_sync l2l_async; do
-     python scripts/run.py train --config configs/gpu/qwen3_0.6b_$b.yaml
-   done
-   python scripts/compare_runs.py qwen3_0.6b_resident qwen3_0.6b_l2l_sync   # identical, or every difference listed
+   python scripts/experiment.py run --entry H05.real_0.6b_bf16 H06.prefetch_timing H09.merge_qwen3_0.6b H08.resume_qwen3_0.6b
    ```
-   These are the full 100-step comparison runs.
-   - **Timing:** read `runs/<name>/training/training.json` → `timings` after the first steps. To stop early,
-     Ctrl-C; the run is `interrupted` and resumable (below).
-   - **Determinism:** bitwise identity resident vs L2L was observed on the laptop GPU. On another GPU, kernels may
-     differ between the two backends; the comparison script reports any difference.
-5. **Qwen3-4B, with a guarded profile first.** One step of every phase under the 8 GiB guard; it writes a JSON with
-   raw samples:
+6. **Qwen3-4B** (downloads ~8 GB): the guarded smoke run first (4 steps, the final batch shape), then the profile, the
+   DFlash benchmark, and only then the final run, its LR=0 control and the held-out evaluation:
    ```bash
-   python scripts/profile_run.py --config configs/gpu/qwen3_4b_l2l_async.yaml --budget-gib 8 --steps 1 --eval-n 16 \
-     --out-dir runs/_profile
+   python scripts/experiment.py run --entry H11.smoke
+   python scripts/experiment.py run --entry H11.profile H10.dflash_bench
+   python scripts/experiment.py run --entry H12.train_final       # hours; resumable
+   python scripts/experiment.py run --entry H12.final_eval
    ```
-   Go on only if its verdict is not FAIL.
-   - **On FAIL:** change one measurable setting (e.g. `training.micro_batch_size`) in a new config, and profile that.
-     Nothing is reduced automatically.
-   - **Then train:**
-     ```bash
-     python scripts/run.py train --config configs/gpu/qwen3_4b_l2l_async.yaml   # 8 GiB target, guard on
-     python scripts/run.py train --config configs/gpu/qwen3_4b_l2l_sync.yaml    # prefetching's effect
-     python scripts/run.py train --config configs/gpu/qwen3_4b_resident.yaml   # on a >= 16 GB GPU
-     ```
-6. **Resume after an interruption** (a dropped SSH session, a preemption):
+   Go on from the smoke run only if it completed (its memory guard stops it at the first nvidia-smi sample above
+   8 GiB). On a guard failure, change one measurable setting (e.g. `training.micro_batch_size`) in a new config and
+   profile that; nothing is reduced automatically.
+7. **Resume after an interruption** (the run's status is `interrupted` or `failed`):
    ```bash
-   ls runs/qwen3_4b_l2l_async/checkpoints/
-   python scripts/run.py train --config runs/qwen3_4b_l2l_async/config.yaml \
-     --resume runs/qwen3_4b_l2l_async/checkpoints/step<N>
+   python scripts/run.py train --config runs/<run>/config.yaml --resume latest              # streaming runs
+   python scripts/run.py train --config runs/<run>/config.yaml --resume runs/<run>/checkpoints/step<N>   # others
+   python scripts/experiment.py run --entry <id>        # then: completed runs are skipped, the rest continues
    ```
-   - Use `tmux` or `nohup ... &` so a disconnect does not kill the run.
-   - Checkpoints are written every `evaluation.every` steps (10). Resume continues bitwise as the uninterrupted run
-     would, tested on CPU.
-7. **Evaluate and compare:**
+8. **Report, collect, then stop paying:**
    ```bash
-   python scripts/run.py validate --run qwen3_4b_l2l_async
-   python scripts/final_eval.py --run qwen3_4b_l2l_async      # test split: base / adapter / streamed-merged
-   python scripts/compare_runs.py qwen3_4b_resident qwen3_4b_l2l_async
+   python scripts/experiment.py report      # evidence/study_report.md, research/l2l/final_report.md
+   tar czf results_$(date -u +%Y%m%dT%H%MZ).tgz evidence/ research/l2l/ runs/
    ```
-8. **Collect results, then stop paying:**
-   ```bash
-   tar czf results_$(date -u +%Y%m%dT%H%MZ).tgz runs/ research/l2l/experiments/
-   ```
-   - The archive holds the reports, logs with UTC timestamps, raw memory samples, checkpoints and evidence.
-   - Copy it off the machine (`scp` / `rsync`) and check the copy before destroying the instance.
+   Copy the archive off the machine (`scp` / `rsync`) and check the copy before destroying the instance. Statuses in
+   `research/l2l/hypotheses.yaml` are then updated by hand, citing the new evidence names.
 
-## What to record from each run
+## What each run records
 
 | quantity | where |
 |---|---|
-| GPU, CUDA, driver, packages, git commit (dirty flag), config sha256, model revision, dataset sha256, host RAM | `training/training.json` → `environment`, `config_sha256` |
-| allocator allocated / peak allocated / peak reserved | `training/training.json` → `training[*]`, `memory` |
-| process / device GPU memory incl. CUDA context | `training/memory/*.json` (with `memory.guard`) |
-| rollout / old-log-prob / update time, rollout tokens, CPU RSS, weight bytes copied | `training/training.json` → `timings` |
-| phase profile, H2D bandwidth, transfer time estimate | `scripts/profile_run.py` output |
+| GPU, CUDA, driver, packages, git commit (dirty flag), config sha256, model revision, dataset sha256, host RAM | `runs/<run>/training/training.json` → `environment`, `config_sha256` |
+| allocator allocated / peak allocated / peak reserved (exclude the CUDA context) | `training.json` → `training[*]`, `memory` |
+| process / device GPU memory incl. CUDA context | `training/memory/*.json` (with `memory.guard`), `evidence/<id>/raw/nvidia_smi_*.csv` |
+| rollout / old-log-prob / update time, rollout tokens, CPU RSS, weight bytes copied | `training.json` → `timings` |
+| phase profile, H2D bandwidth | `scripts/profile_run.py` output (H11 entry) |
 | model quality with CIs | `evaluation/step<N>/<split>.json`, `final_eval` output |
-
-## Gated alternative
-
-`qwen-grpo train --config <yaml>` runs the same trainer, but first runs an offline preflight. For configs with
-`memory.guard` (the Qwen3-4B ones), it also requires that a GPU preflight with the same memory settings has passed:
-
-```bash
-qwen-grpo preflight --config configs/gpu/qwen3_4b_l2l_async.yaml --gpu
-```
-
-The guard itself is active in both entry points.
-
-Assignment-specific runs, kept from the earlier work, are in `configs/experiments/qwen3_4b_*` and
-`scripts/final_run.sh`: smoke, final 1024-prompt run, LR=0 control, held-out evaluation and report.
+| every dispatcher execution: hardware probe, commands, UTC times, exit codes, raw logs | `evidence/<UTC>_<entry>/` |
