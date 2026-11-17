@@ -21,6 +21,8 @@ Ticket 04).
 
 Shapes: N rows, T columns, H hidden size.
 """
+import contextlib
+
 import torch
 
 from qwen_grpo.execution.qwen3_forward import unwrap
@@ -44,6 +46,7 @@ def place_resident(model, store, device):
 
 
 def _inside(t, buffer):
+    """t lies entirely inside `buffer` (same device, address range)."""
     start, end = buffer.data_ptr(), buffer.data_ptr() + buffer.numel()
     return t.device == buffer.device and start <= t.data_ptr() and t.data_ptr() + t.numel() * t.element_size() <= end
 
@@ -51,8 +54,8 @@ def _inside(t, buffer):
 class StreamingLayerExecutor:
     """Runs decoder layer i on weights copied from store slab i into a fixed pool of buffers (see module docstring).
 
-    trace: one record per executed layer: the layer, the buffer used, the slab copied and the PyTorch-allocated device
-    memory just before the copy (None on CPU)."""
+    trace: one record per weight load: the layer, the phase (forward, or backward recomputation), the buffer used, the
+    slab copied and the PyTorch-allocated device memory just before the copy (None on CPU)."""
 
     def __init__(self, store, buffers):
         if not buffers:
@@ -69,10 +72,11 @@ class StreamingLayerExecutor:
         """{name: device view} of layer `index`'s weights in `buffer`."""
         return self.store.copy_to(index, buffer)
 
-    def execute(self, index, layer, hidden, **kwargs):
-        if torch.is_grad_enabled():
-            raise RuntimeError("StreamingLayerExecutor is forward-only: run under torch.no_grad() (autograd would save "
-                               "views of a weight buffer that later layers overwrite)")
+    @contextlib.contextmanager
+    def bound(self, index, layer, phase="forward"):
+        """Layer `index`'s frozen Parameters point into a pool buffer (loaded now) inside the block, and back at their
+        CPU slab views after it, also on an exception. Yields the buffer. Anything that reads the weights (the layer
+        call, and in backward the autograd.grad of a recomputed layer) must finish inside the block."""
         slab = self.store.slabs[index]
         params = dict(layer.named_parameters())
         if any(params.get(e.name) is not e.param for e in slab.entries):
@@ -80,7 +84,7 @@ class StreamingLayerExecutor:
         k = index % len(self.buffers)
         buffer = self.buffers[k]
         cuda = buffer.device.type == "cuda"
-        self.trace.append({"layer": index, "buffer": k, "slab": index, "slab_bytes": slab.nbytes,
+        self.trace.append({"layer": index, "phase": phase, "buffer": k, "slab": index, "slab_bytes": slab.nbytes,
                            "allocated_before": torch.cuda.memory_allocated(buffer.device) if cuda else None})
         views = self.load(index, buffer)
         try:
@@ -93,10 +97,17 @@ class StreamingLayerExecutor:
                 e.param.data = v
             if outside := [e.name for e in slab.entries if not _inside(e.param, buffer)]:
                 raise RuntimeError(f"layer {index}: weights outside the streaming buffer: {outside}")
-            out = layer(hidden, **kwargs)                                           # [N, T, H]
+            yield buffer
         finally:
             for e in slab.entries:
                 e.param.data = slab.view(slab.data, e)
+
+    def execute(self, index, layer, hidden, **kwargs):
+        if torch.is_grad_enabled():
+            raise RuntimeError("StreamingLayerExecutor is forward-only: run under torch.no_grad() (autograd would save "
+                               "views of a weight buffer that later layers overwrite; backward.py checkpoints instead)")
+        with self.bound(index, layer) as buffer:
+            out = layer(hidden, **kwargs)                                           # [N, T, H]
         if _inside(out, buffer):
             raise RuntimeError(f"layer {index}: output aliases the weight buffer")
         return out
