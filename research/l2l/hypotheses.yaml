@@ -39,8 +39,8 @@ H02:
     from the first adapted one upward, LoRA Parameter and optimizer identities and the store are unchanged.
     NOT_SUPPORTED if any comparison exceeds its threshold or a candidate gradient is missing.
   tickets: ["04"]
-  status: untested
-  evidence: []
+  status: SUPPORTED  # CPU only, tiny random Qwen3 models, use_cache=False; CUDA and real weights not yet run
+  evidence: [t04_gradient_equivalence_cpu]
 H03:
   statement: Memory-efficient output-head computation preserves GRPO log-probabilities and gradients.
   kind: correctness

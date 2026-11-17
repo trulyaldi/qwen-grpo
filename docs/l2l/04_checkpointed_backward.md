@@ -9,8 +9,8 @@ Code:
 
 Config: `research/l2l/configs/store_cpu.yaml` (pageable store, for `--device cpu`).
 
-Status: implemented, and a pilot run passes (below). **The acceptance evidence has not been recorded yet.** It needs a
-commit with a clean tracked tree (see "Pending").
+Evidence: `research/l2l/experiments/t04_*` and `ticket04_*`, recorded at commit `49e1506` with a clean tracked
+tree, on CPU only (below).
 
 Training still refuses `l2l_sync` (`config.unimplemented`). Wiring the executor into the trainer is not part of this
 ticket.
@@ -110,14 +110,17 @@ Each comparison records max abs error, relative error, relative L2, cosine, and 
 **Fault injection.** `detach_boundary=<i>` detaches the activation saved for layer `i`. With the fault in place, no
 gradient reaches anything below layer `i`.
 
-## Pilot (scratch directory, uncommitted tree; not evidence)
+## Evidence (commit `49e1506`, tracked tree clean, CPU)
 
 | run | result |
 |---|---|
-| `gradient_equivalence`, CPU | PASS: 5,296 comparisons, all max_abs = 0 (4,480 LoRA gradients, 496 hidden-state gradients, 160 losses, 160 logits). Reference gradient norms range from 1.2e-3 to 0.90 |
-| same, `detach_boundary=3` | FAIL as expected, execution PASS: 2,304 comparisons fail, all as "missing in candidate" (no silent zeros). The placements that pass are exactly those with no adapter below layer 3: 4-layer final; 6-layer final, last2 and middle |
+| `t04_gradient_equivalence_cpu` (H02) | **PASS, H02 SUPPORTED.** 5,296 comparisons, all max_abs = 0: 4,480 LoRA gradients, 496 hidden-state gradients, 160 losses, 160 logits. Reference gradient norms range from 1.2e-3 to 0.90. Reference integrity clean: HF logits match, and the resident gradients are repeatable |
+| `t04_gradient_equivalence_detach_boundary` (fault: the input saved for layer 3 is detached) | **FAIL as expected,** execution PASS: 2,304 comparisons fail, all as "missing in candidate" (no silent zeros). The placements that pass are exactly those with no adapter below layer 3: 4-layer final; 6-layer final, last2 and middle |
 | saved bytes, forward graph | L2L saves 8–25 % of the resident model's bytes for the same placement |
-| CPU suite (CUDA hidden) | 527 passed, 87 skipped, 23 failed, 1 collection error. The failing set is identical to `HEAD` (aa2f074) on this host |
+| CPU suite (CUDA hidden), `ticket04_tests.log` | 527 passed, 87 skipped, 23 failed, 1 collection error. The failing set is identical to `HEAD` (aa2f074) before this ticket, on this host |
+
+An uncommitted scratch pilot of the same case gave the same figures before the threshold was recorded (see the
+disclosure above).
 
 The 23 failures and the collection error were already there before this ticket. They are specific to this host:
 - **Fixture-bitwise tests and lab cases (18 failures).** The Ticket 00 fixtures were recorded with torch `2.14.1+cu126`
@@ -130,12 +133,9 @@ The 23 failures and the collection error were already there before this ticket. 
 
 ## Pending
 
-1. Commit. Then record the acceptance runs, each with `--hypothesis H02`:
-   ```
-   python scripts/l2l_lab.py run --case gradient_equivalence --config research/l2l/configs/store_cpu.yaml --device cpu --name t04_gradient_equivalence_cpu --hypothesis H02
-   python scripts/l2l_lab.py run --case gradient_equivalence --config research/l2l/configs/store_cpu.yaml --device cpu --name t04_gradient_equivalence_detach --perturb detach_boundary=3
-   ```
-   On a supported GPU, also run `--config research/l2l/configs/store.yaml --device cuda` and the CUDA tests.
+1. On a supported GPU: `python scripts/l2l_lab.py run --case gradient_equivalence --config
+   research/l2l/configs/store.yaml --device cuda --name t04_gradient_equivalence_cuda --hypothesis H02`, and the CUDA
+   tests.
 2. **CUDA determinism.** On a GPU, some backward kernels may be nondeterministic, for example SDPA's
    memory-efficient backward. If the resident reference is not repeatable, the CUDA run will FAIL on reference
    integrity rather than pass. In that case a nonzero tolerance would have to be justified and recorded before the
