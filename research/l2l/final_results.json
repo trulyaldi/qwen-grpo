@@ -19,8 +19,8 @@
    "id": "R3",
    "requirement": "memory-efficient output head (H03)",
    "essential": false,
-   "status": "NOT TESTED",
-   "evidence": "missing ['t05_logprob_equivalence_cpu_v2']"
+   "status": "PASS",
+   "evidence": "t05_logprob_equivalence_cpu_v2"
   },
   {
    "id": "R4",
@@ -69,7 +69,7 @@
    "requirement": "streaming merge preserves behaviour (H09)",
    "essential": true,
    "status": "NOT TESTED",
-   "evidence": "missing ['t10_merge_equivalence_tiny', 't10_merge_equivalence_qwen3_0.6b']"
+   "evidence": "missing ['t10_merge_equivalence_qwen3_0.6b']"
   },
   {
    "id": "R11",
@@ -201,7 +201,7 @@
  "must_change": [
   "R6 async prefetch keeps results exact: NOT TESTED (missing ['t08_gradient_equivalence_async', 't08_update_equivalence_async'])",
   "R8 GPU weight residency bounded in depth (H07): NOT TESTED (missing ['t11_depth_residency'])",
-  "R10 streaming merge preserves behaviour (H09): NOT TESTED (missing ['t10_merge_equivalence_tiny', 't10_merge_equivalence_qwen3_0.6b'])",
+  "R10 streaming merge preserves behaviour (H09): NOT TESTED (missing ['t10_merge_equivalence_qwen3_0.6b'])",
   "R11 DFlash on-policy correctness (H10): NOT TESTED (missing t12_dflash_bench)",
   "R13 Qwen3-4B within the 8 GB GPU budget (H11): NOT TESTED (missing t11_profile_qwen3_4b_async)",
   "R14 held-out task improvement with Qwen3-4B, 1-2k prompts (H12): NOT TESTED (missing t13_final_eval_qwen3_4b_final)",
@@ -232,6 +232,12 @@
     "qwen_grpo/execution/weight_store.py",
     "qwen_grpo/policy.py"
    ]
+  },
+  {
+   "requirement": "R3",
+   "evidence": "t05_logprob_equivalence_cpu_v2",
+   "commit": "6657edfe6ba89e3fe5a26b228638e52d62b94e28",
+   "engine_files_changed_since": []
   },
   {
    "requirement": "R4",

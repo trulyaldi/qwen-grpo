@@ -10,14 +10,14 @@ Every status below is derived by `scripts/final_report.py` from the files in `re
 |---|---|---|---|---|
 | R1 | L2L forward equals resident (H01) | yes | **PASS** | t03_forward_equivalence |
 | R2 | checkpointed backward equals resident (H02) | yes | **PASS** | t04_gradient_equivalence_cuda |
-| R3 | memory-efficient output head (H03) | no | **NOT TESTED** | missing ['t05_logprob_equivalence_cpu_v2'] |
+| R3 | memory-efficient output head (H03) | no | **PASS** | t05_logprob_equivalence_cpu_v2 |
 | R4 | streamed generation equals resident (H04) | yes | **PASS** | t06_generation_equivalence_cuda |
 | R5 | complete GRPO update equals resident (H05) | yes | **PASS** | t07_update_equivalence_cuda_v2 |
 | R6 | async prefetch keeps results exact | yes | **NOT TESTED** | missing ['t08_gradient_equivalence_async', 't08_update_equivalence_async'] |
 | R7 | async prefetch is faster (H06) | no | **NOT TESTED** | missing t08_prefetch_timing |
 | R8 | GPU weight residency bounded in depth (H07) | yes | **NOT TESTED** | missing ['t11_depth_residency'] |
 | R9 | deterministic crash-consistent resume (H08) | yes | **PASS** | t09_resume_tiny_cpu (tiny model only) |
-| R10 | streaming merge preserves behaviour (H09) | yes | **NOT TESTED** | missing ['t10_merge_equivalence_tiny', 't10_merge_equivalence_qwen3_0.6b'] |
+| R10 | streaming merge preserves behaviour (H09) | yes | **NOT TESTED** | missing ['t10_merge_equivalence_qwen3_0.6b'] |
 | R11 | DFlash on-policy correctness (H10) | yes | **NOT TESTED** | missing t12_dflash_bench |
 | R12 | DFlash speedup (H10) | no | **NOT TESTED** |  |
 | R13 | Qwen3-4B within the 8 GB GPU budget (H11) | yes | **NOT TESTED** | missing t11_profile_qwen3_4b_async |
@@ -50,6 +50,7 @@ PASS evidence and the engine files (`qwen_grpo/execution`, `qwen_grpo/training.p
 |---|---|---|---|
 | R1 | t03_forward_equivalence | c4b391be66 | `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/qwen3_forward.py`, `qwen_grpo/execution/weight_store.py`, `qwen_grpo/policy.py`, `qwen_grpo/training.py` |
 | R2 | t04_gradient_equivalence_cuda | 5cc0c0a2a0 | `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/output_head.py`, `qwen_grpo/execution/weight_store.py`, `qwen_grpo/policy.py` |
+| R3 | t05_logprob_equivalence_cpu_v2 | 6657edfe6b | none |
 | R4 | t06_generation_equivalence_cuda | 853091f28c | `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/generator.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/output_head.py`, `qwen_grpo/execution/weight_store.py` |
 | R5 | t07_update_equivalence_cuda_v2 | a8aab7fd1c | `qwen_grpo/execution/backend.py`, `qwen_grpo/execution/fixtures.py`, `qwen_grpo/execution/layer_stream.py`, `qwen_grpo/execution/output_head.py`, `qwen_grpo/execution/weight_store.py` |
 | R9 | t09_resume_tiny_cpu | 726e2ab03c | `qwen_grpo/execution/backend.py`, `qwen_grpo/execution/fixtures.py` |
@@ -58,7 +59,7 @@ PASS evidence and the engine files (`qwen_grpo/execution`, `qwen_grpo/training.p
 
 - R6 async prefetch keeps results exact: NOT TESTED (missing ['t08_gradient_equivalence_async', 't08_update_equivalence_async'])
 - R8 GPU weight residency bounded in depth (H07): NOT TESTED (missing ['t11_depth_residency'])
-- R10 streaming merge preserves behaviour (H09): NOT TESTED (missing ['t10_merge_equivalence_tiny', 't10_merge_equivalence_qwen3_0.6b'])
+- R10 streaming merge preserves behaviour (H09): NOT TESTED (missing ['t10_merge_equivalence_qwen3_0.6b'])
 - R11 DFlash on-policy correctness (H10): NOT TESTED (missing t12_dflash_bench)
 - R13 Qwen3-4B within the 8 GB GPU budget (H11): NOT TESTED (missing t11_profile_qwen3_4b_async)
 - R14 held-out task improvement with Qwen3-4B, 1-2k prompts (H12): NOT TESTED (missing t13_final_eval_qwen3_4b_final)
