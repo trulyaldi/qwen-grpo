@@ -168,8 +168,10 @@ with configs that differ only in `execution` and `run.name`:
 
 L2L used a pinned store, 2 weight buffers, checkpointed backward, the streamed generator for rollouts and evaluation,
 and the full output head. All four runs ran at commit `5300146`, with a clean tree, on the RTX 3050 Ti Laptop GPU.
-This is recorded in each run's `training.json` (`environment`). The committed run folders under `runs/qwen_*`
-reproduce both comparisons. The comparison JSONs themselves predate the provenance field that `compare_runs.py` now
+This is recorded in each run's `training.json` (`environment`). The run folders were committed in `187ab87` and
+then removed from tracking, since training runs are not committed (`.gitignore`). To reproduce both comparisons,
+restore them with `git restore --source=187ab87 --worktree -- runs/qwen_resident runs/qwen_l2l runs/qwen_resident_short
+runs/qwen_l2l_short`, then run `scripts/compare_runs.py`. The comparison JSONs themselves predate the provenance field that `compare_runs.py` now
 writes.
 
 **These runs predate the head-shape fix (`bc5a05d`).** An earlier version of this section said the opposite, which
