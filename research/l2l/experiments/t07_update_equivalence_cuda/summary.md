@@ -1,0 +1,228 @@
+# t07_update_equivalence_cuda: update_equivalence (correctness)
+
+**Status: FAIL** (execution FAIL; hypothesis H05: NOT_EVALUATED, execution FAIL)
+
+- 0.6b-like.float32.mb1.fresh.resident: iteration-0 init_diff 4.76837158203125e-07
+- 0.6b-like.float32.mb1.fresh.l2l: iteration-0 init_diff 4.76837158203125e-07
+- 0.6b-like.float32.mb1.warm.resident: iteration-0 init_diff 4.76837158203125e-07
+- 0.6b-like.float32.mb1.warm.l2l: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb1.fresh.resident: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb1.fresh.l2l: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb1.warm.resident: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb1.warm.l2l: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb2.fresh.resident: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb2.fresh.l2l: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb2.warm.resident: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb2.warm.l2l: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb4.fresh.resident: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb4.fresh.l2l: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb4.warm.resident: iteration-0 init_diff 4.76837158203125e-07
+- 4b-like.float32.mb4.warm.l2l: iteration-0 init_diff 4.76837158203125e-07
+
+- commit `2c2c5857cbb513d637c20e86db6d5ba2e91f647d` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3050 Ti Laptop GPU
+- config `research/l2l/configs/store.yaml` sha256 `e84db9dd6c03770e`; fields used: ['model.dtype', 'execution']; backend `l2l_sync`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `35d003c20a022f64`
+
+| fixture / model | quantity | tensors | pass | worst max_abs | worst rel | bound |
+|---|---|---|---|---|---|---|
+| 0.6b-like.float32.mball.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mball.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb1.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb2.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.float32.mb4.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mball.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb1.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb2.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 0.6b-like.bf16-base.mb4.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mball.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb1.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb2.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.float32.mb4.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mball.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb1.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb2.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.fresh | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.fresh | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.fresh | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.fresh | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.fresh | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.fresh | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.warm | logp | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.warm | loss | 3 | 3/3 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.warm | stats | 18 | 18/18 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.warm | grads | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.warm | updates | 36 | 36/36 | 0.0 | 0.0 | 0.0 |
+| 4b-like.bf16-base.mb4.warm | optimizer | 108 | 108/108 | 0.0 | 0.0 | 0.0 |
+
+
+measurements: `{"clip_frac": {"0.6b-like.float32.mball.fresh": [0.0, 0.0625, 0.25], "0.6b-like.float32.mball.warm": [0.0, 0.0625, 0.1875], "0.6b-like.float32.mb1.fresh": [0.0, 0.0625, 0.25], "0.6b-like.float32.mb1.warm": [0.0, 0.0625, 0.1875], "0.6b-like.float32.mb2.fresh": [0.0, 0.0625, 0.25], "0.6b-like.float32.mb2.warm": [0.0, 0.0625, 0.1875], "0.6b-like.float32.mb4.fresh": [0.0, 0.0625, 0.25], "0.6b-like.float32.mb4.warm": [0.0, 0.0625, 0.1875], "0.6b-like.bf16-base.mball.fresh": [0.0, 0.125, 0.25], "0.6b-like.bf16-base.mball.warm": [0.0, 0.0625, 0.1875], "0.6b-like.bf16-base.mb1.fresh": [0.0, 0.125, 0.25], "0.6b-like.bf16-base.mb1.warm": [0.0, 0.0625, 0.1875], "0.6b-like.bf16-base.mb2.fresh": [0.0, 0.125, 0.25], "0.6b-like.bf16-base.mb2.warm": [0.0, 0.0625, 0.1875], "0.6b-like.bf16-base.mb4.fresh": [0.0, 0.125, 0.25], "0.6b-like.bf16-base.mb4.warm": [0.0, 0.0625, 0.1875], "4b-like.float32.mball.fresh": [0.0, 0.125, 0.1875], "4b-like.float32.mball.warm": [0.0, 0.125, 0.0625], "4b-like.float32.mb1.fresh": [0.0, 0.125, 0.1875], "4b-like.float32.mb1.warm": [0.0, 0.125, 0.0625], "4b-like.float32.mb2.fresh": [0.0, 0.125, 0.1875], "4b-like.float32.mb2.warm": [0.0, 0.125, 0.0625], "4b-like.float32.mb4.fresh": [0.0, 0.125, 0.1875], "4b-like.float32.mb4.warm": [0.0, 0.125, 0.0625], "4b-like.bf16-base.mball.fresh": [0.0, 0.125, 0.3125], "4b-like.bf16-base.mball.warm": [0.0, 0.125, 0.0625], "4b-like.bf16-base.mb1.fresh": [0.0, 0.125, 0.3125], "4b-like.bf16-base.mb1.warm": [0.0, 0.125, 0.0625], "4b-like.bf16-base.mb2.fresh": [0.0, 0.125, 0.3125], "4b-like.bf16-base.mb2.warm": [0.0, 0.125, 0.0625], "4b-like.bf16-base.mb4.fresh": [0.0, 0.125, 0.3125], "4b-like.bf16-base.mb4.warm": [0.0, 0.125, 0.0625]}}`
+
+memory snapshot (snapshot), evidence grade **diagnostic**:
+- CPU RSS 1900.80859375 MiB, high-water mark 1900.80859375 MiB (this process)
+- PyTorch allocator, this process: peak allocated 18.0 MiB, peak reserved 22.0 MiB (excludes the CUDA context and non-PyTorch allocations)
+- cudaMemGetInfo total - free: 865.3 MiB, device-wide (every process and context on the GPU, not process-specific)
+- nvidia-smi raw: compute apps `34421, [N/A]`, memory.used `142` (unreliable under WSL2)
