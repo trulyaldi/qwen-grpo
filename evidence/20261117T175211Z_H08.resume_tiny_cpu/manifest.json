@@ -1,0 +1,87 @@
+{
+ "experiment_id": "20261117T175211Z_H08.resume_tiny_cpu",
+ "entry": {
+  "id": "H08.resume_tiny_cpu",
+  "name": "t09_resume_tiny_cpu",
+  "model": "tiny",
+  "precision": [
+   "float32"
+  ],
+  "requires": [],
+  "steps": [
+   {
+    "argv": [
+     "scripts/resume_experiment.py",
+     "--tiny",
+     "--device",
+     "cpu",
+     "--out",
+     "{name}"
+    ],
+    "creates": "research/l2l/experiments/{name}.json"
+   }
+  ],
+  "judge": {
+   "pass_key": "research/l2l/experiments/{name}.json"
+  }
+ },
+ "evidence_name": "t09_resume_tiny_cpu_r20261117T175211Z",
+ "study": {
+  "path": "configs/studies/assignment.yaml",
+  "sha256": "1d560082f779ace8c925c3d70c34bbf26295324ceb51e371004d0cfc41be4c63"
+ },
+ "git": {
+  "commit": "9ca0390be7517ac88ea21b120b1f28f460bcc5e0",
+  "branch": "cleanup/assignment-research",
+  "tracked_dirty": false,
+  "dirty_files": []
+ },
+ "utc_start": "2026-11-17T17:52:11+00:00",
+ "utc_end": "2026-11-17T17:53:18+00:00",
+ "python": "3.12.3",
+ "hardware": {
+  "cuda": false,
+  "bf16": false,
+  "vram_gib": 4.0,
+  "gpu": "Quadro P1000",
+  "capability": "6.1",
+  "cuda_error": "AcceleratorError: CUDA error: no kernel image is available for execution on the device",
+  "packages": {
+   "torch": "2.14.1",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "fixture_packages_saved": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "fixture_packages": false,
+  "linux_native": false,
+  "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "host_ram_gib": 31.2
+ },
+ "model": "tiny",
+ "precision": [
+  "float32"
+ ],
+ "diagnostic": false,
+ "configs": {},
+ "commands": [
+  {
+   "argv": [
+    "scripts/resume_experiment.py",
+    "--tiny",
+    "--device",
+    "cpu",
+    "--out",
+    "t09_resume_tiny_cpu_r20261117T175211Z"
+   ],
+   "utc_start": "2026-11-17T17:52:11+00:00",
+   "utc_end": "2026-11-17T17:53:12+00:00",
+   "seconds": 60.7,
+   "exit": 0,
+   "log": "raw/step01.log"
+  }
+ ]
+}

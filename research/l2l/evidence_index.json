@@ -602,6 +602,23 @@
    "platform": null
   },
   {
+   "name": "t09_resume_tiny_cpu_r20261117T175211Z",
+   "file": "research/l2l/experiments/t09_resume_tiny_cpu_r20261117T175211Z.json",
+   "sha256": "a3841a68392a130bf05c714295db4abf893353996ab60a8a0ba4bdd2533fda5c",
+   "bytes": 3246,
+   "stored_bytes": 3246,
+   "cited_by": [],
+   "pass": true,
+   "hypothesis": null,
+   "commit": {
+    "git_commit": "9ca0390be7517ac88ea21b120b1f28f460bcc5e0",
+    "git_dirty": false
+   },
+   "tracked_dirty": null,
+   "gpu": null,
+   "platform": null
+  },
+  {
    "name": "t10_merge_equivalence_tiny",
    "file": "research/l2l/experiments/t10_merge_equivalence_tiny/result.json",
    "sha256": "6aa460e32333412c01ae5760547e738ba06e2e7c5e40db6a81e984c738935acb",

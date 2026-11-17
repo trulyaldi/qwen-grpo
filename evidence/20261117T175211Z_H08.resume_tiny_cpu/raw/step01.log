@@ -1,0 +1,275 @@
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 2 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_A: runs/tiny_stream_A/  report: runs/tiny_stream_A/report.md
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny_stream_B_prompt_read/checkpoints/step2: step 2, attempt 1
+streaming resume: uncommitted rollout groups [2] moved aside (they are regenerated)
+streaming resume: pending group 1 restored from disk at iteration 2
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 1 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_B_prompt_read: runs/tiny_stream_B_prompt_read/  report: runs/tiny_stream_B_prompt_read/report.md
+tiny_stream_A (resident) vs tiny_stream_B_prompt_read (resident); rule: none (same backend on both sides) (bitwise)
+configs comparable True (differences: ['run.name'])
+NUMERICAL EQUIVALENCE
+  training rows: [6, 6] steps, 30 fields, identical True
+  zero-signal identical True; rollout records {'compared': True, 'groups': [3, 3], 'equal': True, 'first_differing_group': None}
+  subset evaluations identical True (accuracy [[0, 0.0], [2, 0.0], [4, 0.0], [6, 0.0]])
+  checkpoint step0: adapter identical True, optimizer identical None
+  checkpoint step2: adapter identical True, optimizer identical True
+  checkpoint step4: adapter identical True, optimizer identical True
+  checkpoint step6: adapter identical True, optimizer identical True
+  controls: {'tiny_stream_A': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}, 'tiny_stream_B_prompt_read': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}}
+PERFORMANCE (indicative, not part of the verdict)
+  tiny_stream_A: 2 s, 0.3 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_B_prompt_read: 1 s, 0.2 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_A: commit 9ca0390be7 (dirty False), device cpu, gpu None
+  tiny_stream_B_prompt_read: commit 9ca0390be7 (dirty False), device cpu, gpu None
+IDENTICAL: True   written: /dev/null
+prompt_read@3: crashed True, resumed from runs/tiny_stream_B_prompt_read/checkpoints/step2, committed equal True, records equal True, checkpoints identical True, epoch problems [] -> PASS
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny_stream_B_rollouts_generated/checkpoints/step2: step 2, attempt 1
+streaming resume: uncommitted rollout groups [2, 3] moved aside (they are regenerated)
+streaming resume: pending group 1 restored from disk at iteration 2
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 1 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_B_rollouts_generated: runs/tiny_stream_B_rollouts_generated/  report: runs/tiny_stream_B_rollouts_generated/report.md
+tiny_stream_A (resident) vs tiny_stream_B_rollouts_generated (resident); rule: none (same backend on both sides) (bitwise)
+configs comparable True (differences: ['run.name'])
+NUMERICAL EQUIVALENCE
+  training rows: [6, 6] steps, 30 fields, identical True
+  zero-signal identical True; rollout records {'compared': True, 'groups': [3, 3], 'equal': True, 'first_differing_group': None}
+  subset evaluations identical True (accuracy [[0, 0.0], [2, 0.0], [4, 0.0], [6, 0.0]])
+  checkpoint step0: adapter identical True, optimizer identical None
+  checkpoint step2: adapter identical True, optimizer identical True
+  checkpoint step4: adapter identical True, optimizer identical True
+  checkpoint step6: adapter identical True, optimizer identical True
+  controls: {'tiny_stream_A': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}, 'tiny_stream_B_rollouts_generated': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}}
+PERFORMANCE (indicative, not part of the verdict)
+  tiny_stream_A: 2 s, 0.3 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_B_rollouts_generated: 1 s, 0.2 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_A: commit 9ca0390be7 (dirty False), device cpu, gpu None
+  tiny_stream_B_rollouts_generated: commit 9ca0390be7 (dirty False), device cpu, gpu None
+IDENTICAL: True   written: /dev/null
+rollouts_generated@3: crashed True, resumed from runs/tiny_stream_B_rollouts_generated/checkpoints/step2, committed equal True, records equal True, checkpoints identical True, epoch problems [] -> PASS
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny_stream_B_update/checkpoints/step2: step 2, attempt 1
+streaming resume: uncommitted rollout groups [2, 3] moved aside (they are regenerated)
+streaming resume: pending group 1 restored from disk at iteration 2
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 1 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_B_update: runs/tiny_stream_B_update/  report: runs/tiny_stream_B_update/report.md
+tiny_stream_A (resident) vs tiny_stream_B_update (resident); rule: none (same backend on both sides) (bitwise)
+configs comparable True (differences: ['run.name'])
+NUMERICAL EQUIVALENCE
+  training rows: [6, 6] steps, 30 fields, identical True
+  zero-signal identical True; rollout records {'compared': True, 'groups': [3, 3], 'equal': True, 'first_differing_group': None}
+  subset evaluations identical True (accuracy [[0, 0.0], [2, 0.0], [4, 0.0], [6, 0.0]])
+  checkpoint step0: adapter identical True, optimizer identical None
+  checkpoint step2: adapter identical True, optimizer identical True
+  checkpoint step4: adapter identical True, optimizer identical True
+  checkpoint step6: adapter identical True, optimizer identical True
+  controls: {'tiny_stream_A': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}, 'tiny_stream_B_update': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}}
+PERFORMANCE (indicative, not part of the verdict)
+  tiny_stream_A: 2 s, 0.3 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_B_update: 1 s, 0.2 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_A: commit 9ca0390be7 (dirty False), device cpu, gpu None
+  tiny_stream_B_update: commit 9ca0390be7 (dirty False), device cpu, gpu None
+IDENTICAL: True   written: /dev/null
+update@4: crashed True, resumed from runs/tiny_stream_B_update/checkpoints/step2, committed equal True, records equal True, checkpoints identical True, epoch problems [] -> PASS
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+streaming resume: removed interrupted publications ['runs/tiny_stream_B_files_written/checkpoints/.tmp-step4-282911'], quarantined invalid checkpoints []
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny_stream_B_files_written/checkpoints/step2: step 2, attempt 1
+streaming resume: uncommitted rollout groups [2, 3] moved aside (they are regenerated)
+streaming resume: pending group 1 restored from disk at iteration 2
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 1 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_B_files_written: runs/tiny_stream_B_files_written/  report: runs/tiny_stream_B_files_written/report.md
+tiny_stream_A (resident) vs tiny_stream_B_files_written (resident); rule: none (same backend on both sides) (bitwise)
+configs comparable True (differences: ['run.name'])
+NUMERICAL EQUIVALENCE
+  training rows: [6, 6] steps, 30 fields, identical True
+  zero-signal identical True; rollout records {'compared': True, 'groups': [3, 3], 'equal': True, 'first_differing_group': None}
+  subset evaluations identical True (accuracy [[0, 0.0], [2, 0.0], [4, 0.0], [6, 0.0]])
+  checkpoint step0: adapter identical True, optimizer identical None
+  checkpoint step2: adapter identical True, optimizer identical True
+  checkpoint step4: adapter identical True, optimizer identical True
+  checkpoint step6: adapter identical True, optimizer identical True
+  controls: {'tiny_stream_A': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}, 'tiny_stream_B_files_written': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}}
+PERFORMANCE (indicative, not part of the verdict)
+  tiny_stream_A: 2 s, 0.3 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_B_files_written: 1 s, 0.2 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_A: commit 9ca0390be7 (dirty False), device cpu, gpu None
+  tiny_stream_B_files_written: commit 9ca0390be7 (dirty False), device cpu, gpu None
+IDENTICAL: True   written: /dev/null
+files_written@3: crashed True, resumed from runs/tiny_stream_B_files_written/checkpoints/step2, committed equal True, records equal True, checkpoints identical True, epoch problems [] -> PASS
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+streaming resume: removed interrupted publications ['runs/tiny_stream_B_committed_before_rename/checkpoints/.tmp-step4-282911'], quarantined invalid checkpoints []
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny_stream_B_committed_before_rename/checkpoints/step2: step 2, attempt 1
+streaming resume: uncommitted rollout groups [2, 3] moved aside (they are regenerated)
+streaming resume: pending group 1 restored from disk at iteration 2
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 1 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_B_committed_before_rename: runs/tiny_stream_B_committed_before_rename/  report: runs/tiny_stream_B_committed_before_rename/report.md
+tiny_stream_A (resident) vs tiny_stream_B_committed_before_rename (resident); rule: none (same backend on both sides) (bitwise)
+configs comparable True (differences: ['run.name'])
+NUMERICAL EQUIVALENCE
+  training rows: [6, 6] steps, 30 fields, identical True
+  zero-signal identical True; rollout records {'compared': True, 'groups': [3, 3], 'equal': True, 'first_differing_group': None}
+  subset evaluations identical True (accuracy [[0, 0.0], [2, 0.0], [4, 0.0], [6, 0.0]])
+  checkpoint step0: adapter identical True, optimizer identical None
+  checkpoint step2: adapter identical True, optimizer identical True
+  checkpoint step4: adapter identical True, optimizer identical True
+  checkpoint step6: adapter identical True, optimizer identical True
+  controls: {'tiny_stream_A': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}, 'tiny_stream_B_committed_before_rename': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}}
+PERFORMANCE (indicative, not part of the verdict)
+  tiny_stream_A: 2 s, 0.3 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_B_committed_before_rename: 1 s, 0.2 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_A: commit 9ca0390be7 (dirty False), device cpu, gpu None
+  tiny_stream_B_committed_before_rename: commit 9ca0390be7 (dirty False), device cpu, gpu None
+IDENTICAL: True   written: /dev/null
+committed_before_rename@3: crashed True, resumed from runs/tiny_stream_B_committed_before_rename/checkpoints/step2, committed equal True, records equal True, checkpoints identical True, epoch problems [] -> PASS
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+  [val subset, step 0] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  1 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 2.885e-01 (A 0.00e+00, B 2.89e-01)  |dtheta| 2.53e-02  |(a/r)BA| 4.433e-02  
+step  2 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 1  r [0.981, 1.013]  clip 0.000  kl 3.84e-05  loss -0.0049  |g| 2.823e-01 (A 1.94e-03, B 2.82e-01)  |dtheta| 3.16e-02  |(a/r)BA| 8.666e-02  
+  [val subset, step 2] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny_stream_B_after_checkpoint/checkpoints/step4: step 4, attempt 3
+streaming resume: pending group 3 restored from disk at iteration 1
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 2 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_B_after_checkpoint: runs/tiny_stream_B_after_checkpoint/  report: runs/tiny_stream_B_after_checkpoint/report.md
+tiny_stream_A (resident) vs tiny_stream_B_after_checkpoint (resident); rule: none (same backend on both sides) (bitwise)
+configs comparable True (differences: ['run.name'])
+NUMERICAL EQUIVALENCE
+  training rows: [6, 6] steps, 30 fields, identical True
+  zero-signal identical True; rollout records {'compared': True, 'groups': [3, 3], 'equal': True, 'first_differing_group': None}
+  subset evaluations identical True (accuracy [[0, 0.0], [2, 0.0], [4, 0.0], [6, 0.0]])
+  checkpoint step0: adapter identical True, optimizer identical None
+  checkpoint step2: adapter identical True, optimizer identical True
+  checkpoint step4: adapter identical True, optimizer identical True
+  checkpoint step6: adapter identical True, optimizer identical True
+  controls: {'tiny_stream_A': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}, 'tiny_stream_B_after_checkpoint': {'frozen_changed': [], 'params_equal_init': False, 'status': 'complete'}}
+PERFORMANCE (indicative, not part of the verdict)
+  tiny_stream_A: 2 s, 0.3 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_B_after_checkpoint: 2 s, 0.3 s/step, phases {}, peak reserved 0 GiB (allocator, excludes the CUDA context)
+  tiny_stream_A: commit 9ca0390be7 (dirty False), device cpu, gpu None
+  tiny_stream_B_after_checkpoint: commit 9ca0390be7 (dirty False), device cpu, gpu None
+IDENTICAL: True   written: /dev/null
+after_checkpoint@2: crashed True, resumed from runs/tiny_stream_B_after_checkpoint/checkpoints/step4, committed equal True, records equal True, checkpoints identical True, epoch problems [] -> PASS
+H08 SUPPORTED on this experiment; written: /home/trulyaldi/qwen-grpo/research/l2l/experiments/t09_resume_tiny_cpu_r20261117T175211Z.json

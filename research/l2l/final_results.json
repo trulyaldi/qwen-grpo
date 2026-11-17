@@ -237,7 +237,11 @@
    "requirement": "R3",
    "evidence": "t05_logprob_equivalence_cpu_v2",
    "commit": "6657edfe6ba89e3fe5a26b228638e52d62b94e28",
-   "engine_files_changed_since": []
+   "engine_files_changed_since": [
+    "qwen_grpo/execution/backend.py",
+    "qwen_grpo/execution/fixtures.py",
+    "qwen_grpo/export/merge.py"
+   ]
   },
   {
    "requirement": "R4",
