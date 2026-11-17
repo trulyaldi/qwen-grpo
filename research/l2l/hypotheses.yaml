@@ -96,8 +96,8 @@ H05:
     gradients, iteration-0 init_diff 0, Parameter identities kept, tokens clipped after iteration 0 (power).
     NOT_SUPPORTED if any comparison fails.
   tickets: ["07"]
-  status: SUPPORTED  # tiny random models on CPU and CUDA; trainer integration bitwise on CPU (tests/test_backend.py); two real Qwen3-0.6B GRPO updates bitwise on CUDA (real_step_*)
-  evidence: [t07_update_equivalence_cpu, t07_update_equivalence_cpu_v2, t07_update_equivalence_cuda_v2, real_step_20261117T063325Z, real_step_20261117T063548Z]  # t07_update_equivalence_cuda: execution FAIL (lab design, fixed after it; docs/l2l/07_update.md)
+  status: SUPPORTED  # tiny random models on CPU and CUDA; trainer integration bitwise on CPU (tests/test_backend.py); two real Qwen3-0.6B GRPO updates bitwise on CUDA (real_step_*); full 100-step Qwen3-0.6B training runs resident vs L2L identical on CUDA (compare_*)
+  evidence: [t07_update_equivalence_cpu, t07_update_equivalence_cpu_v2, t07_update_equivalence_cuda_v2, real_step_20261117T063325Z, real_step_20261117T063548Z, compare_qwen_resident_short_vs_qwen_l2l_short, compare_qwen_resident_vs_qwen_l2l]  # t07_update_equivalence_cuda: execution FAIL (lab design, fixed after it; docs/l2l/07_update.md)
 H06:
   statement: Double-buffered asynchronous prefetching reduces execution time without changing numerical results.
   kind: performance  # with a correctness precondition: every equivalence test still passes under l2l_async

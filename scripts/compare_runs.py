@@ -11,7 +11,8 @@ Compared (run A is the reference):
   checkpoints        every common checkpoint: adapter tensors and AdamW state (bitwise, else max abs difference)
   final validation   training/validation.json: predictions and label scores, when both runs wrote one
   controls           frozen weights unchanged, parameters changed from init
-Also printed: train time, time per step, GPU memory of each run (one run each: indicative, not a benchmark).
+Also recorded: each run's provenance (commit, dirty flag, packages, GPU) and its train time, time per step
+and GPU memory (one run each: indicative, not a benchmark).
 Writes research/l2l/experiments/compare_<A>_vs_<B>.json; exit status 0 iff everything compared is identical.
 """
 import argparse
@@ -103,6 +104,9 @@ def main(argv=None):
     rep["final"] = {"a": A.get("final", {}).get("trained"), "b": B.get("final", {}).get("trained")}
     rep["controls"] = {r: {"frozen_changed": L.get("frozen_changed"), "params_equal_init": L.get("params_equal_init"),
                            "status": L.get("status")} for r, L in ((args.a, A), (args.b, B))}
+    rep["provenance"] = {r: {k: (L.get("environment") or {}).get(k) for k in ("git_commit", "git_dirty", "packages", "gpu",
+                                                                            "device")}
+                         for r, L in ((args.a, A), (args.b, B))}
     rep["resources"] = {r: {"train_seconds": L.get("train_seconds"), "steps": L.get("successful_steps"),
                             "seconds_per_step": (L.get("train_seconds") or 0) / max(L.get("successful_steps") or 1, 1),
                             "memory": L.get("memory")} for r, L in ((args.a, A), (args.b, B))}
@@ -132,6 +136,9 @@ def main(argv=None):
     for r, v in rep["resources"].items():
         mem = v["memory"] or {}
         print(f"{r}: train {v['train_seconds']:.0f} s, {v['seconds_per_step']:.1f} s/step, memory {mem}")
+    for r, v in rep["provenance"].items():
+        print(f"{r}: commit {(v['git_commit'] or '?')[:10]} (dirty {v['git_dirty']}), device {v['device']}, "
+              f"gpu {(v['gpu'] or {}).get('name')}")
     print(f"IDENTICAL: {rep['identical']}   written: {out}")
     return 0 if rep["identical"] else 1
 

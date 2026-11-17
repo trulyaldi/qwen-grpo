@@ -158,10 +158,53 @@ Two runs at commit `3106101`, clean tree, RTX 3050 Ti Laptop GPU (4 GB):
 - **Caveats:** the two runs differ by 1.6× in generation time, and there is one trial each, so the timings are
   indicative only.
 
+## Full real training runs: resident vs L2L (`scripts/compare_runs.py`)
+
+**Setup.** The real trainer (`scripts/run.py train`) ran Qwen3-0.6B in bf16 on the RTX 3050 Ti Laptop GPU (4 GB),
+with configs that differ only in `execution` and `run.name`:
+- `configs/experiments/qwen_resident.yaml` vs `qwen_l2l.yaml`: `configs/qwen.yaml` (100 steps, B = 5, G = 6, LoRA
+  rank 32 on q/v/o of layers 26–27, subset evaluation every 10 steps, full validation);
+- `qwen_resident_short.yaml` vs `qwen_l2l_short.yaml`: 10 steps, no full validation.
+
+L2L used a pinned store, 2 weight buffers, checkpointed backward, the streamed generator for rollouts and evaluation,
+and the full output head. The runs were made after commit `bc5a05d` (the head-shape fix). The comparison files do
+not record the runs' commit; `scripts/compare_runs.py` now copies each run's provenance into its report.
+
+| comparison | result |
+|---|---|
+| `compare_qwen_resident_short_vs_qwen_l2l_short.json` | **IDENTICAL.** 10/10 step logs, 3/3 subset evaluations, 3/3 checkpoints (adapter and AdamW state, bitwise) |
+| `compare_qwen_resident_vs_qwen_l2l.json` | **IDENTICAL.** 100/100 step logs, 11/11 subset evaluations, 11/11 checkpoints, final full validation (1,066 predictions and label scores) |
+
+**What "identical" covers.** Rollout hashes, rewards, loss, clipping statistics, gradient and update norms,
+`init_diff`, zero-signal batches, every evaluation's predictions, and every checkpoint. Frozen weights were unchanged
+in all four runs.
+
+**Resources** (one run each, wall clock including evaluations; diagnostic-grade memory, from the PyTorch allocator)
+
+| run | train time | s/step | peak allocated | peak reserved |
+|---|---|---|---|---|
+| `qwen_resident` | 201 s | 2.0 | 1.69 GiB | 2.19 GiB |
+| `qwen_l2l` | 360 s | 3.6 | 0.81 GiB | 1.37 GiB |
+| `qwen_resident_short` | 27 s | 2.7 | 1.63 GiB | 2.15 GiB |
+| `qwen_l2l_short` | 51 s | 5.1 | 0.81 GiB | 1.36 GiB |
+
+So L2L costs about 1.8–1.9× the time for half the allocated memory. Synchronous weight streaming in generation
+dominates the difference (Ticket 08).
+
+**Not an L2L effect.** The rerun of `configs/qwen.yaml` does not reproduce the historical accuracy noted in that
+file, 0.81 at step 90. Subset accuracy peaked at 0.79 (steps 40–50), fell to 0.55–0.63 (steps 60–90), and ended at
+0.73; final full validation was 0.717. Both backends are identical, so this concerns the base GRPO run on this
+hardware and software, not L2L.
+
+**History of this result.** Before `bc5a05d`, the same comparison on the laptop CPU (`tests/test_backend.py`) drifted
+by about 1e-7 in gradient norm from step 1. The cause was the streamed head computing on R rows instead of the
+reference's R+1, which some BLAS/CPU combinations round differently (`docs/l2l/05_output_head.md`).
+
 ## Not established here
 
 - **CUDA fault injection** (the advantage fault was run on CPU only).
 - **Checkpoint verification and evaluation under L2L** (`run.py verify` / `validate` / `test`). These refuse the
   config and stay resident.
 - **The chunked head in training** (H03).
-- **The 8 GB budget** (Ticket 11). The real-model step is a single step with diagnostic-grade memory figures.
+- **The 8 GB budget** (Ticket 11). The real-model figures are diagnostic-grade (PyTorch allocator under WSL2/laptop), not
+  assignment-grade evidence.
