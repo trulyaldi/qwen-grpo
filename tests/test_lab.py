@@ -291,6 +291,14 @@ def test_store_cases_are_gated_on_their_own_requirements_not_on_l2l_execution(tm
     assert r["status"] == "BLOCKED" and "page-locking needs a CUDA device" in r["reasons"][0]
 
 
+def test_forward_equivalence_is_blocked_without_l2l_sync_or_cuda(tmp_path, monkeypatch):
+    r = lab.run("forward_equivalence", RESIDENT, "r", root=tmp_path)
+    assert r["status"] == "BLOCKED" and "comparisons" not in r
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    r = lab.run("forward_equivalence", STORE, "nocuda", root=tmp_path)
+    assert r["status"] == "BLOCKED" and any("CUDA device" in x for x in r["reasons"]) and "comparisons" not in r
+
+
 def depth_result(streamed, resident):
     rows = [{"depth": d, "streamed_peak_allocated": s, "resident_peak_allocated": q}
             for d, s, q in zip((2, 4, 8), streamed, resident)]
