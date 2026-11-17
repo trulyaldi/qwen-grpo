@@ -385,3 +385,27 @@ def test_logprob_equivalence_passes_on_a_small_grid_and_a_raw_logit_fails(tmp_pa
     for side in (".chunked7.", ".chunked64.", ".streamed_full.", ".streamed7."):  # every candidate side is caught
         assert any(not c["pass"] for c in f["comparisons"] if side in c["name"]), side
     assert lab.report("ok", root=tmp_path) and lab.report("fault", root=tmp_path)
+
+
+def test_generation_equivalence_is_blocked_without_l2l_sync_or_a_requested_cuda_device(tmp_path, monkeypatch):
+    assert lab.run("generation_equivalence", RESIDENT, "r", root=tmp_path)["status"] == "BLOCKED"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    r = lab.run("generation_equivalence", STORE_CPU, "nocuda", root=tmp_path, device="cuda")
+    assert r["status"] == "BLOCKED" and "no CUDA device" in r["reasons"][0]
+
+
+def test_generation_equivalence_passes_on_a_small_grid_and_both_faults_fail(tmp_path, monkeypatch):
+    from qwen_grpo import gen_lab
+    monkeypatch.setattr(gen_lab, "models", lambda: [("4b-like", "sdpa", "float32", 64, False),
+                                                    ("0.6b-like", "sdpa", "float32", 64, True)])
+    r = lab.run("generation_equivalence", STORE_CPU, "ok", root=tmp_path, hypothesis_id="H04", device="cpu")
+    assert r["status"] == "PASS" and r["hypothesis_result"] == "SUPPORTED", r["reasons"][:5]
+    assert {c["quantity"] for c in r["comparisons"]} == {"greedy_sequences", "cached_logits", "sampled_probs",
+                                                         "prefix_logits", "prefix_probs"}
+    assert all(r["measurements"]["same_seed_samples_identical"].values())
+    for spec in gen_lab.FAULTS:
+        f = lab.run("generation_equivalence", STORE_CPU, spec, root=tmp_path, perturbation=spec, device="cpu")
+        assert f["status"] == "FAIL" and f["execution_status"] == "PASS", spec
+        assert any(not c["pass"] and c["quantity"] == "cached_logits" for c in f["comparisons"]), spec
+    bad = lab.run("generation_equivalence", STORE_CPU, "bad", root=tmp_path, perturbation="nonsense", device="cpu")
+    assert bad["status"] == "FAIL" and any("supports perturbations" in e for e in bad["errors"])

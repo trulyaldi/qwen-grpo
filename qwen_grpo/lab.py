@@ -42,6 +42,7 @@ from qwen_grpo import store_lab as store_cases  # Ticket 02 cases; store_lab rea
 from qwen_grpo import forward_lab as forward_cases  # Ticket 03
 from qwen_grpo import backward_lab as backward_cases  # Ticket 04
 from qwen_grpo import head_lab as head_cases  # Ticket 05
+from qwen_grpo import gen_lab as gen_cases  # Ticket 06
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
@@ -453,6 +454,8 @@ CASES = {
                                  ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "gradient_equivalence")),
     "logprob_equivalence": Case("correctness", lambda *a, **k: head_cases.logprob_equivalence(*a, **k),
                                 ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "logprob_equivalence")),
+    "generation_equivalence": Case("correctness", lambda *a, **k: gen_cases.generation_equivalence(*a, **k),
+                                   ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "generation_equivalence")),
     "pinned_transfer": Case("performance", lambda *a, **k: store_cases.pinned_transfer(*a, **k), ("execution",),
                             needs_store),
 }

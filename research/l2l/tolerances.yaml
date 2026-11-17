@@ -117,3 +117,41 @@ logprob_equivalence:
         grads: {atol: 0.0, rtol: 0.015625, require_nonzero: true}
         head_grads: {atol: 0.0, rtol: 0.015625, require_nonzero: true}
         hidden_grads: {atol: 0.0, rtol: 0.015625, require_nonzero: true}
+
+generation_equivalence:
+  # Paths: transformers generate (reference), the streamed generator with the plain layer call (resident) and with
+  # L2L weight streaming (streamed), and the resident full-prefix forward without a cache (prefix).
+  # A disclosed pilot measured these before they were recorded (docs/l2l/06_generator.md).
+  l2l_sync:
+    float32: &generation
+      why: >-
+        greedy_sequences, cached_logits, sampled_probs: 0. The generator calls HF's own embedding, mask builder
+        (create_causal_mask with a cache reporting the same sizes as DynamicCache), rotary embedding, decoder layers
+        and head, with the same shapes per step. The KV cache hands attention new contiguous tensors, as
+        DynamicCache's torch.cat does. The softmax / multinomial / argmax are those of GenerationMixin._sample. L2L
+        streams the same weight bytes (Ticket 03). Same kernels on the same operands give the same bits, so any
+        difference is a defect (position, mask, cache, LoRA), not rounding. The KV cache on the CPU only moves bytes.
+        prefix_logits: the full-prefix forward computes the same function with other shapes (the query block is T
+        columns instead of 1), so kernels reduce in another order. fp32: rtol 1e-5 of the step's largest |logit|,
+        accumulation-order level for dot products of length <= hidden size through a few layers. bf16: every
+        bf16-rounded op output may land one ulp (<= 2^-8 relative) apart, and the head mixes them; 4 ulps at the
+        largest logit, rtol 2^-6, is allowed. prefix_probs, derived: with |dz| <= delta,
+        |dp_i| <= p_i (e^{2 delta} - 1). The case refuses references with |logit| > 16, so delta <= 16 rtol_logits:
+        fp32 delta <= 1.6e-4, e^{3.2e-4} - 1 < 4e-4 (rtol of the largest probability); bf16 delta <= 0.25,
+        e^{0.5} - 1 < 0.65. The bf16 bound is loose by construction; the bitwise cached comparisons carry the power.
+      quantities:
+        greedy_sequences: {atol: 0.0, rtol: 0.0}
+        cached_logits: {atol: 0.0, rtol: 0.0}
+        sampled_probs: {atol: 0.0, rtol: 0.0}
+        prefix_logits: {atol: 0.0, rtol: 1.0e-5}
+        prefix_probs: {atol: 0.0, rtol: 4.0e-4}
+    bfloat16:
+      why: >-
+        As float32 (see there) for greedy_sequences, cached_logits, sampled_probs (0) and the derivations;
+        prefix_logits rtol 2^-6 and prefix_probs rtol 0.65 for bf16.
+      quantities:
+        greedy_sequences: {atol: 0.0, rtol: 0.0}
+        cached_logits: {atol: 0.0, rtol: 0.0}
+        sampled_probs: {atol: 0.0, rtol: 0.0}
+        prefix_logits: {atol: 0.0, rtol: 0.015625}
+        prefix_probs: {atol: 0.0, rtol: 0.65}

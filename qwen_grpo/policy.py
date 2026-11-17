@@ -4,24 +4,31 @@ from qwen_grpo.grpo import response_logprobs, response_mask
 
 
 @torch.no_grad()
-def generate_rollouts(model, tokenizer, prompts, G=4, max_new_tokens=8):
+def generate_rollouts(model, tokenizer, prompts, G=4, max_new_tokens=8, generator=None):
     """B chat-formatted prompts -> B*G sampled rollouts; rows [b*G, (b+1)*G) belong to prompt b.
 
     Pure sampling from the policy (temperature 1, no top-k/top-p): compute_logprobs scores untempered logits, so any
     other setting would make the sampler differ from the policy being optimized. Passed as kwargs so they override
     Qwen's shipped generation defaults.
+
+    generator: None = HF model.generate() (resident); otherwise a callable with execution.generator.StreamedGenerator's
+    signature (e.g. the L2L generator), and model.generate() is never called.
     """
     eos_ids = model.generation_config.eos_token_id
     eos_ids = [eos_ids] if isinstance(eos_ids, int) else list(eos_ids)
     batch = tokenizer(prompts, return_tensors="pt", padding=True, add_special_tokens=False).to(model.device)
     P = batch["input_ids"].shape[1]
 
-    input_ids = model.generate(
-        **batch,
-        do_sample=True, temperature=1.0, top_p=1.0, top_k=0,
-        num_return_sequences=G, max_new_tokens=max_new_tokens,
-        eos_token_id=eos_ids, pad_token_id=tokenizer.pad_token_id,
-    )
+    if generator is not None:
+        input_ids = generator(model, batch["input_ids"], batch["attention_mask"], num_return_sequences=G,
+                              max_new_tokens=max_new_tokens, eos_token_ids=eos_ids, pad_token_id=tokenizer.pad_token_id)
+    else:
+        input_ids = model.generate(
+            **batch,
+            do_sample=True, temperature=1.0, top_p=1.0, top_k=0,
+            num_return_sequences=G, max_new_tokens=max_new_tokens,
+            eos_token_id=eos_ids, pad_token_id=tokenizer.pad_token_id,
+        )
     response_ids = input_ids[:, P:]                                   # [B*G, R]
     completion_mask = response_mask(response_ids, eos_ids)            # pad id may be an EOS id
     prompt_mask = batch["attention_mask"].repeat_interleave(G, dim=0)  # generate() expands this way

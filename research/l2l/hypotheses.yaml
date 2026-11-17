@@ -65,6 +65,18 @@ H03:
 H04:
   statement: Streamed generation follows the same target-policy distribution as resident generation.
   kind: correctness
+  criterion: >-
+    Written before the Ticket 06 acceptance run (after a disclosed CPU pilot; see docs/l2l/06_generator.md). Case
+    generation_equivalence: on the same device with the same weights and prompts, the streamed generator (plain layer
+    call and L2L weight streaming, KV cache on the compute device and on the CPU) gives greedy token sequences and
+    per-step next-token logits equal to transformers generate()'s, and next-token probabilities along hf-sampled
+    trajectories (teacher-forced) equal to hf's sampling distribution (tolerance 0); cached decoding agrees with the
+    resident full-prefix forward within the derived rounding bound (generation_equivalence in tolerances.yaml), and
+    greedy tokens agree wherever the top-1 / top-2 margin exceeds twice that bound. Grid: both fixture shapes x
+    eager/sdpa x fp32/bf16, LoRA on the first and last layers, two sets of left-padded prompts of different lengths,
+    plus an EOS-boosted model (rows ending in EOS with a padded tail are required) and a real-vocabulary model with
+    non-thinking Qwen3 chat prompts. Execution requirements: one weight load per layer per generated token, the KV
+    cache equals its analytic size, |logits| <= 16 in every reference. NOT_SUPPORTED if any comparison fails.
   tickets: ["06"]
   status: untested
   evidence: []
