@@ -91,8 +91,8 @@ def main(argv=None):
                                       load_peft_weights(str(ck_b[step]), device="cpu"))}
         sa, sb = (Path(ck_a[step]) / checkpointing.STATE), (Path(ck_b[step]) / checkpointing.STATE)
         if sa.exists() and sb.exists():
-            row["optimizer"] = tensor_diff(checkpointing.load_training_state(ck_a[step])["optimizer"]["state"],
-                                           checkpointing.load_training_state(ck_b[step])["optimizer"]["state"])
+            load = lambda f: torch.load(f, map_location="cpu", weights_only=True)["optimizer"]["state"]  # GPU runs, any host
+            row["optimizer"] = tensor_diff(load(sa), load(sb))
         rep["checkpoints"][step] = row
     rep["checkpoints_only_in_one"] = sorted(set(ck_a) ^ set(ck_b))
 

@@ -167,8 +167,13 @@ with configs that differ only in `execution` and `run.name`:
 - `qwen_resident_short.yaml` vs `qwen_l2l_short.yaml`: 10 steps, no full validation.
 
 L2L used a pinned store, 2 weight buffers, checkpointed backward, the streamed generator for rollouts and evaluation,
-and the full output head. The runs were made after commit `bc5a05d` (the head-shape fix). The comparison files do
-not record the runs' commit; `scripts/compare_runs.py` now copies each run's provenance into its report.
+and the full output head. All four runs ran at commit `5300146`, with a clean tree, on the RTX 3050 Ti Laptop GPU.
+This is recorded in each run's `training.json` (`environment`). The committed run folders under `runs/qwen_*`
+reproduce both comparisons. The comparison JSONs themselves predate the provenance field that `compare_runs.py` now
+writes.
+
+**These runs predate the head-shape fix (`bc5a05d`).** An earlier version of this section said the opposite, which
+was wrong.
 
 | comparison | result |
 |---|---|
@@ -196,9 +201,12 @@ file, 0.81 at step 90. Subset accuracy peaked at 0.79 (steps 40–50), fell to 0
 0.73; final full validation was 0.717. Both backends are identical, so this concerns the base GRPO run on this
 hardware and software, not L2L.
 
-**History of this result.** Before `bc5a05d`, the same comparison on the laptop CPU (`tests/test_backend.py`) drifted
-by about 1e-7 in gradient norm from step 1. The cause was the streamed head computing on R rows instead of the
-reference's R+1, which some BLAS/CPU combinations round differently (`docs/l2l/05_output_head.md`).
+**History of this result.** At `5300146`, the streamed head still computed on R rows and the reference on R+1.
+- **On the GPU:** this made no difference, so these full runs are identical.
+- **On the laptop CPU:** the same comparison in `tests/test_backend.py` drifted by about 1e-7 in gradient norm from
+  step 1. `bc5a05d` makes the shapes identical (`docs/l2l/05_output_head.md`).
+- **Not yet verified:** whether the laptop CPU tests pass after `bc5a05d`, and whether GPU runs after it stay
+  identical. The shape test passes on the development host.
 
 ## Not established here
 
