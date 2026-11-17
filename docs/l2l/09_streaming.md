@@ -94,7 +94,10 @@ latest valid one named in the message.
 - Unit tests: sampler equivalence and identity refusal, the rollout store's refusals (policy version, run, tampering,
   rewriting a committed group), and all-or-nothing publication.
 
-`scripts/resume_experiment.py --tiny` records the same experiment as JSON. The real-model version runs in
+`scripts/resume_experiment.py --tiny` records the same experiment as JSON: `t09_resume_tiny_cpu.json` (commit
+`726e2ab`, clean tree) gives **PASS, H08 SUPPORTED**. All six crash points crashed and resumed (from step 2, or from
+step 4 for `after_checkpoint@2`) with committed rows, records and checkpoints identical to run A and no epoch problems.
+Run A had 3 attempts (1 zero-signal) and 6 optimizer steps. The real-model version runs in
 `scripts/laptop_checks.sh` (`configs/experiments/qwen_stream_short.yaml`: checkpoints every 3 steps, 2 GRPO
 iterations per group).
 
