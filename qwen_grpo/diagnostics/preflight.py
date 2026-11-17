@@ -403,7 +403,6 @@ def gpu_hardware(cfg, est):
     the measured H2D bandwidth. Allocates the planned pinned bytes once (then frees them)."""
     import torch
 
-    from qwen_grpo.execution.profiler import h2d_bandwidth, is_wsl
     out, measured = [], {}
     if not torch.cuda.is_available():
         return [check("gpu.cuda", "gpu", BLOCKED, "torch.cuda.is_available() is False")], measured
@@ -414,6 +413,32 @@ def gpu_hardware(cfg, est):
                      f"{torch.version.cuda}, arch list {torch.cuda.get_arch_list()}", name=p.name))
     out.append(check("gpu.architecture", "gpu", PASS if cap >= AMPERE else FAIL,
                      f"compute capability {p.major}.{p.minor}: the assignment requires Ampere (8.0) or newer"))
+    arches = torch.cuda.get_arch_list()
+    if not kernels_for(cap, arches):
+        out.append(check("gpu.kernels", "gpu", FAIL, f"this torch build ({torch.__version__}) has no kernels for "
+                         f"sm_{p.major}{p.minor} (it has {arches}): nothing can run on this GPU"))
+        return out, measured
+    out.append(check("gpu.kernels", "gpu", PASS, f"torch {torch.__version__} has kernels for sm_{p.major}{p.minor}"))
+    try:
+        _gpu_runtime(cfg, est, dev, p, out, measured)
+    except Exception as e:  # noqa: BLE001 - a broken GPU runtime is a FAIL of preflight, never a crash
+        out.append(check("gpu.runtime", "gpu", FAIL, f"{type(e).__name__}: {(str(e).splitlines() or [''])[0]}"))
+    return out, measured
+
+
+def kernels_for(cap, arches):
+    """Whether a torch build with `arches` (e.g. ['sm_80', 'sm_86', 'compute_90']) can run on compute capability `cap`:
+    an exact sm_XY binary, or PTX (compute_XY) for an older or equal capability that the driver can JIT-compile."""
+    code = cap[0] * 10 + cap[1]
+    return f"sm_{code}" in arches or any(a.startswith("compute_") and int(a.split("_")[1]) <= code for a in arches)
+
+
+def _gpu_runtime(cfg, est, dev, p, out, measured):
+    """The checks that execute on the GPU (context, accounting, exclusivity, pinned memory, H2D bandwidth), appended to
+    `out` as they complete, so the checks before a failure are kept."""
+    import torch
+
+    from qwen_grpo.execution.profiler import h2d_bandwidth, is_wsl
     total = p.total_memory
     budget = cfg.run.gpu_budget_gib * GiB
     out.append(check("gpu.capacity", "gpu", PASS if total >= budget else FAIL,
@@ -449,7 +474,6 @@ def gpu_hardware(cfg, est):
     measured["h2d_bytes_per_s"] = bw
     out.append(check("pcie.bandwidth", "gpu", PASS, f"pinned H2D {bw / 1e9:.1f} GB/s (median of 10 x 256 MiB)",
                      bytes_per_s=bw))
-    return out, measured
 
 
 def gpu_model_steps(config_path, cfg, stamp):

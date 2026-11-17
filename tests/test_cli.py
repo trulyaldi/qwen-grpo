@@ -207,3 +207,13 @@ def test_the_final_report_records_how_old_its_evidence_is(monkeypatch, tmp_path)
     assert fresh["t03_forward_equivalence"]["commit"].startswith("c4b391b")
     assert "qwen_grpo/execution/layer_stream.py" in fresh["t03_forward_equivalence"]["engine_files_changed_since"]
     assert "## Evidence freshness" in (tmp_path / "final_report.md").read_text()
+
+
+@pytest.mark.parametrize("cap, arches, ok", [
+    ((6, 1), ["sm_75", "sm_80", "sm_86", "sm_90", "sm_100", "sm_120"], False),  # Pascal on a cu130 build (observed)
+    ((8, 6), ["sm_80", "sm_86", "sm_90"], True),
+    ((8, 9), ["sm_80", "sm_86", "compute_86"], True),  # PTX JIT for a newer GPU
+    ((12, 0), ["sm_80", "sm_90"], False),
+])
+def test_kernel_compatibility_of_the_torch_build(cap, arches, ok):
+    assert P.kernels_for(cap, arches) is ok
