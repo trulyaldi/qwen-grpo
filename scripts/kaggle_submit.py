@@ -33,6 +33,7 @@ status / logs / download / summary. gpu-train summary passes only on a completed
 resumable checkpoint), FAIL and any skip exit non-zero.
 """
 import argparse
+import ast
 import hashlib
 import io
 import json
@@ -269,7 +270,7 @@ def render(mode, sub):
     out.mkdir(parents=True)
     src = (KAGGLE / "run.py").read_text()
     assert src.count(PLACEHOLDER) == 1, "kaggle/run.py: the SUBMISSION placeholder line is missing"
-    (out / "run.py").write_text(src.replace(PLACEHOLDER, "SUBMISSION = " + json.dumps(sub, indent=1)))
+    (out / "run.py").write_text(src.replace(PLACEHOLDER, "SUBMISSION = " + repr(sub)))
     meta = json.loads((KAGGLE / "kernel-metadata.json").read_text()
                       .replace("{username}", sub["kernel_id"].split("/")[0]).replace("{mode}", mode))
     meta["enable_gpu"] = gpu
@@ -294,8 +295,20 @@ def validate(folder, sub):
     if not (meta["enable_internet"] and meta["is_private"] and meta["kernel_type"] == "script"):
         sys.exit("the runner needs a private script kernel with internet (it clones the repository)")
     code = (folder / "run.py").read_text()
-    if PLACEHOLDER in code or f'"commit": "{sub["commit"]}"' not in code:
-        sys.exit("rendered run.py does not carry the pinned commit")
+    if PLACEHOLDER in code:
+        sys.exit("rendered run.py still contains the submission placeholder")
+    # The metadata must be an exact Python literal, not JSON booleans/nulls.
+    try:
+        tree = ast.parse(code, filename="run.py")
+        assignments = [
+            node.value for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SUBMISSION" for target in node.targets)
+        ]
+        if len(assignments) != 1 or ast.literal_eval(assignments[0]) != sub:
+            sys.exit("rendered run.py contains incorrect submission metadata")
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+        sys.exit(f"rendered run.py contains invalid submission metadata: {exc}")
     compile(code, "run.py", "exec")
 
 
