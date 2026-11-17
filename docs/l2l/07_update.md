@@ -86,6 +86,26 @@ Commit `3cbd70c`, tracked tree clean, CPU. Commands: `research/l2l/experiments/t
 In the fault run, the iteration-0 log-probs still match, as they should: no update has happened yet. From the loss
 onward every quantity fails.
 
+## Change after `t07_update_equivalence_cuda` (recorded FAIL)
+
+**What failed.** Your GPU run `t07_update_equivalence_cuda` (commit `2c2c585`, RTX 3050 Ti) ended with execution
+FAIL. All 6,528 comparisons passed, with every difference exactly 0, resident vs L2L. The failure was the lab's own
+requirement that iteration 0 have `init_diff == 0`, which was violated 16 times. Every violation was fp32 with
+micro-batches of 1, 2 or 4, with `init_diff` = 4.8e-7, identical on both sides.
+
+**Cause: a flaw in the case's design, not in L2L.**
+- The fixture's old log-probs were computed on the whole batch, while the updates computed current log-probs in
+  micro-batches.
+- GPU kernels depend on batch shape, so the two differ in the last bits.
+- On the CPU they were bitwise equal, so the CPU pilot could not show this.
+- The trainer itself avoids this case: `prepare()` uses the update's micro-batches. The difference is also within the
+  trainer's `INIT_TOL = 1e-6`.
+
+**Fix.** For each micro-batch size, the case now computes the old log-probs with the resident
+`prepare(..., micro_batch_size)`, as training does. Nothing else changed: the thresholds stay at 0, and the
+`init_diff == 0` requirement stays. The failed result stays in the repository. The fixed case needs a new CUDA run
+under a new name.
+
 ## Not established here
 
 - **CUDA.** Not run on this machine; the commands are in the hand-off.

@@ -1,8 +1,10 @@
 """Ticket 07 lab case: update_equivalence (H05), complete GRPO + LoRA AdamW updates, resident vs L2L backend.
 
 Fixed rollout fixture: fixtures.build(shape), the Ticket 00 batch from code and seeds: input ids, response ids,
-completion masks, rewards, group advantages and old-policy log-probs (the resident prepare(); recomputed by prepare()
-on the bf16-base model and on a GPU). Its integer tensors must equal the saved Ticket 00 fixture's
+completion masks, rewards, group advantages and old-policy log-probs. The old log-probs used by the updates are
+computed per micro-batch size by the resident prepare(..., micro_batch_size), in the same micro-batches as the updates,
+exactly as training does (changed after t07_update_equivalence_cuda, whose whole-batch old log-probs differed from the
+micro-batched current ones by 4.8e-7 on the GPU, on both sides alike). Its integer tensors must equal the saved Ticket 00 fixture's
 (reference_integrity; machine-independent). Both sides start from the same base weights, LoRA weights and AdamW state
 (fresh, or a seeded warm state loaded into both), and run ITERATIONS complete training.grpo_update calls (the unchanged
 GRPO loss, micro-batch accumulation, AdamW step) against the same fixed old log-probs; only the backend's log-prob
@@ -115,7 +117,6 @@ def run_side(model, backend, fx, adv, mb, opt_state, tag):
 
 def run_config(cfg, result, shape, variant, perturbation, tol, device):
     ref_model, cand_model, fx = fixture_model(shape, variant, device)
-    old_digest = digest(fx["old_logp"])
     resident = ResidentBackend(ref_model)
     frozen0 = resident.frozen_digests()
     l2l = L2LBackend(cand_model, device, cfg.execution.weight_storage, cfg.execution.weight_buffers)
@@ -128,14 +129,23 @@ def run_config(cfg, result, shape, variant, perturbation, tol, device):
             i = int(perturbation.split("=")[1])
             adv_c[i] = -adv_c[i] + 1.0
         for mb in MICRO:
+            # The old log-probs of this micro-batch size, computed by the resident prepare() in the same micro-batches
+            # as the updates, as training does (GPU kernels depend on batch shape: a whole-batch old_logp differs from
+            # per-micro-batch log-probs in the last bits; measured 4.8e-7 in t07_update_equivalence_cuda).
+            with torch.no_grad():
+                for n, p in resident.trainable().items():
+                    p.copy_(initial[n])
+            with F.isolated():
+                fx_mb = {**fx, "old_logp": prepare(ref_model, fx["rollouts"], fx["rewards"].to(device), mb)[1]}
+            old_digest = digest(fx_mb["old_logp"])
             for opt_state in OPT_STATES:
                 tag = f"{shape}.{variant}.mb{mb or 'all'}.{opt_state}"
                 for side in (resident, l2l):  # identical LoRA start for every configuration
                     with torch.no_grad():
                         for n, p in side.trainable().items():
                             p.copy_(initial[n])
-                ref_t, ref_logs, ok_r = run_side(ref_model, resident, fx, fx["advantages"], mb, opt_state, tag)
-                got_t, got_logs, ok_c = run_side(cand_model, l2l, fx, adv_c, mb, opt_state, tag)
+                ref_t, ref_logs, ok_r = run_side(ref_model, resident, fx_mb, fx["advantages"], mb, opt_state, tag)
+                got_t, got_logs, ok_c = run_side(cand_model, l2l, fx_mb, adv_c, mb, opt_state, tag)
                 if not (ok_r and ok_c):
                     result["errors"].append(f"{tag}: LoRA Parameter identities changed")
                 for name, logs in (("resident", ref_logs), ("l2l", got_logs)):
@@ -146,8 +156,8 @@ def run_config(cfg, result, shape, variant, perturbation, tol, device):
                         result["errors"].append(f"{key}: non-finite gradient")
                 result["measurements"]["clip_frac"][tag] = [log["clip_frac"] for log in ref_logs]
                 result["comparisons"] += [{"model": tag, **row} for row in lab.compare_all(ref_t, got_t, tol)]
-        if digest(fx["old_logp"]) != old_digest:
-            result["errors"].append(f"{shape}.{variant}: the old log-probs changed during the updates")
+            if digest(fx_mb["old_logp"]) != old_digest:
+                result["errors"].append(f"{shape}.{variant}.mb{mb or 'all'}: the old log-probs changed during the updates")
         for name, side in (("resident", resident), ("l2l", l2l)):
             if (changed := [n for n, d in side.frozen_digests().items() if d != frozen0[n]]):
                 result["errors"].append(f"{shape}.{variant}.{name}: frozen parameters changed: {changed[:5]}")
