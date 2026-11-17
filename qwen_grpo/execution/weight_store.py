@@ -17,10 +17,13 @@ Invariants (checked by verify(); tests/test_weight_store.py):
   I6  building allocates nothing in the PyTorch CUDA allocator (cudaHostRegister may create the CUDA context: that is
       recorded separately by callers, never folded into this invariant)
   I7  one dtype per layer slab (the frozen weights of a Qwen3 layer share the model dtype)
-Lifetime: the store keeps each slab alive and unregisters it exactly once in close(); after close() it refuses use.
+Lifetime: the store keeps each slab alive and unregisters it exactly once, in close() or, if close() is never called,
+when the store is garbage-collected (memory freed while still registered stays page-locked in the driver, and a later
+allocation at the same address then reports is_pinned(): found in Ticket 03). After close() the store refuses use.
 A module moved with .to() or a parameter re-pointed elsewhere breaks I1 and is reported by verify().
 """
 import hashlib
+import weakref
 from dataclasses import dataclass, field
 
 import torch
@@ -93,6 +96,8 @@ def slab_bytes(layer):
 class WeightStore:
     def __init__(self, slabs, storage):
         self.slabs, self.storage, self.closed = slabs, storage, False
+        self._registered = []  # host pointers to unregister; the finalizer must not reference self
+        self._finalizer = weakref.finalize(self, _unregister, self._registered)
 
     # --- construction ------------------------------------------------------------------------------------------------
 
@@ -131,6 +136,7 @@ class WeightStore:
             if rc != torch.cuda.cudart().cudaError.success:
                 raise PinningError(f"cudaHostRegister of layer {i} ({raw.numel()} bytes) failed: {rc}")
             slab.registered = True
+            self._registered.append(raw.data_ptr())
         offset = 0
         for name, p in frozen:
             n = p.numel() * p.element_size()
@@ -167,7 +173,8 @@ class WeightStore:
         if buffer.dtype != torch.uint8 or buffer.numel() < s.nbytes:
             raise ValueError(f"buffer of {buffer.numel()} bytes ({buffer.dtype}) cannot hold layer {i} ({s.nbytes} bytes)")
         buffer[: s.nbytes].copy_(s.data)
-        torch.cuda.synchronize(buffer.device)
+        if buffer.is_cuda:
+            torch.cuda.synchronize(buffer.device)
         return {e.name: s.view(buffer, e) for e in s.entries}
 
     def check_views(self, i, views):
@@ -215,11 +222,16 @@ class WeightStore:
         """Unregister every registered slab exactly once. Parameters keep pointing at (now pageable) slab memory."""
         if self.closed:
             return
+        self._finalizer()  # runs _unregister once; never again at garbage collection
         for s in self.slabs:
-            if s.registered:
-                torch.cuda.cudart().cudaHostUnregister(s.raw.data_ptr())
-                s.registered = False
+            s.registered = False
         self.closed = True
+
+
+def _unregister(pointers):
+    for ptr in pointers:
+        torch.cuda.cudart().cudaHostUnregister(ptr)
+    pointers.clear()
 
 
 def gpu_buffers(n, nbytes, device="cuda"):

@@ -39,6 +39,7 @@ from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution.qwen3_forward import explicit_logprobs
 from qwen_grpo.grpo import grpo_loss
 from qwen_grpo import store_lab as store_cases  # Ticket 02 cases; store_lab reads lab at call time
+from qwen_grpo import forward_lab as forward_cases  # Ticket 03
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
@@ -330,7 +331,8 @@ def check_fixture(shape, cfg):
 def execute(backend, shape):
     """Outputs of `backend` on fixture `shape`, as fixtures.reference() returns them."""
     if backend != "resident":
-        raise Blocked(f"execution.backend {backend!r} is not implemented yet (l2l_sync: Ticket 03; l2l_async: Ticket 08)")
+        raise Blocked(f"execution.backend {backend!r} cannot run this case yet (l2l_sync is forward-only, see the "
+                      "forward_equivalence case; its backward is Ticket 04; l2l_async: Ticket 08)")
     model, fixture = F.load(shape)
     with F.isolated():
         return F.reference(model, fixture), fixture
@@ -408,6 +410,17 @@ def needs_store(cfg):
     return ["page-locking needs a CUDA device; none is available"] * (x.weight_storage == "pinned" and not torch.cuda.is_available())
 
 
+def needs_forward(cfg):
+    """Blocked reasons of forward_equivalence: an l2l_sync config with store settings and a CUDA device (the case runs
+    on the GPU; its CPU part only ties the result to the fixtures)."""
+    reasons = needs_store(cfg)
+    if cfg.execution.backend != "l2l_sync":
+        reasons.append(f"forward_equivalence tests the l2l_sync backend, not {cfg.execution.backend!r}")
+    if not torch.cuda.is_available():
+        reasons.append("forward_equivalence runs on a CUDA device; none is available")
+    return reasons
+
+
 @dataclass(frozen=True)
 class Case:
     kind: str
@@ -424,17 +437,22 @@ CASES = {
     "store_depth": Case("memory", lambda *a, **k: store_cases.store_depth(*a, **k), ("execution",), needs_store),
     "store_build": Case("memory", lambda *a, **k: store_cases.store_build(*a, **k),
                         ("model.name", "model.dtype", "lora", "execution"), needs_store),
+    "forward_equivalence": Case("correctness", lambda *a, **k: forward_cases.forward_equivalence(*a, **k),
+                                ("model.dtype", "execution"), needs_forward),
     "pinned_transfer": Case("performance", lambda *a, **k: store_cases.pinned_transfer(*a, **k), ("execution",),
                             needs_store),
 }
 
 
-def tolerances_for(case, cfg):
+def tolerances_for(case, cfg, dtype=None):
+    """Thresholds of `case` for the config's backend and `dtype` (default: the config's model.dtype; a case that sweeps
+    dtypes itself passes each one)."""
     table = yaml.safe_load(TOLERANCES.read_text())
+    dtype = dtype or cfg.model.dtype
     try:
-        entry = table[case][cfg.execution.backend][cfg.model.dtype]
+        entry = table[case][cfg.execution.backend][dtype]
     except (KeyError, TypeError):
-        raise SetupError(f"no tolerances for {case} / {cfg.execution.backend} / {cfg.model.dtype} in {TOLERANCES.name}")
+        raise SetupError(f"no tolerances for {case} / {cfg.execution.backend} / {dtype} in {TOLERANCES.name}")
     return entry["quantities"]
 
 
@@ -559,10 +577,10 @@ def markdown(r):
               f"backend `{ident['execution']['backend']}`",
               f"- input sha256 `{ident['input_sha256'][:16]}`, tolerances sha256 `{ident['tolerances_sha256'][:16]}`", ""]
     if r.get("comparisons"):
-        lines += ["| fixture | quantity | tensors | pass | worst max_abs | worst rel | bound |", "|---|---|---|---|---|---|---|"]
+        lines += ["| fixture / model | quantity | tensors | pass | worst max_abs | worst rel | bound |", "|---|---|---|---|---|---|---|"]
         groups = {}
         for c in r["comparisons"]:
-            groups.setdefault((c.get("fixture"), c["quantity"]), []).append(c)
+            groups.setdefault((c.get("fixture") or c.get("model"), c["quantity"]), []).append(c)
         for (fx, q), rows in groups.items():
             worst = max(rows, key=lambda c: c.get("max_abs", math.inf))
             lines.append(f"| {fx} | {q} | {len(rows)} | {sum(c['pass'] for c in rows)}/{len(rows)} | "

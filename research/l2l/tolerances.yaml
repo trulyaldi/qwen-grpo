@@ -38,3 +38,17 @@ store_equivalence:
         final_lora: {atol: 0.0, rtol: 0.0}
         optimizer: {atol: 0.0, rtol: 0.0}
         updates: {atol: 0.0, rtol: 0.0}
+
+forward_equivalence:
+  l2l_sync:
+    float32: &forward_exact
+      why: >-
+        Same device, same weight bytes (copied, never converted), same shapes, same kernels: the streamed layer runs the
+        unchanged HF/PEFT module on views of a 256 B-aligned buffer, so cuBLAS / CPU kernel selection cannot differ from
+        the resident run on alignment. Every operation is deterministic for a fixed shape on one stream, so any
+        difference is a defect (wrong layer, stale buffer, wrong LoRA), not rounding. A disclosed pilot measured 0 on
+        CPU and CUDA before this threshold was recorded.
+      quantities:
+        logits: {atol: 0.0, rtol: 0.0}
+        layers: {atol: 0.0, rtol: 0.0}
+    bfloat16: *forward_exact

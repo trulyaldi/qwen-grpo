@@ -6,6 +6,19 @@
 H01:
   statement: Synchronous L2L produces the same logits as resident Qwen3 execution.
   kind: correctness
+  criterion: >-
+    Written before the Ticket 03 acceptance run (after a disclosed pilot that compared HF and L2L logits only; see
+    docs/l2l/03_sync_forward.md). Case forward_equivalence: on the same device, with the same weights and inputs, the
+    synchronous L2L forward's logits equal the Hugging Face resident forward's, and its output after every decoder layer
+    equals the explicit resident forward's, within research/l2l/tolerances.yaml (forward_equivalence: 0 for every
+    quantity and dtype). Grid: both fixture shapes x eager/sdpa x fp32/bf16 x LoRA (plain model, adapter disabled,
+    last2-attention, every projection of every layer) x 1 or 2 weight buffers x unpadded and left-padded inputs of
+    several lengths x all, last-k and index-selected logit columns. The explicit resident forward must equal HF bitwise
+    (reference integrity). Bounded residency (an execution requirement, not a threshold): at every decoder-layer call
+    every frozen weight a kernel reads lies in the weight-buffer pool, the layer's weights are back in their CPU slab
+    right after the call, the PyTorch-allocated device memory before each layer's copy is identical for every layer
+    after the first, and after the forward it equals its value before the forward. NOT_SUPPORTED if any comparison
+    exceeds its threshold.
   tickets: ["03"]
   status: untested
   evidence: []

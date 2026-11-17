@@ -219,6 +219,19 @@ def test_a_failed_registration_raises_and_releases_what_was_registered(monkeypat
 
 
 @needs_cuda
+def test_a_store_dropped_without_close_unregisters_its_slabs():
+    """Otherwise freed slab memory stays registered and a later allocation at that address reports is_pinned()."""
+    import gc
+    model, _ = F.load("0.6b-like")
+    store = WeightStore.build(model, "pinned")
+    views = [e.param for e in store.slabs[0].entries]  # the model keeps the slab memory alive
+    assert all(p.is_pinned() for p in views)
+    del store
+    gc.collect()
+    assert not any(p.is_pinned() for p in views)
+
+
+@needs_cuda
 def test_building_allocates_nothing_in_the_cuda_allocator(stores):
     torch.cuda.synchronize()
     before = torch.cuda.memory_allocated()
