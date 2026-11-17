@@ -1,0 +1,42 @@
+# Shared, model-independent defaults for every profile (docs/configuration.md). Not a run: `abstract: true` lets
+# profiles extend it but refuses to load it alone. Values equal to a Python default in qwen_grpo/config.py are spelled
+# out so the whole setup is visible in one place; they do not change any resolved config or its hash.
+abstract: true
+
+run:
+  overwrite: false             # train refuses an existing runs/<name>/ unless true
+
+model:
+  dtype: bfloat16              # frozen base weights; LoRA adapters are always fp32
+
+lora:
+  rank: 32
+  alpha: 64                    # scale alpha / rank = 2; no dropout
+
+data:
+  train_samples: 512           # balanced subsets of data/sentiment.json (Rotten Tomatoes)
+  val_subset: 512
+  subset_seed: 42              # selects both subsets; independent of training.seed
+
+training:                      # GRPO: B prompts x G completions, clipped surrogate, beta = 0 (no reference model)
+  batch_size: 5                # B
+  group_size: 6                # G
+  learning_rate: 5.0e-4        # write floats with a decimal point: PyYAML reads 5e-4 as a string
+  max_steps: 100               # optimizer updates
+  max_attempts: 1000           # rollout batches, zero-signal ones included
+  max_new_tokens: 4            # rollout length: the reward needs one label word
+  seed: 42                     # LoRA init, rollout sampling, batch order
+  clip_eps: 0.2
+  num_iterations: 1            # updates per rollout batch, all against its sampling-time log-probs
+  micro_batch_size: null       # null: all B*G completions in one forward/backward chunk
+
+evaluation:                    # greedy; batch sizes matter in bf16, the defaults match the saved baseline
+  every: 10                    # validation-subset evaluation + checkpoint every N steps
+  full_validation: true
+  max_new_tokens: 4
+  batch_size: 32
+  score_batch_size: 8
+  bootstrap_samples: 10000
+
+verification:
+  split: validation            # test is touched once, for the final report

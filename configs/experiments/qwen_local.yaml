@@ -1,0 +1,34 @@
+# Local development on the laptop (RTX 3050 Ti, 4 GB): Qwen3-0.6B through the same code path as the Qwen3-4B runs
+# (L2L async, pinned weight store, disk streaming, crash-consistent checkpoints, resume with --resume latest) at a cost of
+# minutes. Results are not comparable bitwise with the resident reference run unless micro-batching and evaluation
+# settings match (H05 evidence: configs/experiments/qwen_l2l.yaml vs qwen_resident.yaml).
+#   qwen-grpo preflight --config configs/experiments/qwen_local.yaml
+#   qwen-grpo train     --config configs/experiments/qwen_local.yaml
+extends: ../profiles/qwen3_0_6b.yaml
+
+run:
+  name: qwen_local
+
+data:
+  train_samples: 64
+  val_subset: 32
+
+training:
+  max_steps: 10
+
+evaluation:
+  every: 5
+  full_validation: false
+
+execution:
+  backend: l2l_async
+  weight_storage: pinned
+  resident_layers: 0
+  weight_buffers: 2
+  prefetch_depth: 1
+  activation_checkpointing: true
+  kv_cache: gpu
+
+streaming:
+  enabled: true
+  directory: streaming

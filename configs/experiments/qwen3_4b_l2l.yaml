@@ -1,16 +1,8 @@
-# Ticket 11 / H11: Qwen3-4B with the L2L backend under the assignment's 8 GB GPU budget (asynchronous prefetching,
-# pinned CPU store, 2 GPU buffers). Profiled by scripts/profile_run.py; predictions in
-# results/budget/predictions/qwen3-4b_8gb.json (which predict a CPU-RAM FAIL at about 15.8 GB).
-extends: qwen3_4b.yaml
+# Ticket 11 / H11: Qwen3-4B with the L2L backend under the assignment's 8 GB GPU budget: exactly the Qwen3-4B profile
+# (asynchronous prefetching, pinned CPU store, 2 GPU buffers, memory guard). Profiled by scripts/profile_run.py;
+# predictions in results/budget/predictions/qwen3-4b_8gb.json (which predict a CPU-RAM FAIL at about 15.8 GB on a
+# 6.7 GiB host). Parent of the DFlash and final experiments.
+extends: ../profiles/qwen3_4b.yaml
 
 run:
   name: qwen3_4b_l2l
-  gpu_budget_gib: 8.0
-
-execution:
-  backend: l2l_async
-  weight_storage: pinned
-  resident_layers: 0
-  weight_buffers: 2
-  prefetch_depth: 1
-  activation_checkpointing: true

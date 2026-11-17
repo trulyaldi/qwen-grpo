@@ -1,0 +1,12 @@
+# qwen3_4b_smoke.yaml with DFlash-drafted rollouts (z-lab/Qwen3-4B-DFlash-b16, ~1.08 GB bf16, GPU-resident beside the
+# streamed target). Run after the plain smoke: it adds the drafter's memory and the DFlash rollout path. The final run
+# (qwen3_4b_final.yaml) does NOT enable DFlash; whether it should is decided from this run and scripts/dflash_bench.py
+# (on-policy checks and speed, H10).
+extends: qwen3_4b_smoke.yaml
+
+run:
+  name: qwen3_4b_smoke_dflash
+
+dflash:
+  enabled: true
+  draft_model: z-lab/Qwen3-4B-DFlash-b16

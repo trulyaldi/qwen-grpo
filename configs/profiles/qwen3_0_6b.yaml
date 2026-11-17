@@ -1,0 +1,20 @@
+# Qwen/Qwen3-0.6B (28 layers, bf16 ~1.2 GB) on the development laptop (RTX 3050 Ti, 4 GB; ~14 GB usable host RAM).
+# Resident execution: the whole model fits on the GPU. This is the configuration of the reference run runs/qwen
+# (validation accuracy 0.7486 -> 0.8096, ROC AUC 0.8277 -> 0.8929 at step 90); configs/default.yaml and configs/qwen.yaml
+# resolve to exactly this profile (only run.name differs). For the L2L path on this model see
+# configs/experiments/qwen_local.yaml. DFlash is not available: the only supported drafter (z-lab/Qwen3-4B-DFlash-b16)
+# is trained for Qwen3-4B, and config validation refuses it here.
+extends: shared.yaml
+
+run:
+  name: qwen3_0_6b
+  gpu_budget_gib: 4.0          # the card; reported (memory.guard off: the budget equals the device)
+
+model:
+  name: Qwen/Qwen3-0.6B
+
+lora:
+  targets: last2-attention     # q/v/o projections of the last two decoder layers (26-27)
+
+execution:
+  backend: resident

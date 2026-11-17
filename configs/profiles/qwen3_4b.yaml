@@ -1,0 +1,34 @@
+# Qwen/Qwen3-4B (36 layers, bf16 weights ~8 GB) under the assignment's 8 GB GPU cap, CUDA context included.
+# The model cannot be GPU-resident: frozen decoder weights live in pinned CPU memory and stream through two GPU buffers
+# with asynchronous prefetching (l2l_async), layer-boundary checkpoints and recomputation in backward. The embedding
+# (tied LM head), final norm, LoRA tensors, optimizer state and KV cache stay on the GPU. Scheduling is micro-batch-major
+# (every micro-batch, decode step and backward sweep streams the layers again; docs/architecture.md).
+# Budget estimates (not measurements): results/budget/predictions/qwen3-4b_8gb.json; `qwen-grpo preflight` recomputes
+# them for this config. None of these values has been validated on an 8 GB-capped GPU yet.
+extends: shared.yaml
+
+run:
+  name: qwen3_4b_8gb
+  gpu_budget_gib: 8.0
+
+model:
+  name: Qwen/Qwen3-4B
+
+lora:
+  targets:
+    modules: [q_proj, v_proj, o_proj]
+    num_layers: 2              # layers 34-35, the same placement as the 0.6B reference
+
+execution:
+  backend: l2l_async
+  weight_storage: pinned       # ~7.3 GiB page-locked host memory for the decoder layers
+  resident_layers: 0           # > 0 is not implemented (config.unimplemented)
+  weight_buffers: 2            # current + prefetched layer (>= prefetch_depth + 1)
+  prefetch_depth: 1
+  activation_checkpointing: true   # required: the L2L executors always checkpoint layer boundaries
+  kv_cache: gpu
+
+memory:                        # enforce, do not just report: stop at the first sample above 8 GiB (nvidia-smi)
+  guard: true
+  interval_s: 0.5
+  allocator_cap: true

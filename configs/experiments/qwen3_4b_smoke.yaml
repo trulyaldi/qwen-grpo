@@ -1,0 +1,21 @@
+# The cheapest run that exercises the whole Qwen3-4B training path of the final run before paying for it: L2L async,
+# disk streaming with crash-consistent checkpoints, the memory guard, subset evaluations and a checkpoint every 2 steps.
+# Batch shape (B = 5 prompts x G = 6 completions, 4 new tokens, no micro-batching) equals the final run's, so its GPU
+# peaks are the final run's training peaks; only the number of steps and prompts is smaller.
+#   qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke.yaml --gpu   # first, on the rented GPU
+#   qwen-grpo train     --config configs/experiments/qwen3_4b_smoke.yaml
+extends: qwen3_4b_final.yaml
+
+run:
+  name: qwen3_4b_smoke
+
+data:
+  train_samples: 64
+  val_subset: 16
+
+training:
+  max_steps: 4
+
+evaluation:
+  every: 2
+  full_validation: false
