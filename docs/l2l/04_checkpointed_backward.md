@@ -9,8 +9,8 @@ Code:
 
 Config: `research/l2l/configs/store_cpu.yaml` (pageable store, for `--device cpu`).
 
-Evidence: `research/l2l/experiments/t04_*` and `ticket04_*`, recorded at commit `49e1506` with a clean tracked
-tree, on CPU only (below).
+Evidence: `research/l2l/experiments/t04_*` and `ticket04_*`. CPU runs were recorded at commit `49e1506`; the CUDA
+run at `5cc0c0a`. Both trees were clean (below).
 
 Training still refuses `l2l_sync` (`config.unimplemented`). Wiring the executor into the trainer is not part of this
 ticket.
@@ -129,22 +129,26 @@ The 23 failures and the collection error were already there before this ticket. 
 - **Config/historical tests (5 failures).** These already failed in the Ticket 03 log.
 - **`test_trl_reference` (collection error).** `research/trl_reference` is absent.
 
-**CUDA was not exercised.** The local GPU (Quadro P1000, sm_61) is not supported by the installed PyTorch build.
+The development host's GPU (Quadro P1000, sm_61) is not supported by the installed PyTorch build, so CUDA runs were
+recorded on the laptop.
 
-## Pending
+### CUDA (commit `5cc0c0a`, tracked tree clean, RTX 3050 Ti Laptop GPU, torch `2.14.1+cu126`)
 
-1. On a supported GPU: `python scripts/l2l_lab.py run --case gradient_equivalence --config
-   research/l2l/configs/store.yaml --device cuda --name t04_gradient_equivalence_cuda --hypothesis H02`, and the CUDA
-   tests.
-2. **CUDA determinism.** On a GPU, some backward kernels may be nondeterministic, for example SDPA's
-   memory-efficient backward. If the resident reference is not repeatable, the CUDA run will FAIL on reference
-   integrity rather than pass. In that case a nonzero tolerance would have to be justified and recorded before the
-   run, not fitted to it.
+| run | result |
+|---|---|
+| `t04_gradient_equivalence_cuda` (H02) | **PASS, H02 SUPPORTED.** 5,296 comparisons, all exactly 0. Reference integrity clean: the resident CUDA gradients are bitwise repeatable |
+
+**Determinism held.** The concern recorded beforehand did not materialize on this GPU: some CUDA backward kernels may
+be nondeterministic, for example SDPA's memory-efficient backward. The resident reference was repeatable and the
+0 threshold held.
+
+**At real size too.** The recomputation check also held at real size: Qwen3-0.6B in bf16 with SDPA and head_dim 128.
+See the real-model step in `docs/l2l/07_update.md`.
 
 ## Not established here
 
-- Real pretrained weights (Qwen3-0.6B through L2L backward).
-- Training integration (`l2l_sync` in the trainer), and the KV cache.
+- A real-weight gradient *grid*. Only one real Qwen3-0.6B step was compared, with LoRA on the last two layers
+  (`docs/l2l/07_update.md`). The trainer integration was done in Ticket 07.
 - Memory independence from depth (H07, Ticket 11). The saved-bytes figures are allocator-free tensor accounting, not
   device memory.
 - Overlap and performance (Ticket 08).

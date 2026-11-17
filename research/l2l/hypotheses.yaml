@@ -39,8 +39,8 @@ H02:
     from the first adapted one upward, LoRA Parameter and optimizer identities and the store are unchanged.
     NOT_SUPPORTED if any comparison exceeds its threshold or a candidate gradient is missing.
   tickets: ["04"]
-  status: SUPPORTED  # CPU only, tiny random Qwen3 models, use_cache=False; CUDA and real weights not yet run
-  evidence: [t04_gradient_equivalence_cpu]
+  status: SUPPORTED  # tiny random Qwen3 models on CPU and CUDA (RTX 3050 Ti); one real Qwen3-0.6B step bitwise (real_step_*)
+  evidence: [t04_gradient_equivalence_cpu, t04_gradient_equivalence_cuda]
 H03:
   statement: Memory-efficient output-head computation preserves GRPO log-probabilities and gradients.
   kind: correctness
@@ -78,8 +78,8 @@ H04:
     non-thinking Qwen3 chat prompts. Execution requirements: one weight load per layer per generated token, the KV
     cache equals its analytic size, |logits| <= 16 in every reference. NOT_SUPPORTED if any comparison fails.
   tickets: ["06"]
-  status: SUPPORTED  # CPU only, tiny random models (one with the real vocabulary and chat prompts); CUDA not yet run
-  evidence: [t06_generation_equivalence_cpu]
+  status: SUPPORTED  # tiny random models on CPU and CUDA (one with the real vocabulary and chat prompts); real Qwen3-0.6B rollouts equal HF's (real_step_*)
+  evidence: [t06_generation_equivalence_cpu, t06_generation_equivalence_cuda]
 H05:
   statement: A complete streamed GRPO + LoRA optimizer update is numerically equivalent to a resident update.
   kind: correctness
@@ -96,8 +96,8 @@ H05:
     gradients, iteration-0 init_diff 0, Parameter identities kept, tokens clipped after iteration 0 (power).
     NOT_SUPPORTED if any comparison fails.
   tickets: ["07"]
-  status: SUPPORTED  # CPU only, tiny random models; trainer integration checked bitwise on CPU (tests/test_backend.py); CUDA not yet run
-  evidence: [t07_update_equivalence_cpu, t07_update_equivalence_cpu_v2]  # t07_update_equivalence_cuda: execution FAIL (lab design, fixed after it; docs/l2l/07_update.md)
+  status: SUPPORTED  # tiny random models on CPU and CUDA; trainer integration bitwise on CPU (tests/test_backend.py); two real Qwen3-0.6B GRPO updates bitwise on CUDA (real_step_*)
+  evidence: [t07_update_equivalence_cpu, t07_update_equivalence_cpu_v2, t07_update_equivalence_cuda_v2, real_step_20261117T063325Z, real_step_20261117T063548Z]  # t07_update_equivalence_cuda: execution FAIL (lab design, fixed after it; docs/l2l/07_update.md)
 H06:
   statement: Double-buffered asynchronous prefetching reduces execution time without changing numerical results.
   kind: performance  # with a correctness precondition: every equivalence test still passes under l2l_async

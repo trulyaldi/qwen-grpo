@@ -109,12 +109,59 @@ under a new name.
 The fixed case on CPU, `t07_update_equivalence_cpu_v2` (commit `ce0b4d4`, clean tree): **PASS, H05 SUPPORTED**, 6,528
 comparisons, all exactly 0.
 
-**Still to run on the GPU.** The fixed CUDA run has not been recorded yet.
+The fixed case on CUDA, `t07_update_equivalence_cuda_v2` (commit `a8aab7f`, clean tree, RTX 3050 Ti Laptop GPU,
+torch `2.14.1+cu126`): **PASS, H05 SUPPORTED.**
+- 6,528 comparisons, all exactly 0. There were no errors, and the iteration-0 `init_diff` was 0 everywhere.
+- All 32 configurations clip tokens after iteration 0.
+- Gradient norms range from 2.6e-5 to 0.42.
+
+## A real Qwen3-0.6B step (`scripts/l2l_real_step.py`)
+
+Two runs at commit `3106101`, clean tree, RTX 3050 Ti Laptop GPU (4 GB):
+- `real_step_20261117T063325Z.json`: one iteration.
+- `real_step_20261117T063548Z.json`: two iterations.
+
+**Setup**
+- Real Qwen3-0.6B weights, bf16, SDPA, head_dim 128, 28 layers.
+- LoRA from `configs/qwen.yaml`: rank 32 on the q/v/o projections of layers 26–27, with B set to a seeded
+  N(0, 1e-2) so A's gradients are nonzero.
+- 5 prompts × 6 completions from the training split, the real reward, pinned store, 2 weight buffers.
+- One script run does the L2L side, then the resident side on the same GPU.
+
+**Correctness, L2L vs resident, all exactly equal**
+- The sampled rollouts are identical with the same seed. L2L generation draws exactly the tokens HF `generate` draws.
+- Old log-probs, current log-probs, loss and `clip_frac` are identical.
+- All 12 LoRA gradient tensors and all 12 updates are identical, in both iterations.
+- Iteration 1 is a non-trivial check: ratios span [0.077, 2.65] and 23.6 % of tokens clip.
+- So the recomputation checksum holds at real size: SDPA did not pick a different kernel for the
+  grad-enabled recomputation.
+
+**Resources** (one run each, wall clock, diagnostic grade, synchronous transfers, before Ticket 08)
+
+| | L2L | resident |
+|---|---|---|
+| rollout generation, 30 rows (4 steps: every row ended with EOS after the 2-token label) | 2.7 s / 4.2 s (0.68 / 1.06 s per step) | 0.51 s / 0.53 s |
+| effective weight streaming | 0.84 GB per pass (840 MiB), 1.3 / 0.83 GB/s | — |
+| `prepare` (old log-probs) | 0.56 s | 0.35 s |
+| one `grpo_update` | 0.93 s (iteration 1: 0.67 s) | 0.47 s |
+| weight loads in the step | forward: 28 per pass; backward: 2 per iteration (layers 26–27 only) | — |
+| peak allocated, generation / step | 799 / 604–609 MiB | 1,481 / 1,688–1,692 MiB |
+
+**Reading the numbers**
+- **Memory:** L2L uses about 2.1–2.8× less peak allocated memory than resident.
+- **Generation is the bottleneck:** it is 5–8× slower than resident, because all 840 MiB of weights stream
+  synchronously for every token. The effective bandwidth (0.8–1.3 GB/s) is far below PCIe. Each layer's copy waits
+  for the GPU and does not overlap compute; that is Ticket 08.
+- **Training is fine:** the training step costs about 1.4–2× resident.
+- **The KV cache is oversized:** it is preallocated for `max_new = 32` (354 MiB) even though every row stopped after 4
+  tokens.
+- **Caveats:** the two runs differ by 1.6× in generation time, and there is one trial each, so the timings are
+  indicative only.
 
 ## Not established here
 
-- **CUDA.** Not run on this machine; the commands are in the hand-off.
+- **CUDA fault injection** (the advantage fault was run on CPU only).
 - **Checkpoint verification and evaluation under L2L** (`run.py verify` / `validate` / `test`). These refuse the
   config and stay resident.
 - **The chunked head in training** (H03).
-- **Real pretrained weights and the 8 GB budget** (Ticket 11).
+- **The 8 GB budget** (Ticket 11). The real-model step is a single step with diagnostic-grade memory figures.

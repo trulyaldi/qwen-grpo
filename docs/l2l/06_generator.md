@@ -112,9 +112,22 @@ Measured:
 - **CPU time per token** (tiny models; wall clock, one run, diagnostic only): 15 ms resident vs 18 ms streamed for
   the 6-layer fp32 model, and 17 vs 16 ms for the real-vocabulary model.
 
+### CUDA (commit `853091f`, tracked tree clean, RTX 3050 Ti Laptop GPU, torch `2.14.1+cu126`)
+
+| run | result |
+|---|---|
+| `t06_generation_equivalence_cuda` (H04) | **PASS, H04 SUPPORTED.** 1,292 comparisons. Every cached and sampled comparison is exactly 0, with the KV cache both on the GPU and in CPU RAM. The full-prefix differences use at most 29 % of their bounds |
+
+- **Same-seed samples:** they match HF `generate` in every model.
+- **Near-ties:** 70 were excluded from the full-prefix greedy check.
+- **Real-weight generation:** see the real-model step in `docs/l2l/07_update.md`. Its rollouts sampled through L2L
+  equal HF `generate`'s with the same seed.
+
+The CUDA fault runs (`stale_position`, `no_padding_mask`) were not recorded on the GPU. Their power was shown on CPU.
+
 ## Not established here
 
-- **CUDA.** Not run on this machine, by request; the commands are in the hand-off.
+- **The CUDA fault-injection runs** (CPU only; see above).
 - **Early stopping inside the lab grid.** The lab requires padded EOS tails. Stopping once every row has finished
   is checked against HF `generate` by `test_rows_that_emit_eos_get_padding_and_the_loop_stops_when_all_have_finished`.
 - Real pretrained weights.
