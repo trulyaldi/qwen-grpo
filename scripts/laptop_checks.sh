@@ -57,6 +57,23 @@ lab cpu t10_merge_equivalence_tiny --case merge_equivalence --config research/l2
 lab gpu t10_merge_equivalence_qwen3_0.6b --case merge_equivalence --config research/l2l/configs/store_qwen3_0.6b.yaml \
   --device cuda --real --hypothesis H09
 
+echo "== 4c. Ticket 11: depth residency (H07) and profiled real-model runs (H11 needs Qwen3-4B; last)" | tee -a "$LOG"
+lab gpu t11_depth_residency --case depth_residency --config research/l2l/configs/store.yaml --device cuda --hypothesis H07
+prof() {  # prof <out name> <args...>: scripts/profile_run.py unless its result exists
+  local name=$1; shift
+  if [ -e "$EXP/$name.json" ]; then echo "skip $name (exists)" | tee -a "$LOG"; return; fi
+  echo "\$ python scripts/profile_run.py --out $name $*" | tee -a "$LOG"
+  python scripts/profile_run.py --out "$name" "$@" 2>&1 | grep -vE "Warning|warn" | tail -12 | tee -a "$LOG"
+  [ -e "$EXP/$name.json" ] && new+=("$EXP/$name.json")
+}
+P06=(--config configs/experiments/qwen_l2l.yaml --prediction results/budget/predictions/qwen3-0.6b_4gb.json --budget-gib 4)
+prof t11_profile_qwen3_0.6b_sync "${P06[@]}" --backend l2l_sync
+prof t11_profile_qwen3_0.6b_async "${P06[@]}" --backend l2l_async
+prof t11_profile_qwen3_0.6b_async_mb5 "${P06[@]}" --backend l2l_async --micro-batch-size 5
+prof t11_profile_qwen3_0.6b_async_kvcpu "${P06[@]}" --backend l2l_async --kv-cache cpu
+prof t11_profile_qwen3_4b_async --config configs/experiments/qwen3_4b_l2l.yaml \
+  --prediction results/budget/predictions/qwen3-4b_8gb.json --budget-gib 8 --steps 1 --eval-n 16
+
 echo "== 5. Ticket 09: crash/resume experiment on the real Qwen3-0.6B (H08)" | tee -a "$LOG"
 if [ -e "$EXP/t09_resume_qwen_stream.json" ]; then echo "skip t09_resume_qwen_stream (exists)" | tee -a "$LOG"
 else

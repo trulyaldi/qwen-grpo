@@ -120,6 +120,13 @@ H07:
   statement_ticket11: GPU weight residency remains bounded as model depth increases.
   kind: memory  # GPU weight memory vs depth at a fixed layer shape and number of buffers
   prediction: streamed_constant_resident_increasing
+  criterion_ticket11: >-
+    Written before the Ticket 11 runs (docs/l2l/11_profiling.md). Case depth_residency: tiny Qwen3 models of one layer
+    shape at depths 2, 4, 8, 16, 32 on one GPU; SUPPORTED iff the synchronous streamed no-grad forward's peak of
+    PyTorch-allocated memory (weights + buffers + activations) is identical at every depth and the resident one strictly
+    increases (the prediction rule above), with the asynchronous executor's peak also identical across depths
+    (execution requirement). Training-step peaks are recorded with the analytic size of the per-layer activation
+    checkpoints, the only depth-dependent streamed term by design.
   criterion: >-
     Written before the Ticket 02 run. SUPPORTED iff, over every measured depth, the streamed peak of PyTorch-allocated
     GPU memory (store build + every layer copied through the fixed buffer pool) is identical to the byte, and the
@@ -175,6 +182,14 @@ H10:
 H11:
   statement: The complete Qwen3-4B system respects the 8 GB GPU-memory budget.
   kind: performance  # a memory budget, judged on process-level evidence
+  criterion: >-
+    Written before the Ticket 11 runs. scripts/profile_run.py with configs/experiments/qwen3_4b_l2l.yaml (budget 8 GiB):
+    setup, rollout, old log-probs, differentiable forward, backward, optimizer step, streaming merge and evaluation run
+    under execution.profiler with nvidia-smi sampled throughout (raw output kept) and the memory guard armed. SUPPORTED
+    iff the run completes with no guard violation and assignment-grade evidence (a numeric per-process nvidia-smi
+    reading in every sample, not under WSL2); NOT_SUPPORTED iff the guard fires or a phase's process-level memory
+    exceeds 8 GiB; INCONCLUSIVE (never SUPPORTED) when the evidence is only diagnostic or the run cannot complete for a
+    reason other than GPU memory (e.g. CPU RAM, which the saved prediction already expects to exceed its budget).
   tickets: ["11"]
   status: untested
   evidence: []

@@ -44,7 +44,8 @@ def main(argv=None):
             "merge_equivalence": {"device": a.device, "real": a.real, **({"adapter": a.adapter} if a.adapter else {})},
             "prefetch_timing": {"device": a.device, "trials": a.trials, "warmup": a.warmup, "max_new": a.max_new},
             "logprob_equivalence": {"device": a.device, "trials": a.trials, "warmup": a.warmup},
-            "store_depth": {"depths": a.depths} if a.depths else {}}.get(a.case, {})
+            "store_depth": {"depths": a.depths} if a.depths else {},
+            "depth_residency": {"depths": a.depths} if a.depths else {}}.get(a.case, {})
     result = lab.run(a.case, a.config, a.name, root=lab.RESULTS, perturbation=a.perturb,
                      hypothesis_id=a.hypothesis, **opts)
     print(lab.markdown(result))
