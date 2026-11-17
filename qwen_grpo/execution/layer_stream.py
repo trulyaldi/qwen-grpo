@@ -54,8 +54,9 @@ def _inside(t, buffer):
 class StreamingLayerExecutor:
     """Runs decoder layer i on weights copied from store slab i into a fixed pool of buffers (see module docstring).
 
-    trace: one record per weight load: the layer, the phase (forward, or backward recomputation), the buffer used, the
-    slab copied and the PyTorch-allocated device memory just before the copy (None on CPU)."""
+    trace: one record per layer use (bound block): the layer, the phase (forward, or backward recomputation), the
+    buffer used, the slab, whether it was copied for this use (always, here; prefetch.py may find it resident) and the
+    PyTorch-allocated device memory just before (None on CPU)."""
 
     def __init__(self, store, buffers):
         if not buffers:
@@ -81,12 +82,7 @@ class StreamingLayerExecutor:
         params = dict(layer.named_parameters())
         if any(params.get(e.name) is not e.param for e in slab.entries):
             raise RuntimeError(f"layer {index} is not the module whose weights slab {index} holds")
-        k = index % len(self.buffers)
-        buffer = self.buffers[k]
-        cuda = buffer.device.type == "cuda"
-        self.trace.append({"layer": index, "phase": phase, "buffer": k, "slab": index, "slab_bytes": slab.nbytes,
-                           "allocated_before": torch.cuda.memory_allocated(buffer.device) if cuda else None})
-        views = self.load(index, buffer)
+        buffer, views = self._acquire(index, phase)
         try:
             for e in slab.entries:
                 v = views.get(e.name)
@@ -101,6 +97,21 @@ class StreamingLayerExecutor:
         finally:
             for e in slab.entries:
                 e.param.data = slab.view(slab.data, e)
+            self._release(index, phase)
+
+    def _acquire(self, index, phase):
+        """(buffer, {name: view}) holding layer `index`'s weights, ready for the compute stream. Synchronous: buffer
+        index mod n, copied now (copy_to synchronizes). prefetch.PrefetchMixin overrides this and _release."""
+        k = index % len(self.buffers)
+        buffer = self.buffers[k]
+        cuda = buffer.device.type == "cuda"
+        self.trace.append({"layer": index, "phase": phase, "buffer": k, "slab": index,
+                           "slab_bytes": self.store.slabs[index].nbytes, "loaded": True,
+                           "allocated_before": torch.cuda.memory_allocated(buffer.device) if cuda else None})
+        return buffer, self.load(index, buffer)
+
+    def _release(self, index, phase):
+        """Called after the block that used the buffer (all its kernels enqueued). Synchronous: nothing to do."""
 
     def execute(self, index, layer, hidden, **kwargs):
         if torch.is_grad_enabled():

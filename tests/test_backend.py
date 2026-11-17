@@ -128,3 +128,19 @@ def test_compare_runs_reports_identical_runs_and_catches_a_different_one(sandbox
     assert rep["identical"] and rep["backends"] == ["resident", "l2l_sync"] and len(rep["checkpoints"]) >= 2
     assert compare_runs.main(["tiny_res", "tiny_lr", "--out", str(tmp_path / "diff.json")]) == 1
     assert json.loads((tmp_path / "diff.json").read_text())["training_rows"]["first_differing_step"] is not None
+
+
+def test_an_l2l_async_training_run_equals_the_resident_run_bitwise(sandbox, tmp_path, monkeypatch):
+    """execution.backend l2l_async selects the prefetching executor (Ticket 08) in the real trainer; on CPU buffers it
+    runs the same ownership logic with immediate copies, and the run must equal the resident one bitwise."""
+    res_root = sandbox("resident")
+    ref = trainer.train(make_cfg(tmp_path, micro_batch_size=4, num_iterations=2), device="cpu")
+    root = sandbox("async")
+    monkeypatch.setattr(transformers.GenerationMixin, "generate",
+                        lambda *a, **k: pytest.fail("model.generate() called under the l2l_async backend"))
+    out = trainer.train(make_cfg(tmp_path, {**L2L_CPU, "backend": "l2l_async", "prefetch_depth": 1, "weight_buffers": 3},
+                                 micro_batch_size=4, num_iterations=2), device="cpu")
+    assert rows(out) == rows(ref)
+    assert [e["predictions"] for e in out["evaluations"]] == [e["predictions"] for e in ref["evaluations"]]
+    assert same_tensors(adapter(root, 4), adapter(res_root, 4))
+    assert same_tensors(state(root, 4)["optimizer"], state(res_root, 4)["optimizer"])

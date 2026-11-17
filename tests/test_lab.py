@@ -446,3 +446,17 @@ def test_logprob_equivalence_compares_step_gradients_so_a_fully_clipped_micro_ba
     assert names and not any(".mb" in n.split(".it")[-1] for n in names)  # one tensor per step, not per micro-batch
     zero = torch.zeros(2, 3)
     assert head_lab._concat([zero, torch.ones(1, 3)]).abs().max() > 0 and head_lab._concat([zero, None]) is None
+
+
+ASYNC_CPU = lab.ROOT / "research" / "l2l" / "configs" / "async_cpu.yaml"
+
+
+def test_gradient_equivalence_under_l2l_async_passes_and_unsafe_reuse_is_caught(tmp_path):
+    r = lab.run("gradient_equivalence", ASYNC_CPU, "ok", root=tmp_path, hypothesis_id="H02", device="cpu")
+    assert r["status"] == "PASS" and all(c["max_abs"] == 0 for c in r["comparisons"]), r["reasons"][:5]
+    assert {c["model"].rsplit(".b", 1)[1] for c in r["comparisons"]} == {"2", "3"}  # depth + 1, depth + 2 buffers
+    f = lab.run("gradient_equivalence", ASYNC_CPU, "fault", root=tmp_path, perturbation="unsafe_reuse=2", device="cpu")
+    assert f["status"] == "FAIL"
+    assert any(not c["pass"] for c in f["comparisons"]) or any("candidate refused" in e for e in f["errors"])
+    bad = lab.run("gradient_equivalence", ASYNC_CPU, "bad", root=tmp_path, perturbation="detach_boundary=2", device="cpu")
+    assert any("not 'detach_boundary=2' under l2l_async" in e for e in bad["errors"])

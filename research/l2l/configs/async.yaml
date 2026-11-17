@@ -1,0 +1,8 @@
+# L2L lab, Ticket 08: asynchronous prefetching (dedicated transfer stream, depth 1, 2 GPU buffers, pinned store).
+extends: store.yaml
+run:
+  name: l2l_lab_async
+execution:
+  backend: l2l_async
+  prefetch_depth: 1
+  weight_buffers: 2

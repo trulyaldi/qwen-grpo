@@ -177,6 +177,17 @@ class WeightStore:
             torch.cuda.synchronize(buffer.device)
         return {e.name: s.view(buffer, e) for e in s.entries}
 
+    def copy_nonblocking(self, i, buffer):
+        """Enqueue the copy of slab i into `buffer` on the current stream (non_blocking: asynchronous from a pinned
+        slab, synchronous from a pageable one) and return {name: view}. The caller orders it against the compute
+        stream with CUDA events (prefetch.py); the views are valid only once the copy has completed."""
+        self._open()
+        s = self.slabs[i]
+        if buffer.dtype != torch.uint8 or buffer.numel() < s.nbytes:
+            raise ValueError(f"buffer of {buffer.numel()} bytes ({buffer.dtype}) cannot hold layer {i} ({s.nbytes} bytes)")
+        buffer[: s.nbytes].copy_(s.data, non_blocking=True)
+        return {e.name: s.view(buffer, e) for e in s.entries}
+
     def check_views(self, i, views):
         """Problems if `views` (e.g. from copy_to) do not hold layer i's recorded bytes, or are misaligned."""
         s = self.slabs[i]

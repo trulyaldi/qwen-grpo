@@ -44,6 +44,7 @@ from qwen_grpo import backward_lab as backward_cases  # Ticket 04
 from qwen_grpo import head_lab as head_cases  # Ticket 05
 from qwen_grpo import gen_lab as gen_cases  # Ticket 06
 from qwen_grpo import update_lab as update_cases  # Ticket 07
+from qwen_grpo import prefetch_lab as prefetch_cases  # Ticket 08
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
@@ -418,8 +419,8 @@ def needs_forward(cfg):
     """Blocked reasons of forward_equivalence: an l2l_sync config with store settings and a CUDA device (the case runs
     on the GPU; its CPU part only ties the result to the fixtures)."""
     reasons = needs_store(cfg)
-    if cfg.execution.backend != "l2l_sync":
-        reasons.append(f"forward_equivalence tests the l2l_sync backend, not {cfg.execution.backend!r}")
+    if cfg.execution.backend not in ("l2l_sync", "l2l_async"):
+        reasons.append(f"forward_equivalence tests an L2L backend, not {cfg.execution.backend!r}")
     if not torch.cuda.is_available():
         reasons.append("forward_equivalence runs on a CUDA device; none is available")
     return reasons
@@ -428,8 +429,8 @@ def needs_forward(cfg):
 def needs_l2l(cfg, case):
     """Blocked reasons of a case that runs l2l_sync on its --device (default CPU; a CUDA device is checked in the case)."""
     reasons = needs_store(cfg)
-    if cfg.execution.backend != "l2l_sync":
-        reasons.append(f"{case} tests the l2l_sync backend, not {cfg.execution.backend!r}")
+    if cfg.execution.backend not in ("l2l_sync", "l2l_async"):
+        reasons.append(f"{case} tests an L2L backend, not {cfg.execution.backend!r}")
     return reasons
 
 
@@ -468,6 +469,9 @@ CASES = {
                                    ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "generation_equivalence")),
     "update_equivalence": Case("correctness", lambda *a, **k: update_cases.update_equivalence(*a, **k),
                                ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "update_equivalence")),
+    "prefetch_timing": Case("performance", lambda *a, **k: prefetch_cases.prefetch_timing(*a, **k),
+                            ("model.name", "model.dtype", "lora", "training", "data.subset_seed", "execution"),
+                            lambda cfg: needs_l2l(cfg, "prefetch_timing")),
     "pinned_transfer": Case("performance", lambda *a, **k: store_cases.pinned_transfer(*a, **k), ("execution",),
                             needs_store),
 }
@@ -479,7 +483,12 @@ def tolerances_for(case, cfg, dtype=None):
     table = yaml.safe_load(TOLERANCES.read_text())
     dtype = dtype or cfg.model.dtype
     try:
-        entry = table[case][cfg.execution.backend][dtype]
+        backend = table[case][cfg.execution.backend]
+        if "same_as" in backend:  # an explicit, justified reuse of another backend's thresholds (never implicit)
+            if not backend.get("why"):
+                raise SetupError(f"{case} / {cfg.execution.backend}: same_as without a justification")
+            backend = table[case][backend["same_as"]]
+        entry = backend[dtype]
     except (KeyError, TypeError):
         raise SetupError(f"no tolerances for {case} / {cfg.execution.backend} / {dtype} in {TOLERANCES.name}")
     return entry["quantities"]

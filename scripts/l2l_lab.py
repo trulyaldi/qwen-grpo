@@ -25,6 +25,7 @@ def main(argv=None):
     r.add_argument("--trials", type=int, default=20)
     r.add_argument("--warmup", type=int, default=3)
     r.add_argument("--device", default="cpu")
+    r.add_argument("--max-new", type=int, default=16, help="prefetch_timing: generated tokens per row")
     r.add_argument("--depths", type=lambda v: tuple(int(x) for x in v.split(",")), help="store_depth: e.g. 2,4,8,16,32")
     r.add_argument("--capacity-gib", type=float, default=0.0, help="pinned_transfer: page-lock up to this much (0: skip)")
     p = sub.add_parser("report")
@@ -38,6 +39,7 @@ def main(argv=None):
             "gradient_equivalence": {"device": a.device},
             "generation_equivalence": {"device": a.device},
             "update_equivalence": {"device": a.device},
+            "prefetch_timing": {"device": a.device, "trials": a.trials, "warmup": a.warmup, "max_new": a.max_new},
             "logprob_equivalence": {"device": a.device, "trials": a.trials, "warmup": a.warmup},
             "store_depth": {"depths": a.depths} if a.depths else {}}.get(a.case, {})
     result = lab.run(a.case, a.config, a.name, root=lab.RESULTS, perturbation=a.perturb,

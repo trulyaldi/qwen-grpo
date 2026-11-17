@@ -33,6 +33,7 @@ from qwen_grpo import lab
 from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution.backward import CheckpointedLayerExecutor
 from qwen_grpo.execution.layer_stream import _inside, place_resident
+from qwen_grpo.execution.prefetch import UnsafeReuse, buffer_counts, is_async, make_executor
 from qwen_grpo.execution.qwen3_forward import explicit_forward
 from qwen_grpo.execution.weight_store import WeightStore, gpu_buffers
 from qwen_grpo.grpo import grpo_loss, response_logprobs
@@ -127,13 +128,18 @@ class DetachBoundary(CheckpointedLayerExecutor):
         return hidden.detach() if index == self.at else hidden
 
 
-def executor(store, buffers, perturbation):
+def executor(store, buffers, perturbation, cfg):
+    """l2l_sync: CheckpointedLayerExecutor (fault detach_boundary=<i>); l2l_async: the prefetching checkpointed executor
+    with verify mode (fault unsafe_reuse=<i>, without verify so that only the comparisons can catch it)."""
     if perturbation is None:
-        return CheckpointedLayerExecutor(store, buffers)
+        return make_executor(cfg.execution, store, buffers, checkpointed=True, verify=is_async(cfg.execution))
     kind, value = perturbation.split("=")
-    if kind != "detach_boundary":
-        raise lab.SetupError(f"gradient_equivalence supports perturbation detach_boundary=<i>, not {perturbation!r}")
-    return DetachBoundary(store, buffers, int(value))
+    if is_async(cfg.execution) and kind == "unsafe_reuse":
+        return UnsafeReuse(store, buffers, int(value), cfg.execution.prefetch_depth)
+    if not is_async(cfg.execution) and kind == "detach_boundary":
+        return DetachBoundary(store, buffers, int(value))
+    raise lab.SetupError(f"gradient_equivalence supports detach_boundary=<i> (l2l_sync) and unsafe_reuse=<i> "
+                         f"(l2l_async), not {perturbation!r} under {cfg.execution.backend}")
 
 
 def run_resident(model, mbs, saved=None):
@@ -180,18 +186,22 @@ def run_model(cfg, result, shape, attn, dt, placement, layers, device, perturbat
         optimizer = torch.optim.AdamW(params.values(), lr=F.LR, weight_decay=0.0)
         ids_before = {n: id(p) for n, p in params.items()}
         expected_backward = sorted(range(min(layers), cand.config.num_hidden_layers), reverse=True)
-        for n_buf in BUFFERS:
+        for n_buf in buffer_counts(cfg.execution, BUFFERS):
             tag = f"{tag0}.b{n_buf}"
             buffers = gpu_buffers(n_buf, store.max_slab_bytes, device)
-            ex = executor(store, buffers, perturbation)
+            ex = executor(store, buffers, perturbation, cfg)
             saved = SavedTensors(buffers)  # both micro-batches
             cand.zero_grad(set_to_none=True)
             ref_t, got_t = {}, {}
             for k, mb in enumerate(mbs):
                 mbk = f"mb{k + 1}"
                 ex.trace.clear()
-                with F.isolated():
-                    loss, logits, hidden = step(cand, ex, mb, saved)
+                try:
+                    with F.isolated():
+                        loss, logits, hidden = step(cand, ex, mb, saved)
+                except RuntimeError as e:  # a refusal of the candidate (e.g. the recomputation checksum): a detection
+                    result["errors"].append(f"{tag}.{mbk}: candidate refused: {e}")
+                    break
                 loads = [t["layer"] for t in ex.trace if t["phase"] == "backward"]
                 if perturbation is None and loads != expected_backward:
                     result["errors"].append(f"{tag}.{mbk}: backward loaded layers {loads}, expected {expected_backward}")

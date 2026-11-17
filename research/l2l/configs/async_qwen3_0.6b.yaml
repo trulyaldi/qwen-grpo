@@ -1,0 +1,16 @@
+# L2L lab, Ticket 08 (prefetch_timing): the real Qwen3-0.6B in bf16 with the configs/qwen.yaml batch and LoRA,
+# asynchronous prefetching (depth 1, 2 GPU buffers, pinned store) against the synchronous executor.
+extends: async.yaml
+run:
+  name: l2l_lab_async_qwen3_0.6b
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: bfloat16
+lora:
+  rank: 32
+  alpha: 64
+  targets: last2-attention
+training:
+  batch_size: 5
+  group_size: 6
+  learning_rate: 5.0e-4

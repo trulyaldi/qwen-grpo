@@ -33,7 +33,8 @@ from qwen_grpo import lab
 from qwen_grpo import backward_lab  # its build(); module import: backward_lab imports lab
 from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution import generator as gen
-from qwen_grpo.execution.layer_stream import StreamingLayerExecutor, place_resident
+from qwen_grpo.execution.layer_stream import place_resident
+from qwen_grpo.execution.prefetch import is_async, make_executor
 from qwen_grpo.execution.weight_store import WeightStore, gpu_buffers
 
 DTYPES = {"float32": torch.float32, "bfloat16": torch.bfloat16}
@@ -113,7 +114,7 @@ def full_prefix(model, seq, prompt_mask, steps):
 
 def compare_model(cfg, result, tag, ref, l2l, store, ids, mask, device, perturbation, tol):
     buffers = gpu_buffers(cfg.execution.weight_buffers, store.max_slab_bytes, device)
-    ex = StreamingLayerExecutor(store, buffers)
+    ex = make_executor(cfg.execution, store, buffers, checkpointed=False, verify=is_async(cfg.execution))
     ref_t, got_t = {}, {}
     with torch.no_grad():
         hf = hf_generate(ref, ids, mask, do_sample=False)

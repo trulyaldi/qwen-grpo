@@ -52,6 +52,15 @@ forward_equivalence:
         logits: {atol: 0.0, rtol: 0.0}
         layers: {atol: 0.0, rtol: 0.0}
     bfloat16: *forward_exact
+  l2l_async:
+    same_as: l2l_sync
+    why: >-
+      Ticket 08. The prefetching executor copies the same slab bytes into a pool buffer (on a transfer stream instead
+      of the compute stream) and runs the same layer modules on the same views, shapes and kernels; streams and CUDA
+      events change only when the bytes arrive, never which bytes or which arithmetic. Buffer ownership (copy after
+      the previous readers' free event, compute after the copy's ready event) and verify mode (each use checks the
+      buffer holds the intended layer) make a stale or overwritten buffer a defect, not rounding. So the synchronous
+      thresholds apply unchanged.
 
 gradient_equivalence:
   l2l_sync:
@@ -73,6 +82,15 @@ gradient_equivalence:
         grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
         hidden_grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
     bfloat16: *backward_exact
+  l2l_async:
+    same_as: l2l_sync
+    why: >-
+      Ticket 08. The prefetching executor copies the same slab bytes into a pool buffer (on a transfer stream instead
+      of the compute stream) and runs the same layer modules on the same views, shapes and kernels; streams and CUDA
+      events change only when the bytes arrive, never which bytes or which arithmetic. Buffer ownership (copy after
+      the previous readers' free event, compute after the copy's ready event) and verify mode (each use checks the
+      buffer holds the intended layer) make a stale or overwritten buffer a defect, not rounding. So the synchronous
+      thresholds apply unchanged.
 
 logprob_equivalence:
   # Candidates: the chunked output head (resident and L2L) and L2L with the full head, each against the full-logits
@@ -155,6 +173,15 @@ generation_equivalence:
         sampled_probs: {atol: 0.0, rtol: 0.0}
         prefix_logits: {atol: 0.0, rtol: 0.015625}
         prefix_probs: {atol: 0.0, rtol: 0.65}
+  l2l_async:
+    same_as: l2l_sync
+    why: >-
+      Ticket 08. The prefetching executor copies the same slab bytes into a pool buffer (on a transfer stream instead
+      of the compute stream) and runs the same layer modules on the same views, shapes and kernels; streams and CUDA
+      events change only when the bytes arrive, never which bytes or which arithmetic. Buffer ownership (copy after
+      the previous readers' free event, compute after the copy's ready event) and verify mode (each use checks the
+      buffer holds the intended layer) make a stale or overwritten buffer a defect, not rounding. So the synchronous
+      thresholds apply unchanged.
 
 update_equivalence:
   l2l_sync:
@@ -176,3 +203,12 @@ update_equivalence:
         grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
         updates: {atol: 0.0, rtol: 0.0}
         optimizer: {atol: 0.0, rtol: 0.0}
+  l2l_async:
+    same_as: l2l_sync
+    why: >-
+      Ticket 08. The prefetching executor copies the same slab bytes into a pool buffer (on a transfer stream instead
+      of the compute stream) and runs the same layer modules on the same views, shapes and kernels; streams and CUDA
+      events change only when the bytes arrive, never which bytes or which arithmetic. Buffer ownership (copy after
+      the previous readers' free event, compute after the copy's ready event) and verify mode (each use checks the
+      buffer holds the intended layer) make a stale or overwritten buffer a defect, not rounding. So the synchronous
+      thresholds apply unchanged.

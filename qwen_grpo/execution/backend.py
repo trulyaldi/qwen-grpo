@@ -20,6 +20,7 @@ import torch
 from peft import get_peft_model_state_dict
 
 from qwen_grpo.execution.backward import CheckpointedLayerExecutor
+from qwen_grpo.execution.prefetch import PrefetchingCheckpointedExecutor
 from qwen_grpo.execution.generator import StreamedGenerator
 from qwen_grpo.execution.layer_stream import place_resident
 from qwen_grpo.execution.output_head import streamed_logprobs
@@ -57,14 +58,20 @@ class ResidentBackend:
 class L2LBackend(ResidentBackend):
     name = "l2l_sync"
 
-    def __init__(self, model, device, weight_storage="pinned", weight_buffers=2, kv_device=None, store=None):
+    def __init__(self, model, device, weight_storage="pinned", weight_buffers=2, kv_device=None, store=None,
+                 prefetch_depth=0, verify=False):
         """`model` with its weights anywhere (typically loaded on the CPU); afterwards its frozen decoder weights live in
-        the store and every other tensor on `device`."""
+        the store and every other tensor on `device`. prefetch_depth 0: synchronous streaming (l2l_sync); >= 1: the
+        asynchronous prefetching executor (l2l_async, Ticket 08); verify: its buffer-content check (diagnostic)."""
         super().__init__(model)
         self.store = store or WeightStore.build(model, weight_storage)
         place_resident(model, self.store, device)
-        self.executor = CheckpointedLayerExecutor(self.store, gpu_buffers(weight_buffers, self.store.max_slab_bytes,
-                                                                          device))
+        buffers = gpu_buffers(weight_buffers, self.store.max_slab_bytes, device)
+        if prefetch_depth:
+            self.name = "l2l_async"
+            self.executor = PrefetchingCheckpointedExecutor(self.store, buffers, prefetch_depth, verify=verify)
+        else:
+            self.executor = CheckpointedLayerExecutor(self.store, buffers)
         self.sampler = StreamedGenerator(self.executor, kv_device, do_sample=True)
         self.greedy = StreamedGenerator(self.executor, kv_device, do_sample=False)
 
@@ -85,7 +92,8 @@ def make_backend(cfg, model, device):
     x = cfg.execution
     if x.backend == "resident":
         return ResidentBackend(model)
-    if x.backend == "l2l_sync":
+    if x.backend in ("l2l_sync", "l2l_async"):
         kv = torch.device(device) if x.kv_cache == "gpu" else torch.device("cpu")
-        return L2LBackend(model, device, x.weight_storage, x.weight_buffers, kv_device=kv)
+        return L2LBackend(model, device, x.weight_storage, x.weight_buffers, kv_device=kv,
+                          prefetch_depth=x.prefetch_depth if x.backend == "l2l_async" else 0)
     raise SystemExit(f"execution.backend {x.backend!r} is not implemented")

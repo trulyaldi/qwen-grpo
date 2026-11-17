@@ -566,13 +566,14 @@ def test_existing_config_hashes_are_unchanged_and_execution_settings_change_the_
 def test_unimplemented_settings_are_refused_before_anything_is_written(tmp_path):
     from qwen_grpo import trainer
 
-    for section, values in [("execution", L2L), ("execution", {"vocab_chunk_size": 4096}),
+    still = {**L2L, "resident_layers": 1}  # l2l_async itself runs since Ticket 08; partial residency does not yet
+    for section, values in [("execution", still), ("execution", {"vocab_chunk_size": 4096}),
                             ("streaming", {"enabled": True, "directory": "d"})]:
         cfg = config.load(write(tmp_path, with_section(section, values)))
         assert config.unimplemented(cfg)
         with pytest.raises(SystemExit, match="not implemented yet"):
             trainer.train(cfg)                                       # conftest: runs/ must stay untouched
-    path = write(tmp_path, with_section("execution", L2L))
+    path = write(tmp_path, with_section("execution", still))
     with pytest.raises(SystemExit, match="not implemented yet"):
         run.main(["verify", "--config", str(path), "--checkpoint", str(tmp_path / "missing")])
     assert config.unimplemented(config.load(QWEN)) == []

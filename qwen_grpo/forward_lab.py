@@ -18,6 +18,7 @@ from transformers import Qwen3Config, Qwen3ForCausalLM
 from qwen_grpo import lab
 from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution.layer_stream import StreamingLayerExecutor, place_resident
+from qwen_grpo.execution.prefetch import UnsafeReuse, buffer_counts, is_async, make_executor
 from qwen_grpo.execution.qwen3_forward import explicit_forward
 from qwen_grpo.execution.weight_store import WeightStore, decoder_layers, gpu_buffers
 from qwen_grpo.model import PRESETS, lora_config, lora_modules, target_modules
@@ -108,13 +109,18 @@ def _in(t, buffer):
     return t.device == buffer.device and lo <= t.data_ptr() < lo + buffer.numel()
 
 
-def executor(store, buffers, perturbation):
+def executor(store, buffers, perturbation, cfg):
+    """l2l_sync: StreamingLayerExecutor (fault wrong_layer=<i>); l2l_async: the prefetching executor with verify mode
+    (fault unsafe_reuse=<i>, without verify so that only the comparisons can catch it)."""
     if perturbation is None:
-        return StreamingLayerExecutor(store, buffers)
+        return make_executor(cfg.execution, store, buffers, checkpointed=False, verify=is_async(cfg.execution))
     kind, value = perturbation.split("=")
-    if kind != "wrong_layer":
-        raise lab.SetupError(f"forward_equivalence supports perturbation wrong_layer=<i>, not {perturbation!r}")
-    return WrongLayer(store, buffers, int(value))
+    if is_async(cfg.execution) and kind == "unsafe_reuse":
+        return UnsafeReuse(store, buffers, int(value), cfg.execution.prefetch_depth)
+    if not is_async(cfg.execution) and kind == "wrong_layer":
+        return WrongLayer(store, buffers, int(value))
+    raise lab.SetupError(f"forward_equivalence supports wrong_layer=<i> (l2l_sync) and unsafe_reuse=<i> (l2l_async), "
+                         f"not {perturbation!r} under {cfg.execution.backend}")
 
 
 def l2l(model, store, ex, residency, ids, mask, pos, keep, layers=None):
@@ -157,10 +163,10 @@ def run_model(cfg, result, shape, attn, dt, lora, device, perturbation, tol):
         place_resident(cand, store, device)
         lora_ids = {n: id(p) for n, p in cand.named_parameters() if p.requires_grad}
         off = (lambda m: m.disable_adapter()) if lora == "disabled" else (lambda m: torch.no_grad())
-        for n_buf in BUFFERS:
+        for n_buf in buffer_counts(cfg.execution, BUFFERS):
             buffers = gpu_buffers(n_buf, store.max_slab_bytes, device)
             residency = Residency(cand, store, buffers)
-            ex = executor(store, buffers, perturbation)
+            ex = executor(store, buffers, perturbation, cfg)
             tag = f"{shape}.{attn}.{dt}.{lora}.b{n_buf}"
             ref_t, got_t = {}, {}
             with torch.no_grad(), off(ref), off(cand):
@@ -216,7 +222,7 @@ def fixture_tie_back(cfg, result, perturbation, tol):
         try:
             place_resident(model, store, "cpu")
             buffers = gpu_buffers(cfg.execution.weight_buffers, store.max_slab_bytes, "cpu")
-            ex, residency = executor(store, buffers, perturbation), Residency(model, store, buffers)
+            ex, residency = executor(store, buffers, perturbation, cfg), Residency(model, store, buffers)
             r = fixture["rollouts"]
             pos = (r["attention_mask"].cumsum(1) - 1).clamp(min=0)
             with F.isolated(), torch.no_grad():

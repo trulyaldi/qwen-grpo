@@ -1,0 +1,7 @@
+# L2L lab, Ticket 08: the prefetching executor on CPU buffers with a pageable store (--device cpu): the same buffer
+# ownership logic with immediate copies and no streams (correctness only; timing needs CUDA).
+extends: async.yaml
+run:
+  name: l2l_lab_async_cpu
+execution:
+  weight_storage: pageable

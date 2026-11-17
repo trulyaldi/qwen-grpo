@@ -102,6 +102,16 @@ H06:
   statement: Double-buffered asynchronous prefetching reduces execution time without changing numerical results.
   kind: performance  # with a correctness precondition: every equivalence test still passes under l2l_async
   prediction: candidate_faster  # candidate l2l_async vs reference l2l_sync: median-ratio 95% CI entirely below 1
+  criterion: >-
+    Written before the Ticket 08 GPU runs (docs/l2l/08_prefetch.md). Correctness precondition: under an l2l_async
+    config, forward_equivalence, gradient_equivalence, generation_equivalence and update_equivalence pass with the
+    unchanged thresholds (tolerances.yaml: same_as l2l_sync, justified), with verify mode on (every use checks that its
+    buffer holds the intended layer), and the unsafe_reuse fault is detected. Performance: case prefetch_timing on the
+    real Qwen3-0.6B (bf16, configs/qwen.yaml batch and LoRA), sync and async executors on the same model, store and
+    inputs, sides interleaved after warmup; SUPPORTED iff the bootstrap 95% CI of the async/sync median ratio of the
+    whole GRPO step lies entirely below 1, NOT_SUPPORTED iff entirely at or above 1, INCONCLUSIVE otherwise. Overlap is
+    reported only as measured from CUDA event timestamps (copy and compute intervals running at once), never inferred
+    from the use of a second stream.
   tickets: ["08"]
   status: untested
   evidence: []

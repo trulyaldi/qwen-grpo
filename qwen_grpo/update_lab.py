@@ -119,7 +119,10 @@ def run_config(cfg, result, shape, variant, perturbation, tol, device):
     ref_model, cand_model, fx = fixture_model(shape, variant, device)
     resident = ResidentBackend(ref_model)
     frozen0 = resident.frozen_digests()
-    l2l = L2LBackend(cand_model, device, cfg.execution.weight_storage, cfg.execution.weight_buffers)
+    x = cfg.execution
+    l2l = L2LBackend(cand_model, device, x.weight_storage, x.weight_buffers,
+                     prefetch_depth=x.prefetch_depth if x.backend == "l2l_async" else 0,
+                     verify=x.backend == "l2l_async")
     try:
         if l2l.frozen_digests() != frozen0:
             result["errors"].append(f"{shape}.{variant}: the sides do not start from the same frozen weights")
