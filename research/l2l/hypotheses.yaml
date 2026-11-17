@@ -78,8 +78,8 @@ H04:
     non-thinking Qwen3 chat prompts. Execution requirements: one weight load per layer per generated token, the KV
     cache equals its analytic size, |logits| <= 16 in every reference. NOT_SUPPORTED if any comparison fails.
   tickets: ["06"]
-  status: untested
-  evidence: []
+  status: SUPPORTED  # CPU only, tiny random models (one with the real vocabulary and chat prompts); CUDA not yet run
+  evidence: [t06_generation_equivalence_cpu]
 H05:
   statement: A complete streamed GRPO + LoRA optimizer update is numerically equivalent to a resident update.
   kind: correctness

@@ -94,7 +94,23 @@ near-ties are counted.
 
 ## Evidence
 
-See `research/l2l/experiments/t06_*`, recorded after the code commit (CPU only).
+Commit `04e56b9`, tracked tree clean, CPU only. Commands: `research/l2l/experiments/ticket06_commands.log`.
+
+| run | result |
+|---|---|
+| `t06_generation_equivalence_cpu` (H04) | **PASS, H04 SUPPORTED.** 950 comparisons. Every cached and sampled comparison is exactly 0. The full-prefix differences use at most 42 % (logits) and 1.4 % (probabilities) of their bounds |
+| `t06_generation_equivalence_stale_position` (fault) | **FAIL as expected,** execution PASS: 877 of 1,054 comparisons fail |
+| `t06_generation_equivalence_no_padding_mask` (fault) | **FAIL as expected,** execution PASS: 1,003 of 1,075 comparisons fail |
+| CPU suite (CUDA hidden), `ticket06_tests.log` | 570 passed, 99 skipped (CUDA), 23 failed, 1 collection error. The failing set is identical to before Ticket 04, on this host |
+
+Measured:
+- **Full-prefix differences:** at most 5.7e-6 (fp32) and 2.0e-3 (bf16) in logits, and 3.2e-7 and 4.0e-5 in
+  probabilities.
+- **Same-seed samples:** the streamed generator draws the same tokens as HF `generate` in every model.
+- **Near-ties:** 70 bf16 positions were excluded from the full-prefix greedy check as near-ties.
+- **EOS model:** 2 rows per prompt set end in EOS with a padded tail.
+- **CPU time per token** (tiny models; wall clock, one run, diagnostic only): 15 ms resident vs 18 ms streamed for
+  the 6-layer fp32 model, and 17 vs 16 ms for the real-vocabulary model.
 
 ## Not established here
 
