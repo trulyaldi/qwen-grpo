@@ -65,6 +65,8 @@ def main(argv=None):
     ap.add_argument("--no-merge", action="store_true")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out")
+    ap.add_argument("--out-dir", type=Path, help="directory of the JSON result (default research/l2l/experiments; "
+                    "qwen-grpo preflight --gpu writes under runs/_preflight/)")
     a = ap.parse_args(argv)
     cfg = config.load(a.config)
     x = cfg.execution
@@ -185,7 +187,8 @@ def main(argv=None):
                              "note": "the prediction's batch / token settings may differ from this run's; see both configs"}
     ev, viol = rep["profile"]["evidence"], rep["profile"]["violations"]
     rep["verdict"] = "FAIL" if viol else ("PASS" if ev == "assignment" else "INCOMPLETE_EVIDENCE")
-    out = ROOT / "research" / "l2l" / "experiments" / f"{a.out or f't11_profile_{cfg.run.name}_{backend_name}'}.json"
+    (a.out_dir or ROOT).mkdir(parents=True, exist_ok=True)
+    out = (a.out_dir or ROOT / "research" / "l2l" / "experiments") / f"{a.out or f't11_profile_{cfg.run.name}_{backend_name}'}.json"
     out.write_text(json.dumps(rep, indent=1, default=str) + "\n")
     print(f"{cfg.model.name} {backend_name} mb={t.micro_batch_size}: verdict {rep['verdict']} (evidence {ev}, "
           f"{len(viol)} violations, budget {budget / 2**30:.1f} GiB)")

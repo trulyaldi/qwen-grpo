@@ -55,6 +55,8 @@ def main(argv=None):
     ap.add_argument("--max-new", type=int, nargs="*", default=[4, 32])
     ap.add_argument("--budget-gib", type=float, default=8.0)
     ap.add_argument("--out", default="t12_dflash_bench")
+    ap.add_argument("--out-dir", type=Path, help="directory of the JSON result (default research/l2l/experiments; "
+                    "qwen-grpo preflight --gpu writes under runs/_preflight/)")
     a = ap.parse_args(argv)
     cfg = config.load(a.config)
     if not cfg.dflash.enabled:
@@ -155,7 +157,8 @@ def main(argv=None):
     ev, viol = rep["profile"]["evidence"], rep["profile"]["violations"]
     rep["budget_verdict"] = "FAIL" if viol else ("PASS" if ev == "assignment" else "INCOMPLETE_EVIDENCE")
     rep["all_greedy_equal"] = all(r["greedy_equal"] for p in rep["policies"] for r in p["runs"])
-    out = ROOT / "research" / "l2l" / "experiments" / f"{a.out}.json"
+    (a.out_dir or ROOT).mkdir(parents=True, exist_ok=True)
+    out = (a.out_dir or ROOT / "research" / "l2l" / "experiments") / f"{a.out}.json"
     out.write_text(json.dumps(rep, indent=1, default=str) + "\n")
     print(f"greedy equal everywhere: {rep['all_greedy_equal']}; budget verdict {rep['budget_verdict']} (evidence {ev}); "
           f"written {out}")
