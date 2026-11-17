@@ -1,8 +1,11 @@
 """YAML run configuration, the single source of truth for scripts/run.py.
 
-Sections: run, model, lora, data, training, evaluation, and optionally verification, execution, streaming and dflash. Every key without a default is
-required; unknown, missing or ill-typed keys are errors. A YAML may start with `extends: <path of another YAML, relative
-to this file>`: the parent is loaded first and this file's keys are merged onto it by merge().
+Sections: run, model, lora, data, training, evaluation, and optionally verification, execution, streaming, dflash and
+memory. Every key without a default is required; unknown, missing or ill-typed keys are errors. A YAML may start with
+`extends: <path of another YAML, relative to this file>`: the parent is loaded first and this file's keys are merged
+onto it by merge(). A YAML with `abstract: true` (configs/profiles/shared.yaml) is a shared base: it may be extended,
+never loaded as a run (the marker is not inherited and is not part of the resolved config or its hash).
+Layout and selection guide: docs/configuration.md.
 
 Historical configs (written before this schema) name keys that were removed or moved (HISTORICAL). New experiments
 must not use them: load() rejects them unless historical=True, which upgrade()s the mapping explicitly. A removed key
@@ -42,7 +45,7 @@ HISTORICAL = (*REMOVED, *MOVED, "training.batch_mode", "training.legacy_batch_mo
 @dataclass(frozen=True)
 class Run:
     name: str  # outputs: runs/<name>/
-    gpu_budget_gib: float = 4.0  # peak reserved memory the run is checked against (reported, not enforced)
+    gpu_budget_gib: float = 4.0  # GPU memory budget incl. CUDA context; enforced during train only with memory.guard
     overwrite: bool = False  # true: train deletes this run's earlier outputs first (never on --resume)
 
 
@@ -136,17 +139,35 @@ class Execution:
 
 @dataclass(frozen=True, kw_only=True)
 class Streaming:
-    """Disk-backed prompts and rollout records (Ticket 09). Provisional: fields will follow the implementation."""
+    """Disk-backed prompts and rollout records with crash-consistent checkpoints and deterministic resume (Ticket 09,
+    qwen_grpo/streaming/)."""
     enabled: bool = False
     directory: str | None = None  # prompt shards, rollout records and resume state
 
 
 @dataclass(frozen=True, kw_only=True)
 class DFlash:
-    """DFlash speculative decoding (Ticket 12). Provisional: only the drafter's identity is checked here; drafting
-    parameters wait until the paper and code have been read."""
+    """DFlash-drafted rollouts verified by the current LoRA policy (Ticket 12, execution/dflash.py). L2L backends only;
+    the drafter must be trained for model.name (DRAFTERS). Block size and feature layers come from the drafter's own
+    config.json. Evaluation stays plain greedy decoding."""
     enabled: bool = False
     draft_model: str | None = None  # a key of DRAFTERS whose target is model.name
+
+
+@dataclass(frozen=True, kw_only=True)
+class Memory:
+    """Enforcement of run.gpu_budget_gib during `train` on CUDA (execution/profiler.py). Off by default: earlier runs
+    only reported the budget.
+    guard: sample this process's GPU memory every interval_s seconds for the whole run (nvidia-smi per-process figure,
+        or the device-wide cudaMemGetInfo figure where nvidia-smi has none, e.g. WSL2: an over-estimate that can only
+        stop a run early, never let one through), keep every raw sample in runs/<name>/training/memory.json, and stop
+        the run (status failed) at the first sample above the budget. The CUDA context is included.
+    allocator_cap: additionally cap PyTorch's caching allocator at the budget's fraction of the device
+        (torch.cuda.set_per_process_memory_fraction), so an allocation spike between two samples fails immediately. The
+        allocator cap excludes the CUDA context, so it is never evidence of compliance on its own."""
+    guard: bool = False
+    interval_s: float = 0.5
+    allocator_cap: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -161,9 +182,11 @@ class Config:
     execution: Execution = field(default_factory=Execution)
     streaming: Streaming = field(default_factory=Streaming)
     dflash: DFlash = field(default_factory=DFlash)
+    memory: Memory = field(default_factory=Memory)
 
 
-OPTIONAL_SECTIONS = {"execution": Execution, "streaming": Streaming, "dflash": DFlash}  # added after runs were saved
+OPTIONAL_SECTIONS = {"execution": Execution, "streaming": Streaming, "dflash": DFlash,  # added after runs were saved;
+                     "memory": Memory}  # left out of the hash while at their defaults (sha256)
 
 
 def _build(cls, raw, where):
@@ -244,7 +267,7 @@ def validate(cfg: Config) -> Config:
 
 def execution_checks(cfg: Config) -> list:
     """(ok, message) pairs for the execution, streaming and dflash sections."""
-    x, s, f = cfg.execution, cfg.streaming, cfg.dflash
+    x, s, f, mem = cfg.execution, cfg.streaming, cfg.dflash, cfg.memory
     l2l = x.backend in ("l2l_sync", "l2l_async")
     unset = [k for k in L2L_ONLY if getattr(x, k) is None]
     checks = [
@@ -257,6 +280,10 @@ def execution_checks(cfg: Config) -> list:
         (f.draft_model is None or f.draft_model in DRAFTERS, f"dflash.draft_model: one of {list(DRAFTERS)}"),
         (f.draft_model not in DRAFTERS or DRAFTERS[f.draft_model] == cfg.model.name,
          f"dflash.draft_model {f.draft_model!r} drafts for {DRAFTERS.get(f.draft_model)}, not model.name {cfg.model.name!r}"),
+        (mem.interval_s > 0, "memory.interval_s: > 0"),
+        (not mem.allocator_cap or mem.guard,
+         "memory.allocator_cap needs memory.guard (the allocator cap excludes the CUDA context: it cannot enforce the "
+         "budget alone)"),
     ]
     if x.backend == "resident":
         checks += [(not (set(L2L_ONLY) - set(unset)),
@@ -289,7 +316,9 @@ def unimplemented(cfg: Config) -> list:
             + ["execution.resident_layers > 0 (L2L streams every decoder layer)"] * bool(sync and x.resident_layers)
             + ["execution.vocab_chunk_size (H03 unresolved)"] * (x.vocab_chunk_size is not None)
             + ["execution.kv_cache 'cpu'"] * (x.kv_cache != "gpu" and not sync)
-            + ["dflash with the resident backend"] * bool(cfg.dflash.enabled and x.backend == "resident"))
+            + ["dflash with the resident backend"] * bool(cfg.dflash.enabled and x.backend == "resident")
+            + ["execution.activation_checkpointing false (the L2L executors always checkpoint at layer boundaries; "
+               "the key is not read, so false would be silently ignored)"] * (sync and x.activation_checkpointing is False))
     # streaming: Ticket 09 (qwen_grpo/streaming/); dflash with an L2L backend: Ticket 12 (execution/dflash.py)
 
 
@@ -360,14 +389,30 @@ def merge(base: dict, override: dict) -> dict:
     return out
 
 
+def _abstract(raw: dict, name: str) -> bool:
+    """Pop and check the `abstract` marker of one file's raw mapping."""
+    flag = raw.pop("abstract", False)
+    if type(flag) is not bool:
+        raise ValueError(f"{name}: abstract must be true or false, got {flag!r}")
+    return flag
+
+
+def is_abstract(path) -> bool:
+    """True for a shared base YAML (`abstract: true`): extended by profiles, never loaded as a run."""
+    raw = yaml.safe_load(Path(path).read_text())
+    return isinstance(raw, dict) and _abstract(dict(raw), Path(path).name)
+
+
 def read(path, chain=()) -> dict:
-    """The raw YAML mapping of `path` with its `extends` chain merged in (parents first)."""
+    """The raw YAML mapping of `path` with its `extends` chain merged in (parents first). The `abstract` marker of
+    every file is removed (it describes that file, not the resolved config)."""
     path = Path(path).resolve()
     if path in chain:
         raise ValueError("circular extends: " + " -> ".join(p.name for p in (*chain, path)))
     raw = yaml.safe_load(path.read_text())
     if not isinstance(raw, dict):
         raise ValueError(f"{path.name}: expected a mapping, got {type(raw).__name__}")
+    _abstract(raw, path.name)
     if "extends" not in raw:
         return raw
     parent = raw.pop("extends")
@@ -383,6 +428,9 @@ def read(path, chain=()) -> dict:
 def load(path, historical=False) -> Config:
     """The validated config of a YAML file. historical=True also accepts a config written in the historical schema
     (a saved runs/<name>/config.yaml, a checkpoint's config): needed to resume or evaluate older runs."""
+    if is_abstract(path):
+        raise ValueError(f"{Path(path).name} is an abstract shared base (abstract: true): it is extended by "
+                         "configs/profiles/*.yaml and experiments, and cannot be loaded as a run")
     raw = read(path)
     if old := historical_keys(raw):
         if not historical:

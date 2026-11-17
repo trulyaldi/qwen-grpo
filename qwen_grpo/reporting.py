@@ -482,7 +482,8 @@ def run_report(s, plots_made):
            f"- GPU: {mem['gpu']['name'] if mem.get('gpu') else 'not recorded'}; peak reserved "
            + (f"{mem['peak_reserved_gib']:.2f} GiB" if mem.get("peak_reserved_gib") is not None else "not recorded")
            + f" (budget {mem['gpu_budget_gib']} GiB" + (f", within: {mem['within_budget']}" if mem.get("within_budget") is not None else "")
-           + "); torch allocator statistics, excluding the CUDA context."]
+           + "); torch allocator statistics, excluding the CUDA context: not evidence of the GPU budget. nvidia-smi "
+           "samples, when memory.guard was on: `training/memory/`."]
     md += ["", "## 9. Files", "",
            "- `config.yaml` (resolved config), `manifest.json` (identity, status history, artifacts), `summary.json` (this report as data)",
            "- `training/` (training.json, training.log, validation.json), `checkpoints/step<N>/`, `evaluation/step<N>/`, "

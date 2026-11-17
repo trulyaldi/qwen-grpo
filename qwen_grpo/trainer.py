@@ -5,6 +5,9 @@ Run through scripts/run.py train --config <yaml> [--resume runs/<run>/checkpoint
 with the YAML evaluation settings (defaults: those of the saved baseline, so runs stay comparable with it).
 Checkpoints hold the adapter and the training state (optimizer, progress, log so far, RNG), so a run resumes from any
 checkpoint it saved and continues as the uninterrupted run would have (tests/test_trainer.py checks this bitwise on CPU).
+With memory.guard on CUDA the whole run executes under execution.profiler.Profiler: nvidia-smi / cudaMemGetInfo samples
+are kept raw in training/memory/<session>.json and the run stops (status failed) at the first sample above
+run.gpu_budget_gib. training.log lines carry a UTC timestamp (the console output does not).
 Outputs (paths: qwen_grpo/runs.py): runs/<run>/config.yaml (resolved config), manifest.json (identity, status),
 training/training.json (config and its sha256, environment, per-step log, subset evaluations, final full-validation
 comparison, memory), training/training.log (console output), training/validation.json (raw full-validation predictions
@@ -21,7 +24,8 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -105,15 +109,39 @@ def git_state():
     return {"git_commit": git("rev-parse", "HEAD"), "git_dirty": None if status is None else bool(status)}
 
 
-def environment(splits, device):
-    """Provenance of a training session: code version, library versions, dataset identity and hardware."""
+def model_revision(model_id):
+    """The commit of the locally cached snapshot of a Hub model (what from_pretrained loads), else None. Local only."""
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        path = try_to_load_from_cache(model_id, "config.json")
+    except Exception:  # noqa: BLE001 - provenance must never stop a run
+        return None
+    return Path(path).parent.name if isinstance(path, str) else None
+
+
+def host():
+    """CPU count and total host RAM (bytes, /proc/meminfo); no host name or user data."""
+    out = {"cpu_count": os.cpu_count(), "mem_total_bytes": None}
+    try:
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemTotal:"):
+                out["mem_total_bytes"] = int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return out
+
+
+def environment(splits, device, models=()):
+    """Provenance of a training session: code version, library versions, dataset identity, hardware and the cached
+    revision of each model in `models` (target, drafter)."""
     env = {**git_state(),
            "python": sys.version.split()[0], "platform": platform.platform(),
            "packages": {p: importlib.metadata.version(p) for p in PACKAGES},
            "dataset": {"name": splits["dataset"], "split_seed": splits["seed"], "file": rel(SPLITS_PATH),
                        "sha256": hashlib.sha256(SPLITS_PATH.read_bytes()).hexdigest(),
                        "sizes": {s: len(splits[s]) for s in ("train", "validation", "test")}},
-           "device": str(device)}
+           "device": str(device), "host": host(),
+           "models": {m: {"revision": model_revision(m)} for m in models}}
     if torch.device(device).type == "cuda":
         p = torch.cuda.get_device_properties(device)
         env["gpu"] = {"name": p.name, "capability": f"{p.major}.{p.minor}", "total_gib": p.total_memory / 2**30,
@@ -172,13 +200,19 @@ def start(cfg, resume):
 
 @contextmanager
 def tee(path):
-    """Copy everything printed to `path`, appended (a resumed run continues the same log)."""
+    """Copy everything printed to `path`, appended (a resumed run continues the same log); every line in the file starts
+    with its UTC time (the console keeps the plain text)."""
     with open(path, "a") as f:
         out = sys.stdout
+        line_start = [True]
 
         class Tee:
             def write(self, s):
-                f.write(s)
+                for part in s.splitlines(keepends=True):
+                    if line_start[0]:
+                        f.write(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ "))
+                    f.write(part)
+                    line_start[0] = part.endswith("\n")
                 return out.write(s)
 
             def flush(self):
@@ -209,20 +243,64 @@ def train(cfg: Config, resume=None, device="cuda"):
             raise SystemExit(f"run {name!r} has no valid resumable checkpoint (rejected: {rejected})")
     with training_lock(runs.lock_path(name)):
         state = start(cfg, resume)
+        guard = memory_guard(cfg, device)
         try:
-            with tee(runs.training_dir(name) / "training.log"):
+            with tee(runs.training_dir(name) / "training.log"), guard or nullcontext():
                 result = _train(cfg, resume, state, device)
         except BaseException as e:
-            runs.set_status(name, "interrupted" if isinstance(e, KeyboardInterrupt) else "failed", error=f"{type(e).__name__}: {e}")
+            exceeded = guard is not None and guard.violations
+            status = "interrupted" if isinstance(e, KeyboardInterrupt) and not exceeded else "failed"
+            error = (f"GPU memory budget exceeded: {guard.violations[0]}" if exceeded else f"{type(e).__name__}: {e}")
+            runs.set_status(name, status, error=error)
+            save_memory(cfg, guard)
             try:
                 update_run(name)
             except Exception as r:  # the original error matters more than a report that could not be built
                 print(f"report not rebuilt ({type(r).__name__}: {r}); run `scripts/run.py report --run {name}`")
+            if exceeded:
+                raise SystemExit(f"run {name!r} stopped: {error} (raw samples: "
+                                 f"{rel(runs.training_dir(name) / 'memory')}/)") from e
             raise
+        finally:
+            if guard is not None and cfg.memory.allocator_cap:
+                torch.cuda.set_per_process_memory_fraction(1.0, torch.device(device))
+        save_memory(cfg, guard)
         runs.set_status(name, "completed")
     report = update_run(name)
     print(f"\nrun {name}: {rel(runs.run_dir(name))}/  report: {rel(report)}")
     return result
+
+
+def models(cfg):
+    """The Hub models a run loads: the target, and the DFlash drafter if enabled."""
+    return (cfg.model.name, *([cfg.dflash.draft_model] if cfg.dflash.enabled else []))
+
+
+def memory_guard(cfg, device):
+    """The memory.guard Profiler for this run (started by entering it), or None: guard off, or not on CUDA (then nothing
+    is enforced and the run's memory record says so). allocator_cap is applied here, before any model is loaded."""
+    if not cfg.memory.guard or torch.device(device).type != "cuda":
+        if cfg.memory.guard:
+            print(f"memory.guard: not enforced on device {device!r} (no CUDA)")
+        return None
+    from qwen_grpo.execution.profiler import Profiler
+    budget = int(cfg.run.gpu_budget_gib * 2**30)
+    dev = torch.device(device)
+    if cfg.memory.allocator_cap:
+        total = torch.cuda.get_device_properties(dev).total_memory
+        torch.cuda.set_per_process_memory_fraction(min(1.0, budget / total), dev)
+    return Profiler(budget_bytes=budget, interval=cfg.memory.interval_s, device=device)
+
+
+def save_memory(cfg, guard):
+    """The guard's raw samples, violations and evidence grade: training/memory/<UTC session start>.json (one file per
+    training session, so a resumed run keeps every earlier session's samples)."""
+    if guard is None:
+        return None
+    out = runs.training_dir(cfg.run.name) / "memory"
+    stamp = datetime.fromtimestamp(guard.samples[0]["t"] if guard.samples else time.time(), timezone.utc)
+    rep = {"budget_gib": cfg.run.gpu_budget_gib, "memory": as_dict(cfg)["memory"], **guard.report(raw=True)}
+    return runs.write_json(out / f"{stamp.strftime('%Y%m%dT%H%M%SZ')}.json", rep)
 
 
 def _train(cfg: Config, resume, state, device):
@@ -293,7 +371,7 @@ def _train(cfg: Config, resume, state, device):
         result = {
             "model": cfg.model.name, "method": "GRPO+LoRA", "seed": t.seed, "yaml_config": as_dict(cfg),
             "config_sha256": sha256(cfg),
-            "environment": environment(splits, device),
+            "environment": environment(splits, device, models(cfg)),
             "config": {"lr": t.learning_rate, "steps": t.max_steps, "max_attempts": t.max_attempts, "train_samples": d.train_samples,
                        "train_ids": [e["id"] for e in train_set], "val_subset_ids": [e["id"] for e in val_sub],
                        "B": B, "G": G, "micro_batch_size": t.micro_batch_size,
@@ -328,7 +406,7 @@ def _train(cfg: Config, resume, state, device):
         mixed_counts = Counter(state["mixed_counts"])
         pending = to(state.get("pending"), model.device)  # a batch whose remaining updates were cut by this checkpoint
         result.setdefault("resumed", []).append({"from": rel(resume), "step": step, "attempts": attempts,
-                                                 "environment": environment(splits, device)})
+                                                 "environment": environment(splits, device, models(cfg))})
         print(f"resumed from {rel(resume)}: step {step}, attempt {attempts}")
 
     def stream_restore(s, step, attempts):
@@ -550,8 +628,9 @@ def _train(cfg: Config, resume, state, device):
             print(f"ROC AUC {k:24} {a:.4f}" + (f"   trained - this: {vs['auc_diff']:+.4f}  CI [{vs['ci95'][0]:+.4f}, {vs['ci95'][1]:+.4f}]" if vs else ""))
     if on_cuda:
         print(f"peak allocated {mem['peak_allocated_gib']:.2f} GiB, peak reserved {mem['peak_reserved_gib']:.2f} GiB, "
-              f"device {mem['device_gib']:.2f} GiB, budget {cfg.run.gpu_budget_gib} GiB: {'PASS' if mem['within_budget'] else 'FAIL'}"
-              "  (allocator stats exclude the CUDA context)")
+              f"device {mem['device_gib']:.2f} GiB; allocator peak below the {cfg.run.gpu_budget_gib} GiB budget: "
+              f"{'yes' if mem['within_budget'] else 'NO'} (allocator stats exclude the CUDA context: not budget evidence; "
+              + ("nvidia-smi samples in training/memory/)" if cfg.memory.guard else "memory.guard off: no nvidia-smi samples)"))
     if result["frozen_changed"] or ("control" in result and not all(result["control"].values())):
         raise SystemExit("FAILED: frozen weights changed or LR=0 control changed")
     return result
