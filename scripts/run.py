@@ -178,7 +178,8 @@ def parse(argv=None):
         p = sub.add_parser(name)
         p.add_argument("--config", type=Path, required=name == "train")
         if name == "train":
-            p.add_argument("--resume", type=Path, help="continue the run from this checkpoint of it")
+            p.add_argument("--resume", type=Path, help="continue the run from this checkpoint of it, or 'latest': its "
+                           "highest-step valid checkpoint (streaming runs, crash-consistent checkpoints)")
             continue
         p.add_argument("--checkpoint", type=Path)
         p.add_argument("--run", help="a run under runs/ (instead of --config and --checkpoint)")
@@ -206,7 +207,8 @@ def main(argv=None):
         from qwen_grpo.trainer import train
 
         # a new run must use the current config schema; resuming accepts the historical one its run was saved with
-        return train(load(args.config, historical=args.resume is not None), resume=args.resume)
+        resume = "latest" if args.resume is not None and str(args.resume) == "latest" else args.resume
+        return train(load(args.config, historical=args.resume is not None), resume=resume)
     if args.run is not None:
         if args.command == "report":
             return report_run(args.run)

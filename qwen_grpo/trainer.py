@@ -14,6 +14,7 @@ import hashlib
 import importlib.metadata
 import json
 import math
+import os
 import platform
 import shutil
 import subprocess
@@ -36,6 +37,9 @@ from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metric
                                   paired_changes, paired_compare, predictions_path, settings, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, lora_modules
 from qwen_grpo.execution.backend import make_backend
+from qwen_grpo.streaming import resume as stream_resume
+from qwen_grpo.streaming.dataset import PromptStream
+from qwen_grpo.streaming.rollouts import RolloutStore
 from qwen_grpo.reporting import update_run
 from qwen_grpo.sentiment import SPLITS_PATH, build_prompts, load_splits, parse_label
 from qwen_grpo.training import (balanced_subset, check_grouping, decode, group_rewards, grpo_update, prepare,
@@ -57,6 +61,37 @@ def to(x, device):
     if isinstance(x, dict):
         return {k: to(v, device) for k, v in x.items()}
     return x.to(device) if isinstance(x, torch.Tensor) else x
+
+
+class InjectedCrash(KeyboardInterrupt):
+    """A simulated crash (Ticket 09 crash injection); a KeyboardInterrupt, so the run is marked interrupted."""
+
+
+_CRASH_SEEN = Counter()
+
+
+def crash_point(point):
+    """Crash injection: raises InjectedCrash at the N-th occurrence of `point` in this process when the environment
+    variable QWEN_GRPO_CRASH is "point" (N = 1) or "point@N". Points: prompt_read, rollouts_generated, update (an
+    applied but uncommitted optimizer update), files_written / committed_before_rename (inside checkpoint publication),
+    after_checkpoint. Tests may replace this function. A no-op when the variable is unset."""
+    spec = os.environ.get("QWEN_GRPO_CRASH")
+    if not spec:
+        return
+    name, _, nth = spec.partition("@")
+    if name == point:
+        _CRASH_SEEN[point] += 1
+        if _CRASH_SEEN[point] == int(nth or 1):
+            raise InjectedCrash(f"injected crash at {point} (occurrence {_CRASH_SEEN[point]})")
+
+
+stream_resume._crash_point = lambda name: crash_point(name)  # publication points share the trainer's hook
+
+
+def streaming_dir(cfg):
+    """streaming.directory, relative paths resolved inside the run directory (runs/<name>/<directory>)."""
+    d = Path(cfg.streaming.directory)
+    return d if d.is_absolute() else runs.run_dir(cfg.run.name) / d
 
 
 def git_state():
@@ -106,6 +141,15 @@ def start(cfg, resume):
     run: check the checkpoint belongs to it and to this config. Returns the checkpoint's training state, or None."""
     name = cfg.run.name
     if resume is not None:
+        if cfg.streaming.enabled:  # crash-consistent checkpoints: only a valid one may be resumed
+            ok, why = stream_resume.validate(resume)
+            if not ok:
+                raise SystemExit(f"{resume} is not a valid checkpoint ({why}); latest valid: "
+                                 f"{stream_resume.latest_valid(name)[0]}")
+            done = stream_resume.prepare(name)
+            if done["removed_tmp"] or done["quarantined"]:
+                print(f"streaming resume: removed interrupted publications {done['removed_tmp']}, quarantined invalid "
+                      f"checkpoints {done['quarantined']}")
         state = load_training_state(resume)
         check_resume(cfg, resume, state)
         runs.set_status(name, "running", resumed_from=rel(resume))
@@ -159,6 +203,10 @@ def train(cfg: Config, resume=None, device="cuda"):
         raise SystemExit(f"run {name!r} uses the historical batch_mode {mode!r}, which the current code does not implement "
                          "(it has only the shuffled sampler): it cannot be trained or resumed. Its saved outputs stay "
                          "readable; train it with the code of commit 9bd4500 if needed")
+    if resume is not None and str(resume) == "latest":  # the highest-step valid checkpoint (streaming runs)
+        resume, rejected = stream_resume.latest_valid(name)
+        if resume is None:
+            raise SystemExit(f"run {name!r} has no valid resumable checkpoint (rejected: {rejected})")
     with training_lock(runs.lock_path(name)):
         state = start(cfg, resume)
         try:
@@ -238,7 +286,10 @@ def _train(cfg: Config, resume, state, device):
         print(f"  [val subset, step {step}] {summary(metrics(preds))}")
 
     if resume is None:
-        model.save_pretrained(runs.checkpoint_path(name, 0))  # initial adapter: reference for parameter deltas
+        if cfg.streaming.enabled:  # initial adapter (reference for parameter deltas), published crash-consistently
+            stream_resume.publish(runs.checkpoint_path(name, 0), lambda tmp: model.save_pretrained(tmp), 0)
+        else:
+            model.save_pretrained(runs.checkpoint_path(name, 0))  # initial adapter: reference for parameter deltas
         result = {
             "model": cfg.model.name, "method": "GRPO+LoRA", "seed": t.seed, "yaml_config": as_dict(cfg),
             "config_sha256": sha256(cfg),
@@ -280,19 +331,63 @@ def _train(cfg: Config, resume, state, device):
                                                  "environment": environment(splits, device)})
         print(f"resumed from {rel(resume)}: step {step}, attempt {attempts}")
 
+    def stream_restore(s, step, attempts):
+        """The pending group of a streaming checkpoint, read back from its on-disk record (policy version checked)."""
+        ref = s.get("pending")
+        if ref is None:
+            return None
+        store = RolloutStore(streaming_dir(cfg) / "rollouts", s["run_id"])
+        rec = store.read(ref["group_id"], ref["policy_version"], model.device)
+        keys = ("input_ids", "attention_mask", "response_ids", "completion_mask", "prompt_len")
+        return {"rollouts": {k: rec[k] for k in keys}, "adv": rec["advantages"], "old_logp": rec["old_logp"],
+                "group": ref["group"], "iteration": ref["iteration"], "policy_version": ref["policy_version"]}
+
     def save(step):
-        """Adapter + resumable state; the subset evaluation runs first so the saved log and RNG state include it."""
+        """Adapter + resumable state; the subset evaluation runs first so the saved log and RNG state include it.
+        Streaming: the pending group is a reference to its on-disk record, and the checkpoint is published
+        crash-consistently (streaming/resume.py); publication is what commits the updates up to `step`."""
         path = runs.checkpoint_path(name, step)
         eval_subset(step, rel(path))
-        save_checkpoint(model, optimizer, path, {
-            "config": as_dict(cfg), "step": step, "attempts": attempts, "checkpoint": rel(path),
-            "mixed_counts": dict(mixed_counts), "train_seconds": time.time() - t0, "result": result, "base_full": base_full,
-            "pending": to(pending, "cpu")})
+        st = {"config": as_dict(cfg), "step": step, "attempts": attempts, "checkpoint": rel(path),
+              "mixed_counts": dict(mixed_counts), "train_seconds": time.time() - t0, "result": result,
+              "base_full": base_full, "pending": to(pending, "cpu")}
+        if not cfg.streaming.enabled:
+            save_checkpoint(model, optimizer, path, st)
+            return rel(path)
+        st["pending"] = None
+        st["streaming"] = {"sampler": prompts_on_disk.state(), "rollout_group": attempts, "policy_version": step,
+                           "optimizer_steps": step, "run_id": run_id, "dataset_sha256": prompts_on_disk.sha256,
+                           "pending": None if pending is None else {"group_id": pending["group"]["attempt"],
+                                                                    "policy_version": pending["policy_version"],
+                                                                    "iteration": pending["iteration"],
+                                                                    "group": pending["group"]}}
+        stream_resume.publish(path, lambda tmp: save_checkpoint(model, optimizer, tmp, st), step)
+        crash_point("after_checkpoint")
         return rel(path)
 
-    stream = shuffled_batches(train_set, B, seed=t.seed)
-    for _ in range(attempts):  # replay: every attempt, zero-signal or not, consumed one batch
-        next(stream)
+    if cfg.streaming.enabled:  # disk-backed prompts with a saved sampler state: no replay needed
+        sdir = streaming_dir(cfg)
+        run_id = runs.manifest(name)["id"]
+        prompts_on_disk = PromptStream.build(sdir / "prompts", train_set, t.seed, B)
+        rollout_store = RolloutStore(sdir / "rollouts", run_id)
+        if resume is not None:
+            s = state["streaming"]
+            prompts_on_disk.restore(s["sampler"])
+            if prompts_on_disk.batches != attempts or s["rollout_group"] != attempts or s["optimizer_steps"] != step:
+                raise SystemExit(f"inconsistent checkpoint: sampler drew {prompts_on_disk.batches} batches, rollout group "
+                                 f"{s['rollout_group']}, optimizer steps {s['optimizer_steps']} vs attempts {attempts}, "
+                                 f"step {step}")
+            if orphans := rollout_store.discard_after(attempts):
+                print(f"streaming resume: uncommitted rollout groups {orphans} moved aside (they are regenerated)")
+            pending = stream_restore(s, step, attempts)  # the pending group: from its record on disk
+            if pending is not None:
+                print(f"streaming resume: pending group {pending['group']['attempt']} restored from disk at iteration "
+                      f"{pending['iteration']}")
+        stream = None
+    else:
+        stream = shuffled_batches(train_set, B, seed=t.seed)
+        for _ in range(attempts):  # replay: every attempt, zero-signal or not, consumed one batch
+            next(stream)
     if resume is not None:
         set_rng_state(state["rng"])  # last: nothing between here and the next rollout may draw random numbers
     t0 = time.time() - elapsed
@@ -301,7 +396,11 @@ def _train(cfg: Config, resume, state, device):
     while step < t.max_steps and (pending is not None or attempts < t.max_attempts):
         t_step = time.time()
         if pending is None:
-            batch = next(stream)
+            if stream is None:
+                batch, occurrences = prompts_on_disk.next_batch()
+                crash_point("prompt_read")
+            else:
+                batch = next(stream)
             attempts += 1
             prompts = build_prompts(tok, [e["text"] for e in batch])
             rollouts = backend.generate_rollouts(tok, prompts, G=G, max_new_tokens=t.max_new_tokens)
@@ -316,16 +415,26 @@ def _train(cfg: Config, resume, state, device):
                      "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16],
                      "mean_completion_tokens": rollouts["completion_mask"].sum(1).float().mean().item()}  # through the first EOS
             targets = prepare(model, rollouts, rewards, t.micro_batch_size, logprobs=backend.logprobs)
+            if stream is None:  # the group's record on disk, before any update uses it
+                group["occurrences"] = occurrences
+                rollout_store.write({"group_id": attempts, "policy_version": step, "occurrences": occurrences,
+                                     "prompt_ids": group["prompt_ids"], "labels": group["labels"], **rollouts,
+                                     "rewards": rewards, "zero_signal": targets is None,
+                                     "advantages": None if targets is None else targets[0],
+                                     "old_logp": None if targets is None else targets[1]})
+                crash_point("rollouts_generated")
             if targets is None:
                 del rollouts
                 result["zero_signal"].append(group)
                 continue
-            pending = {"rollouts": rollouts, "adv": targets[0], "old_logp": targets[1], "group": group, "iteration": 0}
+            pending = {"rollouts": rollouts, "adv": targets[0], "old_logp": targets[1], "group": group, "iteration": 0,
+                       "policy_version": step}
             del rollouts, targets
         group = pending["group"]
         out = grpo_update(model, params, optimizer, pending["rollouts"], pending["adv"], pending["old_logp"],
                           clip_eps=t.clip_eps, iteration=pending["iteration"], micro_batch_size=t.micro_batch_size,
                           logprobs=backend.logprobs)
+        crash_point("update")  # the update is applied in memory but not committed (no checkpoint contains it yet)
         pending["iteration"] += 1
         if pending["iteration"] == t.num_iterations:
             pending = None

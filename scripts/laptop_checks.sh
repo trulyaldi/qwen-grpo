@@ -51,6 +51,14 @@ echo "== 4. Ticket 08 performance: real Qwen3-0.6B, sync vs async" | tee -a "$LO
 lab gpu t08_prefetch_timing --case prefetch_timing --config research/l2l/configs/async_qwen3_0.6b.yaml \
   --device cuda --trials 9 --warmup 2 --max-new 16 --hypothesis H06
 
+echo "== 5. Ticket 09: crash/resume experiment on the real Qwen3-0.6B (H08)" | tee -a "$LOG"
+if [ -e "$EXP/t09_resume_qwen_stream.json" ]; then echo "skip t09_resume_qwen_stream (exists)" | tee -a "$LOG"
+else
+  python scripts/resume_experiment.py --config configs/experiments/qwen_stream_short.yaml --device cuda 2>&1 \
+    | grep -E "PASS|FAIL|H08|Error" | tee -a "$LOG"
+  [ -e "$EXP/t09_resume_qwen_stream.json" ] && new+=("$EXP/t09_resume_qwen_stream.json")
+fi
+
 echo "== done; new results: ${new[*]:-none}" | tee -a "$LOG"
 cat "$LOG" >> "$FINAL_LOG"
 if [ ${#new[@]} -gt 0 ]; then

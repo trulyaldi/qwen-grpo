@@ -1,0 +1,22 @@
+# H08 / Ticket 09 experiment on the real model (scripts/resume_experiment.py): configs/qwen.yaml with disk-backed
+# prompt and rollout streaming, 9 optimizer steps of 2 GRPO iterations per rollout group (so a checkpoint can fall inside
+# a group), checkpoints every 3 steps, a 64-example validation subset, no full validation.
+extends: ../qwen.yaml
+
+run:
+  name: qwen_stream
+
+data:
+  val_subset: 64
+
+training:
+  max_steps: 9
+  num_iterations: 2
+
+evaluation:
+  every: 3
+  full_validation: false
+
+streaming:
+  enabled: true
+  directory: streaming

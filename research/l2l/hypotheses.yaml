@@ -134,6 +134,17 @@ H07:
 H08:
   statement: An interrupted and resumed run preserves the same committed training sequence as an uninterrupted run.
   kind: correctness
+  criterion: >-
+    Written before the Ticket 09 evidence runs (docs/l2l/09_streaming.md). scripts/resume_experiment.py: a streaming run A
+    without interruption and, for each injected crash point (after reading a prompt, after generating rollouts, during an
+    applied but uncommitted GRPO update, during checkpoint publication before and after COMMIT.json, immediately after
+    a published checkpoint), a run B that crashes there and resumes from its latest valid checkpoint. SUPPORTED iff for
+    every B: the committed training rows (step, attempt, prompt ids, rollout hash, rewards, loss, norms, iteration,
+    clipping), zero-signal attempts, subset evaluations, attempt and optimizer-step counters, the committed rollout
+    records (group ids, policy versions, (epoch, position, sample id) occurrences, generated tokens, rewards) and every
+    common checkpoint's adapter and AdamW state equal A's exactly; no sample occurs twice in an epoch and every
+    completed epoch covers every sample; no interrupted publication is left and every remaining checkpoint validates.
+    A corrupted checkpoint must be rejected in favour of the last valid one (tests/test_streaming.py).
   tickets: ["09"]
   status: untested
   evidence: []

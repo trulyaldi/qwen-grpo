@@ -567,8 +567,7 @@ def test_unimplemented_settings_are_refused_before_anything_is_written(tmp_path)
     from qwen_grpo import trainer
 
     still = {**L2L, "resident_layers": 1}  # l2l_async itself runs since Ticket 08; partial residency does not yet
-    for section, values in [("execution", still), ("execution", {"vocab_chunk_size": 4096}),
-                            ("streaming", {"enabled": True, "directory": "d"})]:
+    for section, values in [("execution", still), ("execution", {"vocab_chunk_size": 4096})]:  # streaming: Ticket 09
         cfg = config.load(write(tmp_path, with_section(section, values)))
         assert config.unimplemented(cfg)
         with pytest.raises(SystemExit, match="not implemented yet"):

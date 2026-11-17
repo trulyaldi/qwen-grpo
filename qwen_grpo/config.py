@@ -289,7 +289,7 @@ def unimplemented(cfg: Config) -> list:
             + ["execution.resident_layers > 0 (L2L streams every decoder layer)"] * bool(sync and x.resident_layers)
             + ["execution.vocab_chunk_size (H03 unresolved)"] * (x.vocab_chunk_size is not None)
             + ["execution.kv_cache 'cpu'"] * (x.kv_cache != "gpu" and not sync)
-            + ["streaming"] * cfg.streaming.enabled + ["dflash"] * cfg.dflash.enabled)
+            + ["dflash"] * cfg.dflash.enabled)  # streaming: Ticket 09 (qwen_grpo/streaming/)
 
 
 def require_implemented(cfg: Config):
