@@ -18,10 +18,17 @@ predictions_path = baseline_path  # saved greedy predictions and label scores of
 
 
 @torch.no_grad()
-def generate(model, tok, sentences, max_new=MAX_NEW):
-    """Greedy responses -> (text without EOS, token length incl. EOS, truncated) per sentence."""
+def generate(model, tok, sentences, max_new=MAX_NEW, generator=None):
+    """Greedy responses -> (text without EOS, token length incl. EOS, truncated) per sentence.
+    generator: None = model.generate(); else a greedy execution.generator.StreamedGenerator (the L2L backend)."""
     batch = tok(build_prompts(tok, sentences), return_tensors="pt", padding=True).to(model.device)
-    ids = model.generate(**batch, do_sample=False, max_new_tokens=max_new)[:, batch["input_ids"].shape[1]:]
+    if generator is None:
+        ids = model.generate(**batch, do_sample=False, max_new_tokens=max_new)
+    else:
+        g = model.generation_config
+        ids = generator(model, batch["input_ids"], batch["attention_mask"], num_return_sequences=1,
+                        max_new_tokens=max_new, eos_token_ids=EOS_IDS, pad_token_id=g.pad_token_id)
+    ids = ids[:, batch["input_ids"].shape[1]:]
     mask = response_mask(ids, EOS_IDS)
     out = []
     for row, m in zip(ids.tolist(), mask):
@@ -32,12 +39,12 @@ def generate(model, tok, sentences, max_new=MAX_NEW):
 
 
 
-def predict(model, tok, examples, ids, batch=BATCH, max_new=MAX_NEW):
+def predict(model, tok, examples, ids, batch=BATCH, max_new=MAX_NEW, generator=None):
     """Greedy prediction records in `batch`-sized chunks (order matters: bf16 outputs depend on batch shape)."""
     predictions, lengths, truncated = [], [], []
     for i in range(0, len(examples), batch):
         chunk = examples[i : i + batch]
-        for k, ex, (response, n, trunc) in zip(ids[i : i + batch], chunk, generate(model, tok, [ex["text"] for ex in chunk], max_new)):
+        for k, ex, (response, n, trunc) in zip(ids[i : i + batch], chunk, generate(model, tok, [ex["text"] for ex in chunk], max_new, **({"generator": generator} if generator else {}))):
             predictions.append({
                 "id": k,
                 "text": ex["text"],
@@ -133,9 +140,11 @@ def paired_compare(ref, new, n=BOOTSTRAP, seed=42):
 
 
 @torch.no_grad()
-def label_scores(model, tok, examples, batch=SCORE_BATCH):
+def label_scores(model, tok, examples, batch=SCORE_BATCH, logprobs=None):
     """s(x) = log P(POSITIVE<|im_end|> | x) - log P(NEGATIVE<|im_end|> | x): teacher-forced sums over every token
-    of the label's full tokenization plus the end-of-turn token, on the evaluation prompt. Not used in training."""
+    of the label's full tokenization plus the end-of-turn token, on the evaluation prompt. Not used in training.
+    logprobs: (model, rollouts) -> [n, R], default compute_logprobs (a backend's logprobs for L2L)."""
+    logprobs = logprobs or compute_logprobs
     conts = {label: tok(label, add_special_tokens=False)["input_ids"] + [EOS_IDS[0]] for label in LABELS}
     out = []
     for i in range(0, len(examples), batch):
@@ -146,7 +155,7 @@ def label_scores(model, tok, examples, batch=SCORE_BATCH):
             c = torch.tensor(c, device=model.device).expand(len(chunk), -1)
             r = {"input_ids": torch.cat([enc["input_ids"], c], 1), "prompt_len": enc["input_ids"].shape[1],
                  "attention_mask": torch.cat([enc["attention_mask"], torch.ones_like(c)], 1)}
-            logp[label] = compute_logprobs(model, r).sum(1)
+            logp[label] = logprobs(model, r).sum(1)
         out += (logp["POSITIVE"] - logp["NEGATIVE"]).tolist()
     return out
 
@@ -181,8 +190,8 @@ def paired_auc_bootstrap(W_new, W_ref, n=BOOTSTRAP, seed=42, chunk=500, level=0.
 
 
 
-def evaluate(model, tok, examples, batch=BATCH, max_new=MAX_NEW):
-    return predict(model, tok, examples, [e["id"] for e in examples], batch, max_new)[0]
+def evaluate(model, tok, examples, batch=BATCH, max_new=MAX_NEW, generator=None):
+    return predict(model, tok, examples, [e["id"] for e in examples], batch, max_new, generator)[0]
 
 
 def settings(ev):

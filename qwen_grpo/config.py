@@ -284,9 +284,11 @@ def unimplemented(cfg: Config) -> list:
     """Settings this code base accepts in a config but cannot execute yet. Training and evaluation refuse them (no
     silent resident fallback); the L2L lab reports them as BLOCKED."""
     x = cfg.execution
-    return ([f"execution.backend {x.backend!r}"] * (x.backend != "resident")
-            + ["execution.vocab_chunk_size"] * (x.vocab_chunk_size is not None)
-            + ["execution.kv_cache 'cpu'"] * (x.kv_cache != "gpu")
+    sync = x.backend == "l2l_sync"  # Tickets 03-07: execution.backend.L2LBackend
+    return ([f"execution.backend {x.backend!r}"] * (x.backend not in ("resident", "l2l_sync"))
+            + ["execution.resident_layers > 0 (l2l_sync streams every decoder layer)"] * bool(sync and x.resident_layers)
+            + ["execution.vocab_chunk_size (H03 unresolved)"] * (x.vocab_chunk_size is not None)
+            + ["execution.kv_cache 'cpu'"] * (x.kv_cache != "gpu" and not sync)
             + ["streaming"] * cfg.streaming.enabled + ["dflash"] * cfg.dflash.enabled)
 
 

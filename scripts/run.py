@@ -226,6 +226,10 @@ def main(argv=None):
         from qwen_grpo.config import require_implemented
 
         require_implemented(cfg)
+        if cfg.execution.backend != "resident":  # no silent resident fallback: say so instead
+            raise SystemExit(f"{args.command} evaluates checkpoints with the resident backend only; config "
+                             f"{cfg.run.name!r} selects {cfg.execution.backend!r} (its in-training evaluation ran L2L). "
+                             "Use a resident config for the same run to evaluate the checkpoint.")
     if not (checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {checkpoint}")
     if args.command == "verify":

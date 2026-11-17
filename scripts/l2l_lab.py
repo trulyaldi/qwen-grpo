@@ -37,6 +37,7 @@ def main(argv=None):
             "pinned_transfer": {"trials": a.trials, "warmup": a.warmup, "capacity_gib": a.capacity_gib},
             "gradient_equivalence": {"device": a.device},
             "generation_equivalence": {"device": a.device},
+            "update_equivalence": {"device": a.device},
             "logprob_equivalence": {"device": a.device, "trials": a.trials, "warmup": a.warmup},
             "store_depth": {"depths": a.depths} if a.depths else {}}.get(a.case, {})
     result = lab.run(a.case, a.config, a.name, root=lab.RESULTS, perturbation=a.perturb,

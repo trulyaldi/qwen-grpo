@@ -43,6 +43,7 @@ from qwen_grpo import forward_lab as forward_cases  # Ticket 03
 from qwen_grpo import backward_lab as backward_cases  # Ticket 04
 from qwen_grpo import head_lab as head_cases  # Ticket 05
 from qwen_grpo import gen_lab as gen_cases  # Ticket 06
+from qwen_grpo import update_lab as update_cases  # Ticket 07
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "research" / "l2l" / "experiments"
@@ -432,6 +433,15 @@ def needs_l2l(cfg, case):
     return reasons
 
 
+def resident_only(cfg):
+    """The fixture cases compare resident code paths; L2L has its own cases (forward / gradient / update equivalence)."""
+    reasons = config.unimplemented(cfg)
+    if cfg.execution.backend != "resident":
+        reasons.append(f"execution.backend {cfg.execution.backend!r}: this case runs the resident backend only (L2L: "
+                       "forward_equivalence, gradient_equivalence, update_equivalence)")
+    return reasons
+
+
 @dataclass(frozen=True)
 class Case:
     kind: str
@@ -441,8 +451,8 @@ class Case:
 
 
 CASES = {
-    "fixture_equivalence": Case("correctness", fixture_equivalence, ("model.dtype", "execution")),
-    "fixture_timing": Case("performance", fixture_timing, ("model.dtype", "execution")),
+    "fixture_equivalence": Case("correctness", fixture_equivalence, ("model.dtype", "execution"), resident_only),
+    "fixture_timing": Case("performance", fixture_timing, ("model.dtype", "execution"), resident_only),
     "store_equivalence": Case("correctness", lambda *a, **k: store_cases.store_equivalence(*a, **k),
                               ("model.dtype", "execution"), needs_store),
     "store_depth": Case("memory", lambda *a, **k: store_cases.store_depth(*a, **k), ("execution",), needs_store),
@@ -456,6 +466,8 @@ CASES = {
                                 ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "logprob_equivalence")),
     "generation_equivalence": Case("correctness", lambda *a, **k: gen_cases.generation_equivalence(*a, **k),
                                    ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "generation_equivalence")),
+    "update_equivalence": Case("correctness", lambda *a, **k: update_cases.update_equivalence(*a, **k),
+                               ("model.dtype", "execution"), lambda cfg: needs_l2l(cfg, "update_equivalence")),
     "pinned_transfer": Case("performance", lambda *a, **k: store_cases.pinned_transfer(*a, **k), ("execution",),
                             needs_store),
 }

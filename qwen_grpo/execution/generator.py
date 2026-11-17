@@ -148,16 +148,17 @@ def generate(model, input_ids, attention_mask, eos_token_ids, pad_token_id, max_
 
 
 class StreamedGenerator:
-    """The rollout generator policy.generate_rollouts uses instead of model.generate(): pure sampling (temperature 1,
-    no top-k/top-p) through `layer_executor` with the KV cache on `kv_device`."""
+    """The generator policy.generate_rollouts (sampling: temperature 1, no top-k/top-p) and evaluation.generate
+    (do_sample=False: greedy) use instead of model.generate(), through `layer_executor` with the KV cache on
+    `kv_device`."""
 
-    def __init__(self, layer_executor=None, kv_device=None):
-        self.layer_executor, self.kv_device = layer_executor, kv_device
+    def __init__(self, layer_executor=None, kv_device=None, do_sample=True):
+        self.layer_executor, self.kv_device, self.do_sample = layer_executor, kv_device, do_sample
         self.last = None
 
     def __call__(self, model, input_ids, attention_mask, num_return_sequences, max_new_tokens, eos_token_ids,
                  pad_token_id):
         self.last = generate(model, input_ids, attention_mask, eos_token_ids, pad_token_id, max_new_tokens,
-                             num_return_sequences, do_sample=True, layer_executor=self.layer_executor,
+                             num_return_sequences, do_sample=self.do_sample, layer_executor=self.layer_executor,
                              kv_device=self.kv_device)
         return self.last["sequences"]

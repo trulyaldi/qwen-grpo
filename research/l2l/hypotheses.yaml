@@ -83,6 +83,18 @@ H04:
 H05:
   statement: A complete streamed GRPO + LoRA optimizer update is numerically equivalent to a resident update.
   kind: correctness
+  criterion: >-
+    Written before the Ticket 07 acceptance run (after a disclosed CPU pilot; see docs/l2l/07_update.md). Case
+    update_equivalence: on the fixed Ticket 00 rollout batch (ids, completion masks, rewards, advantages, old
+    log-probs), from identical base weights, LoRA weights and AdamW state, ITERATIONS = 3 complete training.grpo_update
+    calls through backend.L2LBackend give current-policy log-probs, the GRPO loss, clipping statistics, every LoRA
+    gradient, every parameter update and every AdamW state tensor equal to those through backend.ResidentBackend within
+    research/l2l/tolerances.yaml (update_equivalence: 0); every reference gradient is nonzero. Grid: both fixture
+    shapes x {fp32 model, bf16 base with fp32 adapters} x micro-batch size {all, 1, 2, 4} x AdamW state {fresh, warm}.
+    Reference integrity: the rollout fixture equals the saved Ticket 00 one. Execution requirements: frozen parameter
+    hashes unchanged on both sides and equal between them, old log-probs unchanged across the iterations, finite
+    gradients, iteration-0 init_diff 0, Parameter identities kept, tokens clipped after iteration 0 (power).
+    NOT_SUPPORTED if any comparison fails.
   tickets: ["07"]
   status: untested
   evidence: []

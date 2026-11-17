@@ -155,3 +155,24 @@ generation_equivalence:
         sampled_probs: {atol: 0.0, rtol: 0.0}
         prefix_logits: {atol: 0.0, rtol: 0.015625}
         prefix_probs: {atol: 0.0, rtol: 0.65}
+
+update_equivalence:
+  l2l_sync:
+    float32:
+      why: >-
+        Ticket 07. Both sides run the same training.grpo_update (GRPO loss, micro-batch scaling, AdamW) on the same
+        fixed rollouts, advantages and old log-probs; only the log-prob function differs, and the L2L one (checkpointed
+        layers + full output head) gives bitwise-equal log-probs and gradients (forward_equivalence,
+        gradient_equivalence; the head path equals compute_logprobs bitwise, Ticket 05). AdamW then applies the same
+        kernels to the same gradients and state, so every logged statistic, update and optimizer-state tensor is
+        bitwise equal; any difference is a defect (a stale or missing gradient, a wrong advantage, a changed old
+        log-prob, a different parameter object). A disclosed CPU pilot measured 0 before this was recorded. This table
+        is used for the fp32 model and for the bf16-base model (bf16 frozen weights, fp32 adapters): the argument does
+        not depend on the dtype.
+      quantities:
+        logp: {atol: 0.0, rtol: 0.0}
+        loss: {atol: 0.0, rtol: 0.0}
+        stats: {atol: 0.0, rtol: 0.0}
+        grads: {atol: 0.0, rtol: 0.0, require_nonzero: true}
+        updates: {atol: 0.0, rtol: 0.0}
+        optimizer: {atol: 0.0, rtol: 0.0}

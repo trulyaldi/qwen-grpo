@@ -409,3 +409,22 @@ def test_generation_equivalence_passes_on_a_small_grid_and_both_faults_fail(tmp_
         assert any(not c["pass"] and c["quantity"] == "cached_logits" for c in f["comparisons"]), spec
     bad = lab.run("generation_equivalence", STORE_CPU, "bad", root=tmp_path, perturbation="nonsense", device="cpu")
     assert bad["status"] == "FAIL" and any("supports perturbations" in e for e in bad["errors"])
+
+
+def test_update_equivalence_is_blocked_without_l2l_sync(tmp_path):
+    assert lab.run("update_equivalence", RESIDENT, "r", root=tmp_path)["status"] == "BLOCKED"
+
+
+def test_update_equivalence_passes_and_a_corrupted_advantage_fails(tmp_path, monkeypatch):
+    from qwen_grpo import update_lab
+    monkeypatch.setattr(update_lab, "MICRO", (None, 4))
+    monkeypatch.setattr(update_lab, "DTYPES", ("float32",))
+    r = lab.run("update_equivalence", STORE_CPU, "ok", root=tmp_path, hypothesis_id="H05", device="cpu")
+    assert r["status"] == "PASS" and r["hypothesis_result"] == "SUPPORTED", r["reasons"][:5]
+    assert {c["quantity"] for c in r["comparisons"]} == {"logp", "loss", "stats", "grads", "updates", "optimizer"}
+    assert all(c["max_abs"] == 0 for c in r["comparisons"])
+    f = lab.run("update_equivalence", STORE_CPU, "adv", root=tmp_path, perturbation="advantage=2", device="cpu")
+    assert f["status"] == "FAIL" and f["execution_status"] == "PASS"
+    failed = {c["quantity"] for c in f["comparisons"] if not c["pass"]}
+    assert {"loss", "grads", "updates", "optimizer"} <= failed
+    assert all(c["pass"] for c in f["comparisons"] if c["quantity"] == "logp" and ".it0" in c["name"])  # same policy

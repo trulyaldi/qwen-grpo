@@ -35,7 +35,7 @@ from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, r
 from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap,
                                   paired_changes, paired_compare, predictions_path, settings, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, lora_modules
-from qwen_grpo.policy import generate_rollouts
+from qwen_grpo.execution.backend import make_backend
 from qwen_grpo.reporting import update_run
 from qwen_grpo.sentiment import SPLITS_PATH, build_prompts, load_splits, parse_label
 from qwen_grpo.training import (balanced_subset, check_grouping, decode, group_rewards, grpo_update, prepare,
@@ -205,7 +205,10 @@ def _train(cfg: Config, resume, state, device):
     torch.manual_seed(t.seed)  # LoRA A init
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
     assert tok.pad_token_id == EOS_IDS[1]  # baseline.py pads with tok.pad_token_id, lora_model with EOS_IDS[1]
-    model = lora_model(dtype, device, lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
+    # L2L: load on the CPU; the backend keeps the frozen decoder weights there (WeightStore) and moves the rest
+    load_device = device if cfg.execution.backend == "resident" else "cpu"
+    model = lora_model(dtype, load_device, lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
+    backend = make_backend(cfg, model, device)  # generation, log-probs and evaluation run through it
     if on_cuda:
         torch.cuda.reset_peak_memory_stats()
     params = {n: p for n, p in model.named_parameters() if p.requires_grad}
@@ -230,7 +233,7 @@ def _train(cfg: Config, resume, state, device):
     optimizer = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
 
     def eval_subset(step, ckpt=None):
-        preds = evaluate(model, tok, val_sub, **gen_kw)
+        preds = evaluate(model, tok, val_sub, generator=backend.greedy, **gen_kw)
         result["evaluations"].append({"step": step, "checkpoint": ckpt, "split": "validation", "metrics": metrics(preds), "predictions": preds})
         print(f"  [val subset, step {step}] {summary(metrics(preds))}")
 
@@ -256,7 +259,7 @@ def _train(cfg: Config, resume, state, device):
         }
         base_full = None
         if ev.full_validation:
-            base_full = evaluate(model, tok, val_all, **gen_kw)
+            base_full = evaluate(model, tok, val_all, generator=backend.greedy, **gen_kw)
             saved = saved_predictions(BASE_FILE)
             mism = None if saved is None else [p["id"] for p, q in zip(base_full, saved) if p["response"] != q["response"]]
             result["base_reproduction"] = {"n": len(base_full), "mismatched_ids": mism, "metrics": metrics(base_full)}
@@ -301,7 +304,7 @@ def _train(cfg: Config, resume, state, device):
             batch = next(stream)
             attempts += 1
             prompts = build_prompts(tok, [e["text"] for e in batch])
-            rollouts = generate_rollouts(model, tok, prompts, G=G, max_new_tokens=t.max_new_tokens)
+            rollouts = backend.generate_rollouts(tok, prompts, G=G, max_new_tokens=t.max_new_tokens)
             check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].to(model.device), G)
             responses = decode(tok, rollouts)
             rewards = group_rewards(responses, [e["label"] for e in batch], G)  # [B, G]
@@ -312,7 +315,7 @@ def _train(cfg: Config, resume, state, device):
                      "invalid_responses": sum(parse_label(r) is None for r in responses),
                      "rollout_sha256": hashlib.sha256(rollouts["response_ids"].cpu().numpy().tobytes()).hexdigest()[:16],
                      "mean_completion_tokens": rollouts["completion_mask"].sum(1).float().mean().item()}  # through the first EOS
-            targets = prepare(model, rollouts, rewards, t.micro_batch_size)
+            targets = prepare(model, rollouts, rewards, t.micro_batch_size, logprobs=backend.logprobs)
             if targets is None:
                 del rollouts
                 result["zero_signal"].append(group)
@@ -321,7 +324,8 @@ def _train(cfg: Config, resume, state, device):
             del rollouts, targets
         group = pending["group"]
         out = grpo_update(model, params, optimizer, pending["rollouts"], pending["adv"], pending["old_logp"],
-                          clip_eps=t.clip_eps, iteration=pending["iteration"], micro_batch_size=t.micro_batch_size)
+                          clip_eps=t.clip_eps, iteration=pending["iteration"], micro_batch_size=t.micro_batch_size,
+                          logprobs=backend.logprobs)
         pending["iteration"] += 1
         if pending["iteration"] == t.num_iterations:
             pending = None
@@ -390,7 +394,7 @@ def _train(cfg: Config, resume, state, device):
 
     if ev.full_validation and ckpt is not None:
         boot = {"n": ev.bootstrap_samples, "seed": BOOTSTRAP_SEED}
-        trained_full = evaluate(model, tok, val_all, **gen_kw)
+        trained_full = evaluate(model, tok, val_all, generator=backend.greedy, **gen_kw)
         tm, bm = metrics(trained_full), metrics(base_full)
         diff, ci_lo, ci_hi = paired_bootstrap([p["correct"] for p in base_full], [p["correct"] for p in trained_full], **boot)
         out_path = runs.training_dir(name) / "validation.json"
@@ -399,9 +403,9 @@ def _train(cfg: Config, resume, state, device):
                            "bootstrap": {"resamples": ev.bootstrap_samples, "seed": BOOTSTRAP_SEED, "paired_by": "id"},
                            "paired_changes": paired_changes(base_full, trained_full),
                            "vs_saved": {} if saved_base is None else {"base": paired_compare(saved_base, trained_full, **boot)}}
-        scores = {"trained": label_scores(model, tok, val_all, **score_kw)}
+        scores = {"trained": label_scores(model, tok, val_all, logprobs=backend.logprobs, **score_kw)}
         with model.disable_adapter():
-            scores["base"] = label_scores(model, tok, val_all, **score_kw)
+            scores["base"] = label_scores(model, tok, val_all, logprobs=backend.logprobs, **score_kw)
         W = {k: win_matrix(v, [e["label"] for e in val_all]) for k, v in scores.items()}
         result["final"]["auc"] = {k: w.mean().item() for k, w in W.items()}
         result["final"]["auc_vs"] = {k: paired_auc_bootstrap(W["trained"], W[k], **boot) for k in W if k != "trained"}
