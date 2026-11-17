@@ -1,0 +1,20 @@
+LoRA modules (6): ['model.layers.26.self_attn.q_proj', 'model.layers.26.self_attn.v_proj', 'model.layers.26.self_attn.o_proj', 'model.layers.27.self_attn.q_proj', 'model.layers.27.self_attn.v_proj', 'model.layers.27.self_attn.o_proj']
+trainable parameters: 524,288 of 596,574,208 (0.0879%)
+  [val subset, step 0] acc 0.7363  F1 0.7383  rec POS 0.7070 NEG 0.7656  invalid 0.0059  pred POS 0.4688  (n=512)
+step  1 (attempt   1) 1439N,482P,1178N,151N,190N mixed 4  R 0.53  loss -0.0000  |g| 9.177e-01 (A 0.00e+00, B 9.18e-01)  |dtheta| 2.56e-01  |(a/r)BA| 2.983e-01  alloc 0.37  peak res 1.15 GiB
+step  2 (attempt   2) 1190P,1267N,1233P,1159N,39P mixed 4  R 0.53  loss -0.0000  |g| 1.026e+00 (A 4.26e-01, B 9.33e-01)  |dtheta| 2.45e-01  |(a/r)BA| 3.879e-01  alloc 0.37  peak res 1.15 GiB
+step  3 (attempt   3) 14N,1182P,1495N,999N,1030P mixed 5  R 0.53  loss +0.0000  |g| 4.991e-01 (A 2.12e-01, B 4.52e-01)  |dtheta| 1.77e-01  |(a/r)BA| 4.845e-01  alloc 0.37  peak res 1.15 GiB
+step  4 (attempt   4) 1219P,419N,101P,1157P,778N mixed 4  R 0.70  loss -0.0000  |g| 2.659e-01 (A 1.17e-01, B 2.39e-01)  |dtheta| 1.56e-01  |(a/r)BA| 5.774e-01  alloc 0.37  peak res 1.15 GiB
+step  5 (attempt   5) 1442P,1032P,703P,759N,967P mixed 3  R 0.77  loss -0.0000  |g| 1.317e+00 (A 7.77e-01, B 1.06e+00)  |dtheta| 1.66e-01  |(a/r)BA| 6.586e-01  alloc 0.37  peak res 1.15 GiB
+  [val subset, step 5] acc 0.7246  F1 0.7219  rec POS 0.8477 NEG 0.6016  invalid 0.0039  pred POS 0.6230  (n=512)
+step  6 (attempt   6) 883N,1069P,906N,1074N,26N mixed 3  R 0.60  loss -0.0000  |g| 8.030e-01 (A 5.12e-01, B 6.19e-01)  |dtheta| 1.20e-01  |(a/r)BA| 7.188e-01  alloc 0.37  peak res 1.36 GiB
+step  7 (attempt   7) 1054N,746P,717P,1384N,1027N mixed 4  R 0.60  loss +0.0000  |g| 1.069e+00 (A 7.75e-01, B 7.36e-01)  |dtheta| 1.15e-01  |(a/r)BA| 7.620e-01  alloc 0.37  peak res 1.36 GiB
+step  8 (attempt   8) 1491P,1299N,1441P,17P,187N mixed 3  R 0.70  loss -0.0000  |g| 4.725e-01 (A 3.35e-01, B 3.33e-01)  |dtheta| 1.04e-01  |(a/r)BA| 8.119e-01  alloc 0.37  peak res 1.36 GiB
+step  9 (attempt   9) 227N,988N,656N,414P,1487N mixed 5  R 0.73  loss -0.0000  |g| 1.149e+00 (A 7.67e-01, B 8.56e-01)  |dtheta| 1.21e-01  |(a/r)BA| 8.513e-01  alloc 0.37  peak res 1.36 GiB
+step 10 (attempt  10) 638N,514N,1330P,92N,130P mixed 3  R 0.73  loss -0.0000  |g| 6.709e-01 (A 4.98e-01, B 4.49e-01)  |dtheta| 1.27e-01  |(a/r)BA| 8.949e-01  alloc 0.37  peak res 1.36 GiB
+  [val subset, step 10] acc 0.7383  F1 0.7337  rec POS 0.5977 NEG 0.8789  invalid 0.0020  pred POS 0.3594  (n=512)
+
+batches by number of mixed groups: {'0': 0, '1': 0, '2': 0, '3': 4, '4': 4, '5': 2}, prompt groups 50, responses 300, train time 51 s
+steps 10/10, batches 10, zero-signal batches 0, frozen changed 0/310, params equal init: False
+grad norm range [2.659e-01, 1.317e+00]  change from init 9.706e-01  |(a/r)BA| 8.949e-01
+peak allocated 0.81 GiB, peak reserved 1.36 GiB, device 4.00 GiB, budget 4.0 GiB: PASS  (allocator stats exclude the CUDA context)

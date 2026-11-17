@@ -1,0 +1,53 @@
+# resolved config of run qwen_resident_short, sha256 dceb069be61835653f1e6f9b0da28a1ba69c7d5496e2c0769f44c56d77db0719
+run:
+  name: qwen_resident_short
+  gpu_budget_gib: 4.0
+  overwrite: false
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: bfloat16
+lora:
+  rank: 32
+  alpha: 64
+  targets: last2-attention
+data:
+  train_samples: 512
+  val_subset: 512
+  subset_seed: 42
+training:
+  batch_size: 5
+  group_size: 6
+  learning_rate: 0.0005
+  max_steps: 10
+  max_attempts: 1000
+  max_new_tokens: 4
+  seed: 42
+  clip_eps: 0.2
+  num_iterations: 1
+  micro_batch_size: null
+evaluation:
+  every: 5
+  full_validation: false
+  max_new_tokens: 4
+  batch_size: 32
+  score_batch_size: 8
+  bootstrap_samples: 10000
+verification:
+  split: validation
+  control_checkpoint: null
+  train_control: false
+execution:
+  backend: resident
+  weight_storage: null
+  resident_layers: null
+  weight_buffers: null
+  prefetch_depth: null
+  activation_checkpointing: null
+  vocab_chunk_size: null
+  kv_cache: gpu
+streaming:
+  enabled: false
+  directory: null
+dflash:
+  enabled: false
+  draft_model: null
