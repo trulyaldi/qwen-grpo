@@ -1,20 +1,84 @@
 # Architecture
 
-One GRPO + LoRA update, tensor by tensor. Shapes are read from the code, not from a template.
+The system end to end, then one GRPO + LoRA update tensor by tensor. Details per component, with measurements and
+design decisions, are in `docs/l2l/NN_*.md` (index: `docs/development_history.md`).
 
-## Modules
+## Data flow of one training step
 
 ```
-qwen_grpo/grpo.py        pure tensor math, CPU-testable: advantages, response mask, token log-probs, loss
-qwen_grpo/policy.py      model calls: sampling rollouts, teacher-forced log-probs
-qwen_grpo/sentiment.py   task: splits, prompt, strict parser, reward
-qwen_grpo/model.py       Qwen3-0.6B id, EOS ids, bf16 base + fp32 LoRA wrapping
-qwen_grpo/training.py    prompt batches, reward grouping, one optimizer update (grpo_step)
-qwen_grpo/evaluation.py  greedy predictions, metrics, label scores, AUC, paired bootstraps
-research/                experiment entry points (python -m research.<name>); they write results/ and checkpoints/
+data/sentiment.json --balanced_subset--> PromptStream (disk, sampler state)           streaming/dataset.py
+   B prompts --build_prompts (non-thinking template)--> token ids                      sentiment.py
+   backend.generate_rollouts: B x G completions (T = 1)                                execution/generator.py | dflash.py
+   group_rewards: exact-label reward [B, G] -> group advantages                        sentiment.py, grpo.py
+   RolloutStore.write (record: ids, masks, rewards, advantages, old log-probs)          streaming/rollouts.py
+   prepare: old log-probs (no grad)  ->  grpo_update: clipped loss, backward, AdamW     training.py
+   checkpoint (adapter + optimizer + RNG + sampler), published crash-consistently      checkpointing.py, streaming/resume.py
 ```
 
-Imports point downward only: `grpo` ← `policy` ← `training`, `evaluation`; `sentiment` and `model` hold no GRPO logic.
+The GRPO mathematics, shown in the sections below, lives in `grpo.py` and `training.py` and is identical for every
+backend. A backend (`execution/backend.py`) supplies only three things:
+- `generate_rollouts`;
+- `logprobs`, the differentiable log-prob function;
+- `greedy`, the evaluation generator.
+
+## Execution backends
+
+**`resident`:**
+- the whole bf16 model on the GPU;
+- HF `generate` for rollouts, `policy.compute_logprobs` for log-probs.
+
+**`l2l_sync` / `l2l_async`:**
+- **Placement.** `WeightStore` (`execution/weight_store.py`) adopts every frozen decoder weight into one pinned CPU slab
+  per layer (`cudaHostRegister`); the Parameters are re-pointed and their values are unchanged. The embedding (tied LM
+  head), final norm, LoRA tensors, AdamW state and the KV cache stay on the GPU.
+- **Forward.** `execution/qwen3_forward.py` owns the layer loop. A layer executor copies layer *i* into one of the
+  `weight_buffers` GPU buffers, runs it, and releases the buffer. Under `l2l_async`, `execution/prefetch.py` copies the
+  next `prefetch_depth` layers on a separate CUDA stream, and buffer ownership is tracked with events.
+- **Backward.** `execution/backward.py` keeps only the layer-boundary hidden states. In backward it streams the layers
+  again in reverse, from the last layer down to the first adapted one, and recomputes each layer under autograd.
+- **Output head.** `execution/output_head.py` evaluates the full LM head on the response columns only (R + 1). The
+  chunked-vocabulary head exists but is refused for training: H03 is not supported.
+- **Generation.** `execution/generator.py` does prefill and decode with an explicit KV cache and HF sampling semantics,
+  and never calls `model.generate`.
+
+**Scheduling is micro-batch-major.** Each micro-batch of the old-log-prob pass and of the update, each prefill or
+decode step, and each backward sweep streams the layers again. The weight traffic per step is roughly
+(1 + new tokens + 2 + backward fraction) × model size; preflight reports the estimate. Bitwise equality with the
+resident backend is the acceptance criterion (`research/l2l/tolerances.yaml`: 0 for these cases).
+
+**DFlash** (`execution/dflash.py`, `dflash.enabled`):
+- **Drafter.** `z-lab/Qwen3-4B-DFlash-b16` is GPU-resident. It drafts a 16-token block from hidden features of five
+  target layers.
+- **Verification.** One streamed target pass verifies the whole block with the *current LoRA policy*. The target draws
+  its own token at every position, and the matching prefix is accepted.
+- **Exactness.** Greedy outputs equal plain decoding, and sampling follows the target's law.
+- **Batching.** Rows advance by the batch's minimum acceptance.
+
+## Around training
+
+- **Streaming and resume** (`streaming/`):
+  - prompts are written once, with a dataset hash and the sampler state saved in every checkpoint;
+  - one rollout record per group, holding the policy version;
+  - checkpoints are published by temp directory, `COMMIT.json` and rename;
+  - `resume` takes the highest valid checkpoint, quarantines torn ones and replays nothing.
+- **Merge** (`export/merge.py`): `W = round(fp32(W0) + (alpha/r)·B·A)`, one tensor at a time on the CPU, into a sharded
+  HF checkpoint. The merged model is evaluated through L2L.
+- **Verification:**
+  - resident runs use `verification.py`: base, adapter, merged, LR=0 control, paired bootstrap CIs, policy change,
+    reward integrity;
+  - L2L runs use `scripts/final_eval.py`: the same four models on the test split, through L2L.
+- **Resources.** `execution/profiler.py` samples nvidia-smi, `cudaMemGetInfo`, the allocator and RSS, with a guard
+  that stops the run. `memory.guard` turns it on for training. `budget/` estimates memory and PCIe time from config and
+  safetensors headers.
+- **Diagnostics** (`diagnostics/`): preflight, invariants, and the silent-failure registry. Soup is called only through
+  `integrations/soup.py`.
+
+Imports point downward: `grpo` ← `policy` ← `training` ← `trainer`, and `execution/*` never imports the trainer.
+Research lab modules (`*_lab.py`, `lab.py`) and `diagnostics/` / `integrations/` are not imported by the training path.
+
+# One GRPO + LoRA update
+
+Shapes are read from the code, not from a template.
 
 ## Symbols
 

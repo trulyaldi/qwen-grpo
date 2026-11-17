@@ -1,172 +1,184 @@
 # qwen-grpo
 
-GRPO + LoRA fine-tuning of Qwen3 in non-thinking mode, implemented by hand and checked numerically. Current task: binary sentiment classification on Rotten Tomatoes with Qwen3-0.6B (RTX 3050 Ti, 4 GB). The code accepts any dense Qwen3 model (`configs/experiments/qwen3_4b.yaml`), but only 0.6B has been run. L2L streaming is not implemented yet.
+GRPO + LoRA fine-tuning of Qwen3 in non-thinking mode, without an SFT stage, written by hand and checked numerically.
+The task is binary sentiment classification on Rotten Tomatoes. The reward is automatic: 1 if the completion is
+exactly the correct label, else 0.
 
-## Quick start
+Qwen3-4B's bf16 weights alone are ~8 GB, so under an 8 GB GPU cap the model cannot be resident. This repository
+implements, without external streaming libraries:
+- **L2L execution:** weights in pinned CPU memory, a bounded set of GPU layer buffers, asynchronous prefetch,
+  layer-boundary activation checkpointing.
+- **Disk-backed streaming** of prompts and rollouts, with crash-consistent checkpoints and deterministic resume.
+- **DFlash-drafted rollouts** verified by the current LoRA policy.
+- **A streamed tensor-by-tensor LoRA merge.**
+- **Evidence tooling:** a held-out comparison of base, adapter, merged model and LR=0 control with confidence
+  intervals, and a verdict derived from recorded evidence.
+
+## Status
+
+| | |
+|---|---|
+| Qwen3-0.6B, resident | trained and verified: validation accuracy 0.7486 → 0.8096, ROC AUC 0.8277 → 0.8929 (`runs/qwen`) |
+| L2L vs resident | bitwise-equal forward, gradients, generation and updates on tiny models (CPU + CUDA) and on Qwen3-0.6B training runs; the CUDA evidence predates later executor changes |
+| async prefetch, DFlash, streamed merge, disk streaming / resume, chunked output head | implemented and tested on CPU with tiny models; real-model GPU evidence pending |
+| Qwen3-4B under 8 GB | **not run yet**: no GPU evidence |
+| verdict (`qwen-grpo ship`) | **DON'T SHIP**: 6 of 15 requirements PASS, 9 NOT TESTED (all need a GPU) |
+
+Details, the audit behind this table, open decisions and limitations: [`docs/status.md`](docs/status.md).
+
+## Hardware
+
+| use | hardware |
+|---|---|
+| CPU tests, offline preflight, Soup diagnostics, CPU research cases | any x86-64 Linux, ≥ 16 GB RAM (no GPU) |
+| local training | Qwen3-0.6B on an RTX 3050 Ti (4 GB), ~14 GB usable RAM |
+| the assignment | Qwen3-4B on a rented Ampere-or-newer GPU, capped at 8 GB (CUDA context included), ≥ 32 GB host RAM recommended, native Linux with per-process `nvidia-smi` |
+
+## Installation
 
 ```bash
-uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt   # torch: cu126 wheel index
-.venv/bin/python -m pytest -q                                                     # CPU, tiny models, no weights
-
-.venv/bin/python scripts/run.py train    --config configs/experiments/grpo_32.yaml   # writes runs/<run>/
-.venv/bin/python scripts/run.py validate --run grpo_32          # held-out validation split, latest checkpoint
-.venv/bin/python scripts/run.py verify   --run grpo_32          # base / adapter / merged / LR=0 evidence
-.venv/bin/python scripts/run.py report   --run grpo_32          # rebuild plots, summary.json, report.md (no GPU)
-.venv/bin/python scripts/run.py remove   --run grpo_32          # dry run: what would be deleted, and its size
+uv venv .venv && source .venv/bin/activate
+uv pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126   # pinned versions
+uv pip install -e . --no-deps          # the `qwen-grpo` command (or: python -m qwen_grpo)
 ```
 
-`--step N` picks a checkpoint for `validate`, `test` and `verify` (default: the latest). `test` evaluates the test split;
-keep it for the final report. Each command prints where it wrote; open `runs/<run>/report.md` to read a run.
+## Quick start: Qwen3-0.6B
 
-## One run, one directory
-
-Everything a run produces is under `runs/<run>/` (`<run>` = `run.name` of its YAML):
-
-```
-runs/<run>/
-  report.md            the report to read: configuration, progress, diagnostics, base vs trained, drift, verification, memory
-  summary.json         the same as data (metrics, statuses, paths relative to the run directory)
-  manifest.json        identity: unique id, creation time, config sha256, git commit, status history, list of files
-  config.yaml          the fully resolved config (train --config accepts it)
-  plots/               reward, validation_accuracy, prediction_bias, gradient_norm, mixed_reward_fraction, loss
-  training/            training.json (per-step log, subset evaluations, final full-validation comparison, environment),
-                       training.log (console output), validation.json (final full-validation predictions)
-  checkpoints/step<N>/ adapter + training_state.pt (resumable); step0 is the initial adapter
-  evaluation/step<N>/  validation.json, test.json (from validate / test)
-  verification/step<N>/  report.md, plots/, evidence/ (raw evaluations and every check as JSON)
+```bash
+qwen-grpo preflight --config configs/experiments/qwen_local.yaml       # offline checks, no GPU
+qwen-grpo train     --config configs/experiments/qwen_local.yaml       # L2L async + streaming, 10 steps
+qwen-grpo resume    --run qwen_local                                    # after an interruption
+qwen-grpo report    --run qwen_local                                    # runs/qwen_local/report.md
 ```
 
-`train` writes `config.yaml` and `manifest.json` first, then the checkpoints and log, then plots, `summary.json` and
-`report.md`. `validate`, `test` and `verify` add their results under the checkpoint's step and rebuild the summary and
-report; results of other checkpoints are kept. `report --run` rebuilds them from the saved files alone. A section whose
-measurement does not exist says so ("not run", "not recorded", `null` in the summary); nothing is filled in.
+`configs/profiles/qwen3_0_6b.yaml` is the resident reference setup (100 steps), and `qwen-grpo validate | test |
+verify --run <name>` evaluates resident runs.
 
-**Status** (`manifest.json`, top of `report.md`): `running`, `completed`, `failed` (an exception, e.g. frozen weights
-changed), or `interrupted` (Ctrl-C, or a run recorded as running whose process is gone, e.g. killed). An interrupted run
-keeps its resumable checkpoints, and its report shows the progress saved with the latest one.
+## Qwen3-4B: smoke, then the final run
 
-**Names.** `train` refuses a `run.name` that `runs/` already has (set `run.overwrite: true` to delete that run directory
-first) and a name used by a run from before `runs/` existed (below), so two runs never share a name.
+On the rented GPU, after the steps in [`docs/deployment.md`](docs/deployment.md):
 
-**Compare runs:** `summary.json` has the same keys for every run, e.g.
-`jq '{run, status, full_validation, verification}' runs/*/summary.json`.
-
-## Code layout
-
+```bash
+qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke.yaml --gpu --hardware-only   # ~1 min
+qwen-grpo preflight --config configs/experiments/qwen3_4b_smoke.yaml --gpu                   # one guarded step of every phase
+qwen-grpo train     --config configs/experiments/qwen3_4b_smoke.yaml                         # 4 steps, final batch shape
+bash scripts/final_run.sh                    # final run + LR=0 control + held-out evaluation + report (resumable)
+qwen-grpo verify --run qwen3_4b_final --control qwen3_4b_final_lr0   # base / trained / merged / control, CIs
+qwen-grpo merge  --run qwen3_4b_final        # streamed merge -> runs/qwen3_4b_final/merged/step<N>/
+qwen-grpo ship                               # SHIP / DON'T SHIP from the evidence (exit 0 / 2)
 ```
-qwen_grpo/          implementation (no experiment hyperparameters)
-  grpo.py           group advantages, response masks, token log-probs, clipped GRPO loss
-  policy.py         rollout generation, teacher-forced log-probs
-  training.py       prompt batching, rollout grouping, rewards, one GRPO optimizer update
-  sentiment.py      dataset splits, prompt, strict parser, reward
-  model.py          bf16 base + fp32 LoRA, decoder-layer discovery and LoRA target resolution
-  config.py         YAML configuration: defaults, `extends`, strict validation, hashing
-  trainer.py        a multi-step GRPO + LoRA run: train(cfg, resume=None)
-  evaluation.py     greedy predictions, metrics, label scores, ROC AUC, paired bootstraps
-  verification.py   base / adapter / merged / LR=0 comparisons, merge equivalence, parameter deltas, reward integrity
-  reporting.py      plots, verification reports, the run's summary.json and report.md, from saved files
-  runs.py           where every artifact lives; checkpoint lookup; run identity and status
-  checkpointing.py  adapter load/checks, resumable training state, training lock
-  cleanup.py        `remove`: deletes a run's artifacts only when ownership is certain
-configs/            default.yaml (parent of every experiment), experiments/*.yaml (small overrides)
-scripts/run.py      the command line: train | validate | test | verify | report | remove
-research/           historical experiments (baseline.py writes the shared results/baseline/); the TRL reference was removed in 4424e0f (git history)
-tests/              unit and integration tests; tests/conftest.py forbids loading weights and touching runs/, results/, checkpoints/
-docs/architecture.md  one GRPO + LoRA step tensor by tensor: shapes, objective, gradient flow, precision
-```
+
+`train` refuses a config with `memory.guard` until a GPU preflight with the same memory signature has passed. A
+smoke run's preflight covers the final run and its control. During training the guard samples nvidia-smi and stops
+the run at the first sample above 8 GiB; the raw samples go to `runs/<run>/training/memory/`.
+
+## Commands
+
+| command | does |
+|---|---|
+| `preflight --config Y [--gpu [--hardware-only]] [--allow-metadata-download]` | PASS / FAIL / BLOCKED / NOT TESTED per check; estimates never count as measurements |
+| `train --config Y [--skip-preflight]` | new run in `runs/<run.name>/`, gated by preflight |
+| `resume --run R [--checkpoint P]` | continue from the latest valid checkpoint |
+| `validate`, `test --run R [--step N]` | held-out evaluation of a resident run's checkpoint |
+| `verify --run R [--control C]` | resident: `runs/R/verification/`; L2L: test split through L2L incl. the streamed merge (`research/l2l/experiments/t13_final_eval_R.json`) |
+| `merge --run R [--step N] [--evaluate]` | tensor-by-tensor merge on the CPU (no GPU, no full model in memory); `--evaluate` runs the merged model through L2L |
+| `report`, `remove --run R [--confirm]` | rebuild a run's report; delete a run (dry run by default) |
+| `research list`, `research run H.. [--execute]` | hypotheses, their evidence and the commands that test them (dry run by default) |
+| `ship [--soup]` | the evidence-derived verdict (`research/l2l/final_report.md`); Soup's ship beside it, informational |
+| `soup all --soup-bin S` | Soup diagnostics on our artifacts, raw outputs under `runs/_soup/` |
+| `faults list / doc / test` | the silent-failure registry, its document and fault-injection tests |
+
+Exit codes: 0 success, 1 error, 2 a check failed or DON'T SHIP, 3 usage. Every call is logged to
+`runs/_cli/history.jsonl`. The older entry points still work unchanged: `scripts/run.py`, `scripts/l2l_lab.py`,
+`scripts/merge.py`, `scripts/final_eval.py`, `scripts/profile_run.py`, `scripts/dflash_bench.py`.
 
 ## Configuration
 
-`configs/default.yaml` holds the settings experiments vary; every other key has a Python default in
-`qwen_grpo/config.py`. An experiment is a file in `configs/experiments/` that names its parent and overrides a few keys:
+One schema and layered YAML. The model-independent defaults are in `configs/profiles/shared.yaml`, which is abstract.
+There is one profile per model (`qwen3_0_6b.yaml`, `qwen3_4b.yaml`), and experiments override a few keys:
 
 ```yaml
-extends: ../default.yaml     # path relative to this file; the parent may itself extend another file
+extends: ../profiles/qwen3_4b.yaml      # paths are relative to this file
 run:
-  name: grpo_low_lr          # required in every file that extends another, and different from the parent's
+  name: my_experiment                   # required; names runs/my_experiment/
 training:
-  learning_rate: 1.0e-5      # write floats with a decimal point: PyYAML reads 1e-5 as a string
-  max_steps: 200
+  micro_batch_size: 6                   # floats need a decimal point: 1.0e-5
 ```
 
-Mappings merge key by key; any other value (scalar, list, `null`, a `lora.targets` preset) replaces the parent's.
-Omitted keys take the defaults below. The result is validated as a whole: unknown keys, missing required keys, wrong
-types, unsupported values and inconsistent combinations are errors, as are a missing parent, a cycle, or a child
-without its own `run.name`. Full YAMLs with every key spelled out also load.
+Unknown keys, wrong types and unsupported combinations are errors. Implemented-but-refused settings stop `train`
+instead of falling back. A run saves its fully resolved config with its sha256, the git commit, packages, the dataset
+hash, the model revision, the GPU and the host. Selection guide and full schema:
+[`docs/configuration.md`](docs/configuration.md).
 
-| section | keys (default) | notes |
+## Architecture
+
+```
+qwen_grpo/
+  grpo.py training.py policy.py      GRPO math (advantages, masks, clipped loss), rollout grouping, one update
+  sentiment.py model.py               task (prompt, strict reward, splits); bf16 base + fp32 LoRA
+  trainer.py runs.py checkpointing.py a training run: checkpoints, resume, memory guard, provenance
+  execution/                          backends: resident | L2L (weight_store, layer_stream, backward, prefetch,
+                                      generator, output_head, dflash), profiler, memory plan
+  streaming/                          disk-backed prompts and rollout records, crash-consistent publication
+  export/merge.py                     streamed LoRA merge
+  evaluation.py verification.py reporting.py   metrics and CIs, base/adapter/merged/control checks, reports
+  budget/                             Step-0 memory/PCIe calculator (no weights loaded)
+  diagnostics/                        preflight, invariants, silent-failure registry
+  integrations/soup.py                optional Soup CLI diagnostics
+  cli.py                              qwen-grpo
+  *_lab.py, lab.py                    research lab cases (resident vs candidate; imported only by scripts/l2l_lab.py and tests)
+```
+
+The GRPO mathematics lives in `grpo.py` and `training.py`. A backend decides only *how* the model is executed. The
+L2L backend streams every decoder layer through two GPU buffers for every micro-batch, decode step and backward
+sweep: the schedule is micro-batch-major. One update, tensor by tensor, and the execution design are in
+[`docs/architecture.md`](docs/architecture.md).
+
+## Runs
+
+```
+runs/<run>/
+  report.md summary.json manifest.json config.yaml   report, the same as data, identity/status, resolved config
+  training/   training.json (per-step log), training.log (UTC timestamps), memory/ (raw nvidia-smi samples)
+  checkpoints/step<N>/   adapter + training_state.pt; step0 is the initial adapter
+  streaming/             prompt shards, rollout records (streaming runs)
+  evaluation/, verification/, merged/
+```
+
+A run's status is one of `running`, `completed`, `failed` (an exception, a budget violation, changed frozen weights)
+or `interrupted`. `train` refuses an existing run name unless `run.overwrite: true`. Training runs are not committed;
+`runs/qwen` is the tracked reference run.
+
+## Testing
+
+| tier | command | runs |
 |---|---|---|
-| `run` | `name`, `gpu_budget_gib` (4.0), `overwrite` (false) | `name` names the run directory; the budget is reported, not enforced; `overwrite: true` makes `train` delete `runs/<name>/` first (never with `--resume`) |
-| `model` | `name`, `dtype` (bfloat16), `thinking` (false) | `name`: any `Qwen/Qwen3-<size>B`; `dtype`: `bfloat16` or `float32` (base weights); `thinking`: `false` only |
-| `lora` | `rank`, `alpha`, `dropout` (0.0), `targets` | a preset (`last2-attention`, `last-o-proj`) or `{modules: [q_proj, ...], num_layers: N}`: those Linear layers in each of the last N decoder layers of the loaded model |
-| `data` | `train_samples`, `val_subset`, `subset_seed` (42) | balanced subsets of the cached splits |
-| `training` | `batch_size`, `batch_mode`, `group_size`, `learning_rate`, `max_steps`, `max_attempts`, `clip_eps` (0.2), `num_iterations` (1: updates per rollout batch, `max_steps` counts updates), `temperature` (1.0), `max_new_tokens`, `seed`, `eval_every`, `full_val` | `learning_rate: 0.0` is the negative control |
-| `evaluation` | `max_new_tokens` (4), `batch_size` (32), `score_batch_size` (8), `bootstrap_samples` (10000), `bootstrap_seed` (42) | greedy evaluation in `train`, `validate`, `test`; the defaults are the saved baseline's settings |
-| `verification` | `split` (validation), `merge_subset` (8), `negative_control` (`checkpoint: null`, `train: false`), `statistics` (`confidence_level: 0.95`, `bootstrap_samples: 2000`, `seed: 42`) | `verify` only |
-| `execution` | `backend` (resident), `weight_storage`, `resident_layers`, `weight_buffers`, `prefetch_depth`, `activation_checkpointing` (all null), `vocab_chunk_size` (null), `kv_cache` (gpu) | `resident`, `l2l_sync` or `l2l_async`; the null keys are required for `l2l_*` and must stay null under `resident`. Only `resident` runs so far: `train`/`validate`/`test`/`verify` refuse anything else (`config.unimplemented`) |
-| `streaming` | `enabled` (false), `directory` (null) | provisional (Ticket 09); not implemented |
-| `dflash` | `enabled` (false), `draft_model` (null) | provisional (Ticket 12); the drafter must target `model.name`; not implemented |
+| 1 | `python -m pytest -q tests/test_config.py tests/test_profiles.py tests/test_cli.py tests/silent_failures tests/test_memory_guard.py` | config, CLI, preflight, fault injection (~1–2 min) |
+| 2 | `CUDA_VISIBLE_DEVICES="" python -m pytest -q` | the full CPU suite, incl. resident-vs-L2L bitwise tests (~11 min) |
+| 3 | `python -m pytest -q tests/test_prefetch.py tests/test_backward.py tests/test_generator.py tests/test_layer_stream.py tests/test_backend.py tests/test_output_head.py tests/test_weight_store.py` | CUDA tests on tiny models (local GPU) |
+| 4 | `docs/deployment.md` | Qwen3-4B on the rented GPU; never automatic |
 
-Every default is the value all runs so far used. The SHA-256 of the resolved config (leaving out `execution`, `streaming` and `dflash` while they are at their defaults, so older configs keep their hash) is in `config.yaml`'s first line,
-`manifest.json`, `training.json`, every checkpoint's training state, and every `validate`/`test`/`verify` output.
+Tests never load pretrained weights, and they fail the session if `runs/`, `results/` or `checkpoints/` change.
 
-## Resuming
+## Evidence
 
-Every checkpoint after step 0 holds `training_state.pt` (AdamW state, counters, the log so far, RNG states). Resume with
-the run's own saved config:
-
-```bash
-.venv/bin/python scripts/run.py train --config runs/<run>/config.yaml --resume runs/<run>/checkpoints/step<N>
-```
-
-The result equals the uninterrupted run bitwise (checked on CPU by `tests/test_trainer.py`). The run keeps its id; the
-manifest's status history records the interruption and the resume, and `training.log` is appended to. Resume refuses a
-different config (naming the differing keys; only `verification` and `run.overwrite` may differ), a checkpoint of
-another run, and anything that would overwrite later checkpoints.
-
-## Verification
-
-`verify` never retrains. On `verification.split` it compares the base model (the saved baseline is reused after an
-in-process drift check), the adapter-attached model, the merged model (PEFT `merge_and_unload`, also checked in fp32 on
-CPU) and, if configured, an LR=0 control, and records parameter deltas, policy change, merge equivalence, paired
-bootstrap CIs, reward integrity and training diagnostics. LR=0 control: set `verification.negative_control.checkpoint` to
-an existing control checkpoint of the same config (its training log is checked), or `train: true` to train one first as
-the separate run `<run>_lr0`.
-
-## Removing a run
-
-```bash
-.venv/bin/python scripts/run.py remove --run <run>             # dry run: lists runs/<run>/ with sizes and the total
-.venv/bin/python scripts/run.py remove --run <run> --confirm   # deletes it
-```
-
-It deletes `runs/<run>/` and a stale `runs/.<run>.lock`, nothing else (no config, dataset, baseline or other run), and
-refuses, listing every reason, when: the name is not a run name; `manifest.json` is missing or names another run; the
-run is training (`train` holds `runs/.<run>.lock` with its PID); a path is or contains a symbolic link, or `runs/`
-passes through one; a file is committed to git; or another file (another run, `configs/`, `README.md`, `docs/`,
-`research/`, `results/`) mentions the run's paths, e.g. a run whose `verify` uses this run as its LR=0 control.
-`validate`, `test` and `verify` hold no lock: do not remove a run while evaluating it.
-
-## Runs from before `runs/`
-
-Earlier runs keep their original layout and are never moved or rewritten by the new commands: `checkpoints/<run>_step<N>/`,
-`results/<run>/` (training log, predictions, plots), `results/benchmarks/<run>.{json,md}`, `results/eval/`,
-`results/verification/`. Use the path form for them; their outputs keep going to `results/eval/` and `results/verification/`:
-
-```bash
-.venv/bin/python scripts/run.py verify --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
-.venv/bin/python scripts/run.py report --config configs/default.yaml --checkpoint checkpoints/<run>_step<N>
-.venv/bin/python scripts/run.py remove --config <its yaml> --checkpoint checkpoints/<run>_step<N> [--confirm]
-```
-
-They cannot be resumed into `runs/`. The shared base-model baseline is `results/baseline/` (written by
-`python -m research.baseline --split validation`).
-
-| Question | Where |
+| what | where |
 |---|---|
-| Base model metrics and AUC | `results/benchmarks/baseline.{json,md}`; raw predictions `results/baseline/{validation,test}.json` |
-| Earlier multi-step runs | `results/benchmarks/<run>.{json,md}`, `results/<run>/`, `results/verification/<run>_step<N>/report.md` |
-| Implementation audit and the POSITIVE-drift analysis | `results/grpo_lora_audit.md` |
-| Independent TRL reference | removed in `4424e0f`; recover with `git show 4424e0f^:research/trl_reference/findings.md` |
+| hypotheses H01–H12, protocol, tolerances, runbook | `research/l2l/` |
+| raw lab results (each with commit, environment, measurements, status) | `research/l2l/experiments/` |
+| final report and requirement statuses (≤ 3 pages, generated) | `research/l2l/final_report.md`, `final_results.json` |
+| silent failures, Soup coverage | `docs/silent_failures.md`, `research/soup/` |
+| budget predictions | `results/budget/predictions/` |
+| development history (tickets 00–13, older run layouts) | `docs/development_history.md` |
 
-`results/grpo_lora_audit.md` and `research/trl_reference/findings.md` cite file paths and line numbers from before the `qwen_grpo/` + `research/` reorganization. Read them against tag `pre-refactor` (commit `a038e17`). The code they describe was moved, not changed.
+## Reproducibility
+
+- Pin the packages in `requirements.txt`. The dataset is `data/sentiment.json`, whose sha256 is recorded in every run.
+- Seeds come from the config: `training.seed` for LoRA init, sampling and batch order; `data.subset_seed` for the
+  subsets.
+- Resuming from a checkpoint reproduces the uninterrupted run bitwise on CPU (tests). Streaming runs also persist the
+  sampler state and the rollout records.
+- Lab results record the commit and whether the tree was dirty. `qwen-grpo ship` lists the engine files changed since
+  each PASS.
+- bf16 results depend on batch shape and hardware: compare runs only on the same machine and software (Qwen3-0.6B
+  resident vs L2L: `scripts/compare_runs.py`).
