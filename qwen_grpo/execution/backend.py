@@ -106,3 +106,19 @@ def make_backend(cfg, model, device):
     if cfg.dflash.enabled:
         raise SystemExit("dflash.enabled needs an L2L backend (the drafter runs beside the streamed target)")
     raise SystemExit(f"execution.backend {x.backend!r} is not implemented")
+
+
+def load_device(cfg, device):
+    """Where to load the model before make_backend: the device for resident execution, the CPU for L2L (the backend
+    then adopts the frozen decoder weights into its CPU store and moves the rest to the device; no GPU copy of the
+    full model ever exists)."""
+    return device if cfg.execution.backend == "resident" else "cpu"
+
+
+def make_evaluation_backend(cfg, model, device):
+    """The backend cfg.execution selects, for evaluating a checkpoint: identical to training's except that DFlash is
+    never loaded (evaluation is plain greedy decoding, also in training)."""
+    import dataclasses
+
+    from qwen_grpo.config import DFlash
+    return make_backend(dataclasses.replace(cfg, dflash=DFlash()), model, device)

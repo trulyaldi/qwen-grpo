@@ -13,8 +13,9 @@ python scripts/run.py remove   --run <run> [--confirm]           dry run unless 
 from before runs/ existed (checkpoints/<run>_step<N>/), whose outputs stay in results/eval/ and results/verification/.
 
 validate/test evaluate a saved adapter on the full split with the baseline's prompt, greedy decoding and parser (YAML
-evaluation section) and compare it with the base model (paired: the saved baseline predictions if they match model and
-decoding, else the base evaluated in-process). verify compares base, adapter-attached, merged and (if configured) an
+evaluation section) through the backend the run's config selects (resident, l2l_sync or l2l_async; DFlash is never
+used for evaluation), and compare it with the base model (paired: the saved baseline predictions only for the
+resident backend when they match model and decoding, else the base evaluated in-process through the same backend). verify compares base, adapter-attached, merged and (if configured) an
 LR=0 control on verification.split. Neither retrains the checkpoint; only verification.train_control runs a
 (control) training, as the separate run <run>_lr0. remove lists what it would delete with sizes and deletes only with
 --confirm; it refuses when ownership is uncertain (qwen_grpo/cleanup.py).
@@ -30,7 +31,7 @@ sys.path.insert(0, str(ROOT))  # run as a script from anywhere: make qwen_grpo/ 
 SPLITS = {"validate": "validation", "test": "test"}
 
 
-def evaluate_checkpoint(cfg, checkpoint, split):
+def evaluate_checkpoint(cfg, checkpoint, split, device="cuda"):
     from transformers import AutoTokenizer
 
     from qwen_grpo.checkpointing import check_adapter_matches, load_adapter
@@ -38,23 +39,31 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     from qwen_grpo import runs
     from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_compare,
                                       predictions_path, settings, summary, win_matrix)
+    from qwen_grpo.execution.backend import load_device, make_evaluation_backend
     from qwen_grpo.model import lora_model
     from qwen_grpo.sentiment import load_splits
-    from qwen_grpo.trainer import environment
+    from qwen_grpo.trainer import check_device, environment, models
 
     checkpoint = Path(checkpoint).resolve()
     check_adapter_matches(cfg, checkpoint)
+    check_device(cfg, device)
     decoding = {"do_sample": False, "max_new_tokens": cfg.evaluation.max_new_tokens}
     path = predictions_path(split)
     base = json.loads(path.read_text()) if path.exists() else None
+    if base is not None and cfg.execution.backend != "resident":  # the saved baseline was produced by HF generate
+        print(f"saved baseline {path.name} comes from the resident engine; evaluating the base in-process through "
+              f"{cfg.execution.backend}")
+        base = None
     if base is not None and (base["model"], base["decoding"]) != (cfg.model.name, decoding):
         print(f"saved baseline {path.name} ({base['model']}, {base['decoding']}) does not match; evaluating the base in-process")
         base = None
 
     lo, (gen_kw, score_kw) = cfg.lora, settings(cfg.evaluation)
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
-    model = lora_model(DTYPES[cfg.model.dtype], "cuda", lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
+    model = lora_model(DTYPES[cfg.model.dtype], load_device(cfg, device), lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
+    backend = make_evaluation_backend(cfg, model, device)
     load_adapter(model, checkpoint)
+    gen_kw, score_kw = {**gen_kw, "generator": backend.greedy}, {**score_kw, "logprobs": backend.logprobs}
 
     splits = load_splits()
     examples = [{"id": i, **e} for i, e in enumerate(splits[split])]
@@ -63,6 +72,7 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     with model.disable_adapter():
         scores["base"] = label_scores(model, tok, examples, **score_kw)
         base_preds = base["predictions"] if base else evaluate(model, tok, examples, **gen_kw)
+    backend.close()
     labels = [e["label"] for e in examples]
     W = {k: win_matrix(v, labels) for k, v in scores.items()}
     m = metrics(preds)
@@ -70,18 +80,19 @@ def evaluate_checkpoint(cfg, checkpoint, split):
     out = {
         "checkpoint": runs.rel(checkpoint),
         "split": split, "config": as_dict(cfg), "config_sha256": sha256(cfg), "decoding": decoding,
+        "execution": {"backend": backend.name, **as_dict(cfg)["execution"]},
         "metrics": m, "auc": {k: w.mean().item() for k, w in W.items()},
         "vs_baseline": {**paired_compare(base_preds, preds, **boot), "auc": paired_auc_bootstrap(W["trained"], W["base"], **boot)},
-        "baseline_source": runs.rel(path) if base else "in-process (adapter disabled)",
+        "baseline_source": runs.rel(path) if base else f"in-process (adapter disabled, {backend.name})",
         "base_scores_max_abs_diff_vs_saved": (max(abs(a - b) for a, b in zip(scores["base"], base["label_scores"]["scores"]))
                                               if base else None),
-        "environment": environment(splits, "cuda"),
+        "environment": environment(splits, device, models(cfg)),
         "label_scores": {"ids": [e["id"] for e in examples], **scores}, "predictions": preds,
     }
     path = runs.write_json(runs.evaluation_output(checkpoint, split), out)
 
     v = out["vs_baseline"]
-    print(f"{split} ({out['checkpoint']}): {summary(m)}")
+    print(f"{split} ({out['checkpoint']}, {backend.name}): {summary(m)}")
     print(f"  baseline:  {summary(v['ref_metrics'])}")
     print(f"  accuracy diff {v['accuracy_diff']:+.4f}  95% CI [{v['ci95'][0]:+.4f}, {v['ci95'][1]:+.4f}]")
     print(f"  AUC trained {out['auc']['trained']:.4f}  base {out['auc']['base']:.4f}  diff {v['auc']['auc_diff']:+.4f}  "
@@ -228,10 +239,13 @@ def main(argv=None):
         from qwen_grpo.config import require_implemented
 
         require_implemented(cfg)
-        if cfg.execution.backend != "resident":  # no silent resident fallback: say so instead
-            raise SystemExit(f"{args.command} evaluates checkpoints with the resident backend only; config "
-                             f"{cfg.run.name!r} selects {cfg.execution.backend!r} (its in-training evaluation ran L2L). "
-                             "Use a resident config for the same run to evaluate the checkpoint.")
+        if args.command == "verify" and cfg.execution.backend != "resident":  # no silent resident fallback
+            raise SystemExit(
+                f"verify (verification.py: PEFT merge_and_unload, full-logit merge checks, an fp32 copy of the whole "
+                f"model on the CPU) is resident-only; config {cfg.run.name!r} selects {cfg.execution.backend!r}. For "
+                f"L2L runs use the L2L verification (base / adapter / streamed-merged / LR=0 control on the test "
+                f"split, through the configured backend): python scripts/final_eval.py --run {cfg.run.name} "
+                f"[--control <lr0 run>]. validate and test support every backend.")
     if not (checkpoint / "adapter_config.json").exists():
         raise SystemExit(f"not a LoRA checkpoint (no adapter_config.json): {checkpoint}")
     if args.command == "verify":

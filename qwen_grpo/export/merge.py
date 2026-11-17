@@ -176,7 +176,7 @@ def stream_merge(base, adapter, out, shard_bytes=1 << 30, dtype=None):
     return report
 
 
-def load_merged_l2l(path, device, dtype=None, weight_storage="pinned", weight_buffers=2, kv_device=None):
+def load_merged_l2l(path, device, dtype=None, weight_storage="pinned", weight_buffers=2, kv_device=None, prefetch_depth=0):
     """The merged checkpoint as a plain Hugging Face model (no PEFT), loaded on the CPU and run by the L2L engine:
     frozen decoder weights in a WeightStore, the rest on `device` (execution.backend.L2LBackend). Never resident on the
     GPU as a whole; generation through execution.generator, never model.generate()."""
@@ -184,4 +184,5 @@ def load_merged_l2l(path, device, dtype=None, weight_storage="pinned", weight_bu
 
     from qwen_grpo.execution.backend import L2LBackend
     model = AutoModelForCausalLM.from_pretrained(str(path), dtype=dtype or "auto").eval().requires_grad_(False)
-    return model, L2LBackend(model, device, weight_storage, weight_buffers, kv_device=kv_device)
+    return model, L2LBackend(model, device, weight_storage, weight_buffers, kv_device=kv_device,
+                             prefetch_depth=prefetch_depth)  # 0: synchronous, >= 1: asynchronous prefetching
