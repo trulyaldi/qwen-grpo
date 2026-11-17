@@ -241,8 +241,8 @@ def main(argv=None):
         require_implemented(cfg)
         if args.command == "verify" and cfg.execution.backend != "resident":  # no silent resident fallback
             raise SystemExit(
-                f"verify (verification.py: PEFT merge_and_unload, full-logit merge checks, an fp32 copy of the whole "
-                f"model on the CPU) is resident-only; config {cfg.run.name!r} selects {cfg.execution.backend!r}. For "
+                f"verify evaluates checkpoints with the resident backend only (verification.py: PEFT merge_and_unload, "
+                f"full-logit merge checks, an fp32 copy of the whole model on the CPU); config {cfg.run.name!r} selects {cfg.execution.backend!r}. For "
                 f"L2L runs use the L2L verification (base / adapter / streamed-merged / LR=0 control on the test "
                 f"split, through the configured backend): python scripts/final_eval.py --run {cfg.run.name} "
                 f"[--control <lr0 run>]. validate and test support every backend.")

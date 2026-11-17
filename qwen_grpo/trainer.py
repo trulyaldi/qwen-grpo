@@ -233,7 +233,6 @@ def train(cfg: Config, resume=None, device="cuda"):
     manifest records how training ended; summary.json, plots/ and report.md are then rebuilt from the saved files."""
     name = cfg.run.name
     require_implemented(cfg)  # before start(): a refused config leaves nothing behind
-    check_device(cfg, device)  # likewise: an unusable device fails before anything is created or loaded
     if mode := cfg.training.legacy_batch_mode:
         raise SystemExit(f"run {name!r} uses the historical batch_mode {mode!r}, which the current code does not implement "
                          "(it has only the shuffled sampler): it cannot be trained or resumed. Its saved outputs stay "
@@ -244,11 +243,12 @@ def train(cfg: Config, resume=None, device="cuda"):
             raise SystemExit(f"run {name!r} has no valid resumable checkpoint (rejected: {rejected})")
     with training_lock(runs.lock_path(name)):
         state = start(cfg, resume)
-        guard, held = None, []  # held: resources _train acquires (the backend), released here whatever happens
+        guard = None
+        _HELD.clear()  # resources _train acquires (the backend), released below whatever happens
         try:
             guard = memory_guard(cfg, device)  # inside: a CUDA error here marks the run failed, not "running"
             with tee(runs.training_dir(name) / "training.log"), guard or nullcontext():
-                result = _train(cfg, resume, state, device, held)
+                result = _train(cfg, resume, state, device)
         except BaseException as e:
             exceeded = guard is not None and guard.violations
             status = "interrupted" if isinstance(e, KeyboardInterrupt) and not exceeded else "failed"
@@ -264,8 +264,8 @@ def train(cfg: Config, resume=None, device="cuda"):
                                  f"{rel(runs.training_dir(name) / 'memory')}/)") from e
             raise
         finally:
-            for r in held:  # the L2L weight store unregisters its pinned memory (GBs for Qwen3-4B)
-                r.close()
+            while _HELD:  # the L2L weight store unregisters its pinned memory (GBs for Qwen3-4B)
+                _HELD.pop().close()
             if guard is not None and cfg.memory.allocator_cap:
                 torch.cuda.set_per_process_memory_fraction(1.0, torch.device(device))
         save_memory(cfg, guard)
@@ -349,7 +349,11 @@ def weight_bytes_copied(backend):
     return sum(t["slab_bytes"] for t in getattr(ex, "trace", []) if t.get("loaded", True))
 
 
-def _train(cfg: Config, resume, state, device, held=None):
+_HELD = []  # closeable resources of the training session in progress (one per process; train() empties it)
+
+
+def _train(cfg: Config, resume, state, device):
+    check_device(cfg, device)  # before any tokenizer or model is loaded; the run is recorded as failed
     t, lo, d, ev = cfg.training, cfg.lora, cfg.data, cfg.evaluation
     B, G, name = t.batch_size, t.group_size, cfg.run.name
     gen_kw, score_kw = settings(ev)
@@ -381,8 +385,7 @@ def _train(cfg: Config, resume, state, device, held=None):
     load_device = device if cfg.execution.backend == "resident" else "cpu"
     model = lora_model(dtype, load_device, lo.spec(), lo.rank, lo.alpha, name=cfg.model.name)
     backend = make_backend(cfg, model, device)  # generation, log-probs and evaluation run through it
-    if held is not None:
-        held.append(backend)
+    _HELD.append(backend)
     if on_cuda:
         torch.cuda.reset_peak_memory_stats()
     params = {n: p for n, p in model.named_parameters() if p.requires_grad}

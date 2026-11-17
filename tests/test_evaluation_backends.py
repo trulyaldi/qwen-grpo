@@ -58,7 +58,7 @@ def test_verify_of_an_l2l_run_points_to_the_l2l_verification(tmp_path, monkeypat
     import shutil
     runs.write_json(runs.checkpoint_path("tiny", 2) / "adapter_config.json", {})
     shutil.copy(tmp_path / "tiny_l2l.yaml", runs.run_dir("tiny") / "config.yaml")
-    with pytest.raises(SystemExit, match="scripts/final_eval.py --run tiny"):
+    with pytest.raises(SystemExit, match="resident backend only.*scripts/final_eval.py --run tiny"):
         run.main(["verify", "--run", "tiny"])
     assert cfg.execution.backend == "l2l_sync"
 

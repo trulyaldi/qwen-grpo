@@ -112,9 +112,12 @@ def test_checkpoint_evaluation_commands_refuse_an_l2l_config_instead_of_running_
     from scripts import run
     cfg_path = tmp_path / "tiny_l2l.yaml"
     make_cfg(tmp_path, L2L_CPU)
-    for command in ("verify", "validate"):
-        with pytest.raises(SystemExit, match="resident backend only"):
-            run.main([command, "--config", str(cfg_path), "--checkpoint", str(tmp_path / "missing")])
+    with pytest.raises(SystemExit, match="resident backend only"):  # verify stays resident-only, and says so
+        run.main(["verify", "--config", str(cfg_path), "--checkpoint", str(tmp_path / "missing")])
+    # validate / test now evaluate through the configured L2L backend (tests/test_evaluation_backends.py): no resident
+    # refusal any more; here they get as far as the missing checkpoint
+    with pytest.raises(SystemExit, match="not a LoRA checkpoint"):
+        run.main(["validate", "--config", str(cfg_path), "--checkpoint", str(tmp_path / "missing")])
 
 
 def test_compare_runs_reports_identical_runs_and_catches_a_different_one(sandbox, tmp_path):

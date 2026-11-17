@@ -59,7 +59,7 @@ remaining requirement needs a GPU (`docs/deployment.md`).
 
 ## Found by the GPU-readiness audit and fixed
 
-- **Device checks.** `train` (and `validate`, `test`, `final_eval`) now refuses before loading anything if:
+- **Device checks.** `train` (and `validate`, `test`, `final_eval`) now refuses before loading any model if:
   - CUDA was requested but is unavailable (no CPU fallback existed or was added; it used to fail deep inside);
   - the torch build has no kernels for the GPU (e.g. sm_61 on a cu130 wheel, observed on the audit host);
   - bf16 weights are requested on a GPU without bf16.
