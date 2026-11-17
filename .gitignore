@@ -10,3 +10,7 @@ runs/*
 !runs/qwen/
 
 *.egg-info/
+kaggle/build/
+kaggle/outputs/
+kaggle/submissions.jsonl
+kaggle_working/
