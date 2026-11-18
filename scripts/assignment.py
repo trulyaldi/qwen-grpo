@@ -106,6 +106,10 @@ PYTEST_CPU = ["tests/test_grpo.py", "tests/test_sentiment.py", "tests/test_polic
 PYTEST_SILENT = ["tests/silent_failures"]
 PYTEST_CUDA = ["tests/test_prefetch.py", "tests/test_backward.py", "tests/test_generator.py", "tests/test_layer_stream.py",
                "tests/test_backend.py", "tests/test_output_head.py", "tests/test_weight_store.py", "tests/test_dflash.py"]
+# Budgets recomputed in stage A. qwen3-4b_final_dflash: the final run as configured (DFlash rollouts);
+# qwen3-4b_final: the same shape with plain rollouts (the plain-L2L baseline and the H11.profile run)
+BUDGET_CONFIGS = ("configs/budget/qwen3-4b_final_dflash.yaml", "configs/budget/qwen3-4b_final.yaml",
+                  "configs/budget/qwen3-4b.yaml", "configs/budget/qwen3-0.6b.yaml")
 FINAL_RUNS = {"qwen3_4b_final": "configs/experiments/qwen3_4b_final.yaml",
               "qwen3_4b_final_lr0": "configs/experiments/qwen3_4b_final_lr0.yaml"}
 
@@ -165,6 +169,10 @@ def worst(statuses):
 
 def load_study():
     study = yaml.safe_load(STUDY.read_text())
+    if inc := study.get("include"):  # entries reused verbatim from another study (scripts/experiment.py does the same)
+        other = yaml.safe_load((STUDY.parent / inc["study"]).read_text())
+        by_id = {e["id"]: e for e in other["entries"]}
+        study["entries"] = [by_id[i] for i in inc["entries"] if i in by_id] + list(study.get("entries") or [])
     entries = {e["id"]: e for e in study["entries"]}
     check_no_opt_in(entries)
     return study, entries
@@ -875,10 +883,7 @@ def predictions(run_dir, attempt_dir):
     log = git("log", "-1", "--format=%H %cI", "--", "results/budget/predictions")
     statuses, runs = [], []
     # the final configuration's budget first; the historical Step-0 budgets are recomputed only as a record
-    # qwen3-4b_final_dflash: the final run as configured (DFlash rollouts); qwen3-4b_final: the same shape with plain
-    # rollouts (the plain-L2L baseline and the H11.profile run)
-    for cfg in ("configs/budget/qwen3-4b_final_dflash.yaml", "configs/budget/qwen3-4b_final.yaml",
-                "configs/budget/qwen3-4b.yaml", "configs/budget/qwen3-0.6b.yaml"):
+    for cfg in BUDGET_CONFIGS:
         out = pred / "calculator"
         rec = run_item(Path(attempt_dir) / f"budget_{Path(cfg).stem}",
                        [*tool("budget", [sys.executable, str(ROOT / "scripts" / "budget.py")]), "--config", cfg,
@@ -1241,8 +1246,9 @@ def cmd_dry_run(args):
                                               "here under a new name with --again, and never reuses it)"
                                               if s in FRESH else ""), flush=True)
             subprocess.run([*dispatcher(), "run", "--dry-run", "--entry", *ids], cwd=ROOT)
-    print("H audit: Soup " + ("found: " + (os.environ.get("SOUP_BIN") or shutil.which("soup"))
-                              if (os.environ.get("SOUP_BIN") or shutil.which("soup")) else "not installed: NOT_TESTED"))
+    if "H" in STAGES:
+        print("H audit: Soup " + ("found: " + (os.environ.get("SOUP_BIN") or shutil.which("soup"))
+                                  if (os.environ.get("SOUP_BIN") or shutil.which("soup")) else "not installed: NOT_TESTED"))
     return 0
 
 

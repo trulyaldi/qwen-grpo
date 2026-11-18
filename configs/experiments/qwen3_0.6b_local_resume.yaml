@@ -1,0 +1,16 @@
+# LOCAL laptop validation: deterministic resume (scripts/resume_experiment.py) through the local L2L + streaming
+# path. An uninterrupted run A against runs B crashed at injected points and resumed from their latest valid
+# checkpoint. The crash points of resume_experiment.py (QWEN_CRASHES) assume a checkpoint every 3 steps and 2 GRPO
+# iterations per rollout group (so a checkpoint can fall inside a group), as in qwen3_0.6b_resume.yaml; hence 9 steps,
+# evaluation every 3, num_iterations 2 here, unlike the 5-step cadence of the training experiment.
+extends: qwen3_0.6b_local_streaming.yaml
+
+run:
+  name: local_qwen3_0.6b_resume
+
+training:
+  max_steps: 9
+  num_iterations: 2
+
+evaluation:
+  every: 3

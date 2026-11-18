@@ -1,0 +1,22 @@
+# LOCAL laptop validation (scripts/run_assignment_local.sh), Qwen3-0.6B on a 4 GB GPU (RTX 3050 Ti): the 10-step
+# local training experiment through the components the Qwen3-4B assignment reuses: asynchronous L2L with a pinned CPU
+# weight store, CUDA copy/compute overlap (2 buffers, prefetch 1), layer-boundary activation checkpointing, disk-backed
+# prompt and rollout streaming with crash-consistent checkpoints, and the GPU memory guard. B=5 x G=6, 4 new tokens,
+# lr 5e-4, clip 0.2, LoRA r32/a64 on q/v/o of the last two layers, bf16 (all from the profile and
+# qwen3_0.6b_streaming.yaml, which this extends unchanged). Evaluation and checkpoint every 5 steps.
+# DFlash is explicitly OFF: the only supported drafter (z-lab/Qwen3-4B-DFlash-b16) is trained for Qwen3-4B, and no
+# synthetic or substitute drafter is used. Nothing here validates DFlash or the Qwen3-4B assignment.
+# Run names start with local_ so no existing run or result is touched.
+extends: qwen3_0.6b_streaming.yaml
+
+run:
+  name: local_qwen3_0.6b_streaming
+
+memory:                        # record every nvidia-smi sample and stop at the first above run.gpu_budget_gib (4 GiB:
+  guard: true                  # the card itself, so on this GPU it records rather than limits)
+  interval_s: 0.5
+  allocator_cap: true
+
+dflash:
+  enabled: false
+  draft_model: null

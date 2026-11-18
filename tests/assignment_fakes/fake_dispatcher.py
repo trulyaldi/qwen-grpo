@@ -36,6 +36,9 @@ for rel, data in spec.get("files", {}).items():
 import yaml  # noqa: E402  the evidence name the real dispatcher records is the study entry's `name`
 study = yaml.safe_load(Path(os.environ.get("ASSIGNMENT_STUDY", Path(__file__).parents[2] / "configs" / "studies" /
                                            "assignment.yaml")).read_text())
+if inc := study.get("include"):  # as scripts/experiment.py: entries reused from another study
+    other = yaml.safe_load((Path(os.environ.get("ASSIGNMENT_STUDY", "")).parent / inc["study"]).read_text())
+    study["entries"] = [x for x in other["entries"] if x["id"] in inc["entries"]] + list(study.get("entries") or [])
 name = spec.get("evidence_name", next((x["name"] for x in study["entries"] if x["id"] == e), e))
 d = Path(os.environ["ASSIGNMENT_EVIDENCE_ROOT"]) / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}_{e}"
 d.mkdir(parents=True)

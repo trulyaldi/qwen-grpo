@@ -17,8 +17,12 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 PY="${PYTHON:-python}"
 export PYTHONUNBUFFERED=1
+# scripts/run_assignment_local.sh reuses this script for the local laptop validation by setting these two
+RUNNER="${ASSIGNMENT_RUNNER:-scripts/assignment.py}"
+STAGE_LIST="${ASSIGNMENT_STAGE_LIST:-A B C D E F G H}"
+ME="${ASSIGNMENT_ENTRYPOINT:-scripts/run_assignment.sh}"
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,16p' "$ME" | sed 's/^# \{0,1\}//'; }
 
 MODE=new STAGE=""
 while [ $# -gt 0 ]; do
@@ -26,7 +30,8 @@ while [ $# -gt 0 ]; do
     --dry-run) MODE=dry ;;
     --resume) MODE=resume ;;
     --from-stage) shift; STAGE="${1:-}"; MODE=from
-                  case "$STAGE" in A|B|C|D|E|F|G|H) ;; *) echo "--from-stage needs one of A B C D E F G H" >&2; exit 2 ;; esac ;;
+                  case " $STAGE_LIST " in *" $STAGE "*) [ -n "$STAGE" ] ;; *) false ;; esac ||
+                    { echo "--from-stage needs one of $STAGE_LIST" >&2; exit 2; } ;;
     --status) MODE=status ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -35,17 +40,17 @@ while [ $# -gt 0 ]; do
 done
 
 case "$MODE" in
-  dry) exec "$PY" scripts/assignment.py dry-run ;;
-  status) exec "$PY" scripts/assignment.py status ;;
-  new) RUN_DIR="$("$PY" scripts/assignment.py init)" || exit 2 ;;
-  resume) RUN_DIR="$("$PY" scripts/assignment.py init --resume)" || exit 2 ;;
-  from) RUN_DIR="$("$PY" scripts/assignment.py init --from-stage "$STAGE")" || exit 2 ;;
+  dry) exec "$PY" "$RUNNER" dry-run ;;
+  status) exec "$PY" "$RUNNER" status ;;
+  new) RUN_DIR="$("$PY" "$RUNNER" init)" || exit 2 ;;
+  resume) RUN_DIR="$("$PY" "$RUNNER" init --resume)" || exit 2 ;;
+  from) RUN_DIR="$("$PY" "$RUNNER" init --from-stage "$STAGE")" || exit 2 ;;
 esac
 [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ] || { echo "no run directory" >&2; exit 2; }
 
 # one orchestrator per run directory
 exec 9>"$RUN_DIR/.lock"
-if ! flock -n 9; then echo "another run_assignment.sh holds $RUN_DIR" >&2; exit 2; fi
+if ! flock -n 9; then echo "another $(basename "$ME") holds $RUN_DIR" >&2; exit 2; fi
 
 mkdir -p "$RUN_DIR/logs"
 LOG="$RUN_DIR/logs/orchestrator.log"
@@ -67,9 +72,9 @@ trap 'on_signal SIGTERM' TERM
 trap 'on_signal SIGHUP' HUP
 
 echo "assignment run $RUN_DIR ($MODE) at commit $(git rev-parse --short HEAD 2>/dev/null)"
-for S in A B C D E F G H; do
+for S in $STAGE_LIST; do
   [ "$INTERRUPTED" = 1 ] && { echo "stage $S not started: interrupted"; continue; }
-  "$PY" scripts/assignment.py stage "$S" --run-dir "$RUN_DIR" &
+  "$PY" "$RUNNER" stage "$S" --run-dir "$RUN_DIR" &
   CHILD=$!
   while :; do
     wait "$CHILD"; RC=$?
@@ -81,9 +86,9 @@ for S in A B C D E F G H; do
 done
 
 echo "writing the report (always)"
-"$PY" scripts/assignment.py report --run-dir "$RUN_DIR"; RRC=$?
+"$PY" "$RUNNER" report --run-dir "$RUN_DIR"; RRC=$?
 echo "results: $RUN_DIR"
-[ "$INTERRUPTED" = 1 ] && { echo "interrupted: resume with  bash scripts/run_assignment.sh --resume"; exit 130; }
+[ "$INTERRUPTED" = 1 ] && { echo "interrupted: resume with  bash $ME --resume"; exit 130; }
 [ "$RRC" -eq 0 ] && exit 0
 [ "$RRC" -eq 1 ] && exit 1
 echo "report generation failed (exit $RRC)"; exit 1

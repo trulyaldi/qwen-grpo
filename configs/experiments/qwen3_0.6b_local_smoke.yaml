@@ -1,0 +1,9 @@
+# LOCAL laptop validation: the 2-step integration smoke of the local training path (async L2L + pinned store +
+# disk streaming + memory guard); qwen3_0.6b_local_streaming.yaml with 2 updates. Runs before the 10-step experiment.
+extends: qwen3_0.6b_local_streaming.yaml
+
+run:
+  name: local_qwen3_0.6b_smoke
+
+training:
+  max_steps: 2

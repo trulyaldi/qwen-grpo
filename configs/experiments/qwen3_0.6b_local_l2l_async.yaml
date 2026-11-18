@@ -1,0 +1,12 @@
+# LOCAL laptop validation: asynchronous L2L WITHOUT disk streaming (prompts and rollouts in memory). Identical to
+# qwen3_0.6b_local_streaming.yaml except run.name and the streaming section, so it pairs with
+#   qwen3_0.6b_local_resident.yaml   resident vs async L2L (configs differ in execution only: compared bitwise)
+#   qwen3_0.6b_local_streaming.yaml  in-memory vs disk streaming (configs differ in streaming only: compared bitwise)
+extends: qwen3_0.6b_local_streaming.yaml
+
+run:
+  name: local_qwen3_0.6b_l2l_async
+
+streaming:
+  enabled: false
+  directory: null

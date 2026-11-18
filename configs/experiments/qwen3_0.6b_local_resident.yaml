@@ -1,0 +1,15 @@
+# LOCAL laptop validation: the RESIDENT reference (the whole bf16 model on the GPU, HF generate for rollouts).
+# Identical to qwen3_0.6b_local_l2l_async.yaml except run.name and execution: the resident-vs-L2L comparison.
+extends: qwen3_0.6b_local_l2l_async.yaml
+
+run:
+  name: local_qwen3_0.6b_resident
+
+execution:                     # the L2L-only keys must be null under resident
+  backend: resident
+  weight_storage: null
+  resident_layers: null
+  weight_buffers: null
+  prefetch_depth: null
+  activation_checkpointing: null
+  kv_cache: gpu

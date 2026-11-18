@@ -147,15 +147,20 @@ def main(argv=None):
     ap.add_argument("a", help="reference run name (e.g. qwen3_0.6b_resident)")
     ap.add_argument("b", help="candidate run name (e.g. qwen3_0.6b_l2l_sync)")
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--allow-differ", action="append", default=[], metavar="SECTION",
+                    help="also let this config section differ (e.g. streaming: in-memory vs disk-streaming runs, which "
+                         "must still agree bitwise); recorded in the result")
     args = ap.parse_args(argv)
     A, B = load_log(args.a), load_log(args.b)
     cfg_a, cfg_b = config.normalized(A["yaml_config"]), config.normalized(B["yaml_config"])
     backends = [cfg_a["execution"]["backend"], cfg_b["execution"]["backend"]]
     diffs = config.differences(cfg_a, cfg_b)
-    blocking = [d for d in diffs if not d.startswith(COMPARABLE_PREFIXES)]
+    allowed = COMPARABLE_PREFIXES + tuple(f"{x.rstrip('.')}." for x in args.allow_differ)
+    blocking = [d for d in diffs if not d.startswith(allowed)]
     rep = {"a": args.a, "b": args.b, "backends": backends,
            "configs": {"differences": diffs, "comparable": not blocking, "not_allowed": blocking,
-                       "rule": f"only {', '.join(COMPARABLE_PREFIXES)} may differ"},
+                       "rule": f"only {', '.join(allowed)} may differ",
+                       "allowed_beyond_default": list(args.allow_differ)},
            "tolerance": tolerance_rule(backends[1]), "coverage": COVERAGE}
 
     rows_a, rows_b = A.get("training", []), B.get("training", [])

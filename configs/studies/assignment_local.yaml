@@ -1,0 +1,137 @@
+# LOCAL laptop validation study: Qwen3-0.6B on a 4 GB GPU (RTX 3050 Ti), read by scripts/run_assignment_local.sh
+# (scripts/assignment_local.py) and scripts/experiment.py --study configs/studies/assignment_local.yaml.
+# It validates the engineering components the Qwen3-4B assignment reuses: GRPO + LoRA, asynchronous L2L streaming
+# from pinned CPU weights with CUDA copy/compute overlap, layer-boundary activation checkpointing, disk-backed prompt and
+# rollout streaming, deterministic checkpoint/resume, memory/time profiling, numerical equivalence with resident
+# execution, and silent-failure detection.
+# NOT in scope, and never claimed: DFlash (its only supported drafter, z-lab/Qwen3-4B-DFlash-b16, is trained for
+# Qwen3-4B; no substitute drafter is used), the Qwen3-4B 8 GB cap, held-out test evaluation, Soup checks.
+# Entry fields: as in configs/studies/assignment.yaml. `include` reuses that study's tiny-model correctness entries
+# verbatim (scripts/experiment.py load_study). Every local run and result name starts with local_ (nothing existing is
+# overwritten; existing lab evidence is re-run under a new name).
+
+protocol: research/l2l/protocol.md
+hypotheses: research/l2l/hypotheses.yaml
+tolerances: research/l2l/tolerances.yaml
+
+# The orchestrator's nvidia-smi watchdog stops a workload above this. Locally it is the card's own size (4 GiB), so it
+# records rather than limits; it is NOT the assignment's 8 GB cap and nothing local is judged against that.
+gpu_memory_cap:
+  bytes: 4294967296
+  wording: "the 4 GiB of the local RTX 3050 Ti (local validation only; not the assignment's 8 GB cap)"
+  binary_reference_bytes: 4294967296
+
+host_requirements:             # read by stage A under these key names (shared with the 4B study): local minimums
+  ram_bytes_4b: 8000000000
+  disk_bytes_4b: 10000000000
+
+include:
+  study: assignment.yaml
+  entries: [H01.lab_sync, H01.fault_wrong_layer, H01.lab_async_cuda, H01.fault_unsafe_reuse,
+            H02.lab_sync_cpu, H02.lab_sync_cuda, H02.fault_detach_boundary, H02.lab_async_cuda, H02.fault_unsafe_reuse,
+            H03.lab_v2_cpu, H03.fault_raw_logit, H04.lab_sync_cpu, H04.lab_sync_cuda, H04.fault_stale_position,
+            H04.fault_no_padding_mask, H04.lab_async_cuda, H05.lab_sync_cpu, H05.lab_sync_cuda, H05.fault_advantage,
+            H05.lab_async_cuda, H07.store_depth_copy_only, H07.depth_residency_execution, H08.resume_tiny_cpu,
+            H09.merge_tiny_cpu, H06.prefetch_timing]
+
+entries:
+  # ------------------------------------------------------------- C: Qwen3-0.6B resident vs asynchronous L2L
+  # One real GRPO step, resident vs async L2L from the same initial adapter (LoRA B seeded nonzero so every gradient is
+  # nontrivial): sampled rollouts (same seed), old log-probs (forward), every LoRA gradient, loss and update for two
+  # updates. --require-equal: exit 1 unless all of it is bitwise equal.
+  - id: H05.local_real_step_0.6b
+    name: local_real_step_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    configs: [configs/experiments/qwen3_0.6b_local_l2l_async.yaml]
+    steps:
+      - argv: [scripts/l2l_real_step.py, --config, configs/experiments/qwen3_0.6b_local_l2l_async.yaml, --device, cuda,
+               --max-new, "4", --iterations, "2", --require-equal, --out, "research/l2l/experiments/{name}.json"]
+        creates: research/l2l/experiments/{name}.json
+    judge: exit_codes
+  # The 10-step training runs, resident and async L2L (configs differ in execution only), compared bitwise by
+  # compare_runs.py: rollouts, rewards, losses, gradient / update norms, greedy subset evaluations, adapters and AdamW
+  # state at every checkpoint, frozen weights unchanged in both. scripts/assignment_local.py re-runs the comparison when
+  # the runs already exist.
+  - id: H05.local_runs_0.6b
+    name: local_runs_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    configs: [configs/experiments/qwen3_0.6b_local_resident.yaml, configs/experiments/qwen3_0.6b_local_l2l_async.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_local_resident.yaml], creates: "run:local_qwen3_0.6b_resident"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_local_l2l_async.yaml], creates: "run:local_qwen3_0.6b_l2l_async"}
+      - argv: [scripts/compare_runs.py, local_qwen3_0.6b_resident, local_qwen3_0.6b_l2l_async,
+               --out, "{evidence}/compare_resident_vs_l2l_async.json"]
+    judge: exit_codes
+
+  # ------------------------------------------------------------- D: profiling
+  # Every phase (setup, rollout, old log-probs, forward, backward, optimizer, merge, evaluation) under the memory guard:
+  # PyTorch allocated / reserved, cudaMemGetInfo, per-process nvidia-smi where the platform reports it (not WSL2),
+  # pinned store bytes, measured H2D bandwidth, weight bytes copied per phase; compared with the local budget.
+  - id: H11.local_profile_0.6b
+    name: local_profile_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    configs: [configs/experiments/qwen3_0.6b_local_l2l_async.yaml]
+    steps:
+      - argv: [scripts/profile_run.py, --out, "{name}", --config, configs/experiments/qwen3_0.6b_local_l2l_async.yaml,
+               --prediction, results/budget/predictions/qwen3-0.6b-local_4gb.json, --budget-gib, "4", --steps, "2",
+               --eval-n, "16"]
+        creates: research/l2l/experiments/{name}.json
+    judge: exit_codes
+
+  # ------------------------------------------------------------- F: local training (gated on B and C)
+  - id: H12.local_smoke_0.6b
+    name: local_smoke_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    configs: [configs/experiments/qwen3_0.6b_local_smoke.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_local_smoke.yaml], creates: "run:local_qwen3_0.6b_smoke"}
+    judge: exit_codes
+  # The 10-step local training experiment (async L2L + disk streaming), then compared bitwise with the in-memory async
+  # L2L run of stage C (configs differ in the streaming section only).
+  - id: H12.local_train_0.6b
+    name: local_train_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    prerequisites: {runs: [local_qwen3_0.6b_smoke, local_qwen3_0.6b_l2l_async]}
+    configs: [configs/experiments/qwen3_0.6b_local_streaming.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_local_streaming.yaml], creates: "run:local_qwen3_0.6b_streaming"}
+      - argv: [scripts/compare_runs.py, local_qwen3_0.6b_l2l_async, local_qwen3_0.6b_streaming, --allow-differ, streaming,
+               --out, "{evidence}/compare_l2l_async_vs_streaming.json"]
+    judge: exit_codes
+  # Deterministic resume: an uninterrupted run A against runs crashed at six injected points (prompt read, rollouts
+  # generated, update, files written, committed before rename, after checkpoint) and resumed from their latest valid
+  # checkpoint; committed rows, rollout records, occurrences (no duplicate or missing sample), adapters and AdamW state
+  # must match A. Runs local_qwen3_0.6b_resume_A / _B_<point> (resume_experiment.py overwrites only those).
+  - id: H08.local_resume_0.6b
+    name: local_resume_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    configs: [configs/experiments/qwen3_0.6b_local_resume.yaml]
+    steps:
+      - argv: [scripts/resume_experiment.py, --config, configs/experiments/qwen3_0.6b_local_resume.yaml, --device, cuda,
+               --out, "{name}"]
+        creates: research/l2l/experiments/{name}.json
+    judge: exit_codes

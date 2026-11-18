@@ -23,3 +23,4 @@ kaggle_working/
 
 # one-command assignment runs (scripts/run_assignment.sh): raw telemetry and reports, kept locally
 assignment_results/
+assignment_results_local/
