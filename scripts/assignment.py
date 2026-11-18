@@ -23,9 +23,9 @@ Stages and gates (a gate that is not met records the stage's items as BLOCKED, w
   F training       final run and LR=0 control, both with DFlash rollouts (streaming runs: resumed from their latest
                    crash-consistent checkpoint when interrupted; an interrupted non-streaming run, e.g. stage C's, is
                    BLOCKED, never resumed)
-                   gate: B essential correctness, C real-model equivalence, D smoke and profile with PASS memory, and
-                   (the final config enables DFlash) E's benchmark (greedy DFlash == plain on Qwen3-4B) and DFlash smoke
-                   run with PASS memory
+                   gate: A's assignment_config check PASS, B essential correctness, C real-model equivalence, D smoke
+                   and profile with PASS memory, and (the final config enables DFlash) E's benchmark (greedy DFlash ==
+                   plain on Qwen3-4B) and DFlash smoke run with PASS memory
   G evaluation     held-out test evaluation (base / trained / merged / control), DFlash acceptance on the primary
                    run's checkpoints step0/20/40/60                                                            gate: F
 Primary run: qwen3_4b_final.yaml, 60 updates (checkpoints every 20); LR=0 control 30 updates; the DFlash smoke 10.
@@ -41,9 +41,9 @@ Two modes, recorded per run in state.json (`mode`; runs made before it existed a
               setting inherited) and G evaluates them (H12.train_final_plain, H12.final_eval_plain; no DFlash drift).
               B is reduced to the async-L2L lab cases the final run depends on (forward, gradient, generation, update;
               this GPU), the two unsafe-reuse fault controls, and tiny resume and merge - no pytest suites, no sync /
-              CPU lab matrix. F's gate: those B items PASS except H02.fault_unsafe_reuse (a known FAIL, recorded as a
-              waived limitation, never as PASS), D's smoke and profile with PASS memory, and the primary config's
-              DFlash disabled. Stage A predicts the plain configuration only (no drafter metadata is fetched). The
+              CPU lab matrix. F's gate: A's assignment_config check PASS, those B items PASS except
+              H02.fault_unsafe_reuse (a known FAIL, recorded as a waived limitation, never as PASS), D's smoke and
+              profile with PASS memory, and the primary config's DFlash disabled. Stage A predicts the plain configuration only (no drafter metadata is fetched). The
               report never gives SHIP for an experiment run.
 --resume continues the latest run of the requested mode only; --fresh (new runs only) moves the fixed-name training
 runs and Qwen3-4B results of the mode's stages aside to <path>.archived-<UTC> (never deleted) so they are re-run.
@@ -1571,7 +1571,8 @@ def print_experiment_plan():
               f"{c.memory.guard}")
     print(f"B: {', '.join(STAGE_ENTRIES['B'])}; waived for the F gate (recorded, stays FAIL if it fails): "
           f"{', '.join(WAIVED)}")
-    print(f"F gate (experiment): B {', '.join(ESSENTIAL_B)} PASS; D H11.smoke and H11.profile PASS with per-process "
+    print(f"F gate (experiment): A assignment_config PASS; B {', '.join(ESSENTIAL_B)} PASS; D H11.smoke and "
+          "H11.profile PASS with per-process "
           f"nvidia-smi memory PASS; {FINAL_RUNS[PRIMARY]} has DFlash disabled (plain L2L rollouts)")
     print("not run in this mode: stage C (Qwen3-0.6B reference), stage E and every DFlash item (benchmark, DFlash "
           "smoke, drift, DFlash tests; DFlash requirements are NOT_TESTED, intentionally excluded), the CPU / "
