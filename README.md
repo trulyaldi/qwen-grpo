@@ -98,6 +98,39 @@ LoRA module selection (`last2-attention` → q/v/o of the last two layers), the 
 GRPO settings are the 0.6B ones unchanged, and whether they suit 4B is open (not tuned). Guide:
 [`docs/configuration.md`](docs/configuration.md).
 
+## The assignment in one command
+
+On a rented native-Linux Ampere-or-newer GPU host (≥ 32 GB RAM, ≥ 40 GB disk), inside `tmux`:
+
+```bash
+bash scripts/run_assignment.sh              # the whole protocol -> assignment_results/<UTC run-id>/
+bash scripts/run_assignment.sh --dry-run    # what would run here (no download, no training, nothing written)
+bash scripts/run_assignment.sh --resume     # continue after an interruption (same commit, configs and code content;
+                                            # a report-only change just regenerates the report)
+bash scripts/run_assignment.sh --from-stage F   # re-run stage F onward in the latest run (new attempts, nothing overwritten)
+bash scripts/run_assignment.sh --status
+```
+
+Stages:
+- **A preflight:** provenance, capabilities, a CUDA stream/event check under nvidia-smi, resolved configs, the study
+  plan, and budget predictions frozen read-only.
+- **B correctness:** unit tests and the tiny-model equivalence and fault cases, run fresh on this GPU.
+- **C Qwen3-0.6B reference:** resident vs L2L sync/async, prefetch timing, resume, real-model merge.
+- **D Qwen3-4B memory:** the guarded smoke run, then the profiler.
+- **E DFlash:** the benchmark with repeats, and the smoke run with DFlash rollouts.
+- **F training:** the final run and the LR=0 control, resumed from valid checkpoints. Runs only if B, C's real-model
+  equivalence and D's 8 GB qualification pass.
+- **G evaluation:** held-out base / trained / merged / control, and DFlash acceptance on the final checkpoints.
+- **H Soup checks:** run if Soup is installed, else NOT_TESTED.
+
+The report is always written, also after a failure or Ctrl-C. Every item runs in its own process group under 200 ms
+nvidia-smi telemetry (raw CSV, `qwen_grpo/telemetry.py`). On Qwen3-4B items a watchdog stops the workload at the first
+sample above **8 GB = 8e9 bytes**, the conservative reading of the cap (`configs/studies/assignment.yaml`
+`gpu_memory_cap`; the in-process guard and H11 use 8 GiB, which is reported beside it).
+`scripts/assignment_report.py` judges every assignment clause as PASS / FAIL / BLOCKED / INCONCLUSIVE / NOT_TESTED from
+this run's files only and derives SHIP / DON'T SHIP. Output layout, requirements matrix and gaps:
+[`docs/assignment_matrix.md`](docs/assignment_matrix.md). `scripts/final_run.sh` is deprecated and forwards here.
+
 ## Running
 
 ```bash

@@ -1,0 +1,78 @@
+# Budget of the configuration that actually runs: configs/experiments/qwen3_4b_final.yaml (and the smoke, profile and
+# DFlash configs, which share its batch shape), resolved, under the assignment's cap read as 8e9 bytes. Written before
+# any Qwen3-4B measurement. Architecture sizes are read from config.json and the safetensors headers; every runtime
+# number below is an assumption until measured.
+#
+# Supersedes, without replacing, the historical Step-0 budget configs/budget/qwen3-4b.yaml ->
+# results/budget/predictions/qwen3-4b_8gb.{json,md}, which is kept unchanged as a record of what was predicted first.
+# That historical prediction described another configuration and must not be compared with the final run:
+#   micro_batch_size 6 (the run uses null = 30 rows in one chunk: logits and recomputed-layer activations 5x larger),
+#   schedule layer_major (the engine is micro-batch-major; identical bytes with one micro-batch),
+#   merge on the GPU (export/merge.py merges on the CPU: no GPU memory, no PCIe traffic),
+#   512 evaluation examples (the run evaluates 128), cpu_ram_gib 6.7 of the WSL2 development laptop, and the cap as
+#   8 GiB. tests/test_assignment_provenance.py checks this file against the resolved final config.
+run_name: qwen3-4b-final_8gb
+
+model:
+  id: Qwen/Qwen3-4B
+  weight_dtype: bfloat16
+
+hardware:
+  gpu_vram_gib: 7.4506             # 8e9 bytes: the assignment's "8 GB" read conservatively (configs/studies/assignment.yaml)
+  cpu_ram_gib: 29.8                # 32e9 bytes
+  cpu_ram_source: "requirement, not a measurement: the orchestrator's minimum host RAM for Qwen3-4B (host_requirements in configs/studies/assignment.yaml); the rented host's MemTotal is recorded in environment/host.json"
+  pcie_gb_per_s: 12.0
+  pcie_source: "assumption, unmeasured: effective pinned host-to-device copy rate (PCIe 4.0 x16 peak is ~31.5 GB/s;
+    laptop links and WSL2 are typically far lower)"
+  copy_compute_overlap: true       # copy stream prefetches layer i+1 while layer i computes (2 buffers)
+
+runtime:
+  cuda_context_gib: 0.5            # estimate: CUDA context + cuBLAS workspace, outside the PyTorch allocator
+  allocator_overhead: 0.10         # estimate: max_memory_reserved / max_memory_allocated - 1
+  cpu_process_gib: 2.0             # estimate: Python + torch/CUDA host libraries + transformers + tokenizer + data
+  safety_margin: 0.10              # fraction of each limit kept for unquantified allocations
+
+grpo:                              # configs/default.yaml values, except micro_batch_size
+  prompt_batch_size: 5             # B
+  group_size: 6                    # G
+  rollout_batch_size: 30           # sequences per generate() call (B*G: one call per rollout batch)
+  micro_batch_size: 30             # qwen3_4b_final.yaml has training.micro_batch_size null = all B*G = 30 rows in one chunk
+  prompt_tokens: 100               # longest tokenized prompt over train/validation/test (data/sentiment.json)
+  generation_tokens: 4             # max_new_tokens
+  num_iterations: 1                # K updates per rollout batch
+  reference_logprobs: false        # beta = 0: no reference-model forward
+
+lora:
+  rank: 32
+  targets: last2-attention         # resolved with qwen_grpo.model.target_modules on a meta-device skeleton
+  dtype: float32
+  optimizer: adamw
+
+streaming:
+  resident_decoder_layers: 0       # baseline: everything streamed
+  gpu_layer_buffers: 2             # current + prefetched layer
+  weight_placement: pinned_cpu     # pinned_cpu | pageable_cpu
+  pinned_allocation: per_layer     # one pinned block per layer (per_layer) or per tensor (per_tensor)
+  non_decoder_placement: gpu       # embedding (= tied LM head) and final norm stay on GPU
+  loading_copy: shard              # tensor | shard | model: largest pageable copy alive while filling pinned memory
+  schedule: microbatch_major       # the engine streams every layer per micro-batch (docs/architecture.md); with one
+                                   # micro-batch both schedules move the same bytes
+  activation_checkpoints: gpu      # gpu | cpu
+  kv_cache: gpu                    # gpu | cpu
+  logits: response_only            # response_only (logits_to_keep = R+1) | full_sequence
+
+evaluation:
+  examples: 128                    # data.val_subset of qwen3_4b_final.yaml (subset evaluation every 30 steps)
+  batch_size: 32
+  score_batch_size: 8
+  generation_tokens: 4
+  during_training: true            # AdamW state stays allocated
+
+merge:
+  strategy: tensorwise             # tensorwise | shardwise
+  device: cpu                      # qwen_grpo/export/merge.py merges on the CPU and never touches a GPU
+
+dflash:
+  enabled: false                   # the final run does not use DFlash (dflash.enabled false in qwen3_4b_final.yaml)
+  estimate: true                   # sizes the resident drafter for the DFlash benchmark and smoke run (a separate phase)
+  draft_model_id: z-lab/Qwen3-4B-DFlash-b16

@@ -34,7 +34,7 @@ from pathlib import Path
 import torch
 import yaml
 
-from qwen_grpo import config
+from qwen_grpo import config, evidence
 from qwen_grpo.execution import fixtures as F
 from qwen_grpo.evidence import read_bytes, result_path
 from qwen_grpo.execution.qwen3_forward import explicit_logprobs
@@ -520,7 +520,8 @@ def provenance():
             "packages": {p: importlib.metadata.version(p) for p in ("torch", "transformers", "peft")},
             "torch_cuda": torch.version.cuda, "cuda_available": torch.cuda.is_available(),
             "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-            "torch_threads": torch.get_num_threads()}
+            "torch_threads": torch.get_num_threads(),
+            "code_sha256": evidence.code_sha256()}  # content identity of the experiment code (qwen_grpo/evidence.py)
 
 
 def run(case, config_path, name=None, root=RESULTS, perturbation=None, hypothesis_id=None, **options):

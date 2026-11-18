@@ -34,3 +34,47 @@ def read_result(directory):
 
 def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
+
+
+# --- code identity -------------------------------------------------------------------------------------------------
+# What an experiment's result depends on, by content rather than by commit: every tracked or untracked (not ignored)
+# file under these paths. A commit alone misses uncommitted edits and untracked modules; a "dirty" flag alone cannot
+# tell two different dirty trees apart. The report generator is excluded: changing it changes how evidence is
+# summarised, never the evidence (report_code_sha256 identifies it separately).
+EXPERIMENT_PATHS = ("qwen_grpo", "scripts", "configs", "data", "tests", "research/l2l/hypotheses.yaml",
+                    "research/l2l/tolerances.yaml", "requirements.txt", "pyproject.toml")
+REPORT_PATHS = ("scripts/assignment_report.py",)
+
+
+def file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def code_files(root, paths):
+    """Tracked and untracked, not git-ignored files under `paths` of the repository at `root` (None without git)."""
+    import subprocess
+    r = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
+                        *paths], capture_output=True)
+    return None if r.returncode else sorted(set(p for p in r.stdout.decode().split("\0") if p))
+
+
+def _content_sha256(root, files):
+    h = hashlib.sha256()
+    for f in files:
+        p = Path(root) / f
+        h.update(f.encode() + b"\0" + (file_sha256(p).encode() if p.is_file() else b"<deleted>") + b"\n")
+    return h.hexdigest()
+
+
+def code_sha256(root=ROOT):
+    """Content identity of the experiment code at `root` (None if it cannot be established)."""
+    files = code_files(root, EXPERIMENT_PATHS)
+    return None if files is None else _content_sha256(root, [f for f in files if f not in REPORT_PATHS])
+
+
+def report_code_sha256(root=ROOT):
+    return _content_sha256(root, list(REPORT_PATHS))

@@ -76,6 +76,23 @@ def merged_policy(cfg, path, device):
                            prefetch_depth=x.prefetch_depth if x.backend == "l2l_async" else 0)
 
 
+def evaluation_identity(a, cfg, ckpt, n_test, model_ids):
+    """What this result is evidence of, compared field by field before anyone reuses it (scripts/assignment.py):
+    the exact adapters, the resolved config, the data file and split, the experiment code, the base-model revisions,
+    and any override that departs from the run's own settings."""
+    from qwen_grpo.evidence import code_sha256, file_sha256
+    from qwen_grpo.sentiment import SPLITS_PATH
+    from qwen_grpo.trainer import model_revision
+    cck = runs.latest_checkpoint(a.control) if a.control else None
+    return {"run": a.run, "control": a.control, "checkpoint": runs.rel(ckpt),
+            "checkpoint_adapter_sha256": file_sha256(Path(ckpt) / "adapter_model.safetensors"),
+            "control_checkpoint": runs.rel(cck) if cck else None,
+            "control_adapter_sha256": file_sha256(Path(cck) / "adapter_model.safetensors") if cck else None,
+            "config_sha256": sha256(cfg), "dataset_sha256": file_sha256(SPLITS_PATH), "split": "test", "n_test": n_test,
+            "code_sha256": code_sha256(), "model_revisions": {m: model_revision(m) for m in model_ids},
+            "overrides": {"storage": a.storage, "n": a.n, "step": a.step}}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", required=True)
@@ -119,6 +136,7 @@ def main(argv=None):
 
     ckpt = runs.checkpoint_path(a.run, a.step) if a.step is not None else runs.latest_checkpoint(a.run)
     rep["checkpoint"] = runs.rel(ckpt)
+    rep["identity"] = evaluation_identity(a, cfg, ckpt, len(test), models(cfg))
     model, be = policy(cfg, ckpt, a.device)
     run_model("trained", model, be)
     with model.disable_adapter():

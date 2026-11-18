@@ -13,6 +13,10 @@ the policy moves away from the base. Per policy and max_new:
   GRPO step rollout (sampling) + prepare + one grpo_update, with A and with B as the rollout generator
 Peak GPU memory per part (allocator) and the profiler's nvidia-smi samples; verdict on the budget as in
 scripts/profile_run.py (never PASS without assignment-grade evidence).
+--repeats N repeats every greedy / sampling / GRPO-step measurement N times (interleaved A, B per repeat). Each list is
+kept under *_trials and the scalar keys hold the median. The sampled responses of both arms (decoded, per repeat) are
+kept under sample_plain_responses / sample_dflash_responses for a two-sample distribution check of the 4B sampler
+(scripts/assignment_report.py). That check is weaker than the exact-law test on tiny models (tests/test_dflash.py).
 Writes research/l2l/experiments/<--out or t12_dflash_bench>.json.
 """
 import argparse
@@ -54,6 +58,7 @@ def main(argv=None):
     ap.add_argument("--adapters", type=Path, nargs="*", default=[])
     ap.add_argument("--max-new", type=int, nargs="*", default=[4, 32])
     ap.add_argument("--budget-gib", type=float, default=8.0)
+    ap.add_argument("--repeats", type=int, default=1, help="repetitions of every timed measurement (medians reported)")
     ap.add_argument("--out", default="t12_dflash_bench")
     ap.add_argument("--out-dir", type=Path, help="directory of the JSON result (default research/l2l/experiments; "
                     "e.g. an evidence/<id>/ directory)")
@@ -66,7 +71,7 @@ def main(argv=None):
     tok = AutoTokenizer.from_pretrained(cfg.model.name, padding_side="left")
     rep = {"config": str(a.config), "model": cfg.model.name, "drafter": cfg.dflash.draft_model,
            "execution": dataclasses.asdict(cfg.execution), "B": t.batch_size, "G": t.group_size,
-           "provenance": lab.provenance(), "policies": []}
+           "provenance": lab.provenance(), "repeats": a.repeats, "policies": []}
     device = torch.device("cuda")
     with Profiler(int(a.budget_gib * 2**30)) as prof:
         try:
@@ -105,48 +110,86 @@ def main(argv=None):
                     r = {"max_new": max_new}
                     call = lambda gen: gen(model, enc["input_ids"], enc["attention_mask"], t.group_size, max_new,
                                            EOS_IDS, tok.pad_token_id)
-                    with prof.phase(f"greedy_plain_{max_new}"):
-                        sa, r["greedy_plain_s"], r["greedy_plain_peak"] = timed(lambda: call(plain_g))
-                    with prof.phase(f"greedy_dflash_{max_new}"):
-                        sb, r["greedy_dflash_s"], r["greedy_dflash_peak"] = timed(lambda: call(dfl_g))
-                    st = dfl_g.last
-                    r["greedy_equal"] = bool(torch.equal(sa, sb))
-                    r["greedy_target_passes"], r["greedy_steps"] = st["target_passes"], st["steps"]
-                    r["greedy_accepted_per_pass"] = st["accepted_per_pass"]
-                    r["greedy_passes_per_token"] = st["target_passes"] / max(st["steps"], 1)
-                    with prof.phase(f"sample_plain_{max_new}"):
-                        _, r["sample_plain_s"], r["sample_plain_peak"] = timed(lambda: call(plain_s))
-                    with prof.phase(f"sample_dflash_{max_new}"):
-                        _, r["sample_dflash_s"], r["sample_dflash_peak"] = timed(lambda: call(dfl))
-                    sd = dfl.last
-                    r["sample_accepted_per_pass"], r["sample_passes_per_token"] = (
-                        sd["accepted_per_pass"], sd["target_passes"] / max(sd["steps"], 1))
+                    trials = {k: [] for k in ("greedy_plain_s", "greedy_dflash_s", "greedy_plain_peak", "greedy_dflash_peak",
+                                              "greedy_equal", "greedy_target_passes", "greedy_steps",
+                                              "greedy_accepted_per_pass", "greedy_passes_per_token", "sample_plain_s",
+                                              "sample_dflash_s", "sample_plain_peak", "sample_dflash_peak",
+                                              "sample_accepted_per_pass", "sample_passes_per_token",
+                                              "sample_plain_responses", "sample_dflash_responses")}
+                    P = enc["input_ids"].shape[1]
+                    responses = lambda seqs: [tok.decode(row[P:], skip_special_tokens=True) for row in seqs.cpu()]
+                    for rep in range(a.repeats):
+                        with prof.phase(f"greedy_plain_{max_new}"):
+                            sa, ts, pk = timed(lambda: call(plain_g))
+                        trials["greedy_plain_s"].append(ts), trials["greedy_plain_peak"].append(pk)
+                        with prof.phase(f"greedy_dflash_{max_new}"):
+                            sb, ts, pk = timed(lambda: call(dfl_g))
+                        trials["greedy_dflash_s"].append(ts), trials["greedy_dflash_peak"].append(pk)
+                        st = dfl_g.last
+                        trials["greedy_equal"].append(bool(torch.equal(sa, sb)))
+                        trials["greedy_target_passes"].append(st["target_passes"])
+                        trials["greedy_steps"].append(st["steps"])
+                        trials["greedy_accepted_per_pass"].append(st["accepted_per_pass"])
+                        trials["greedy_passes_per_token"].append(st["target_passes"] / max(st["steps"], 1))
+                        with prof.phase(f"sample_plain_{max_new}"):
+                            xa, ts, pk = timed(lambda: call(plain_s))
+                        trials["sample_plain_s"].append(ts), trials["sample_plain_peak"].append(pk)
+                        trials["sample_plain_responses"].append(responses(xa))
+                        with prof.phase(f"sample_dflash_{max_new}"):
+                            xb, ts, pk = timed(lambda: call(dfl))
+                        trials["sample_dflash_s"].append(ts), trials["sample_dflash_peak"].append(pk)
+                        trials["sample_dflash_responses"].append(responses(xb))
+                        sd = dfl.last
+                        trials["sample_accepted_per_pass"].append(sd["accepted_per_pass"])
+                        trials["sample_passes_per_token"].append(sd["target_passes"] / max(sd["steps"], 1))
+                    med = lambda v: sorted(v)[len(v) // 2]
+                    for k, v in trials.items():
+                        if k.endswith("_responses"):
+                            r[k] = v
+                        elif k == "greedy_equal":
+                            r[k] = all(v)
+                        elif k.endswith("_peak"):
+                            r[k] = max(v)  # memory: the worst trial, not the typical one
+                        elif isinstance(v[0], (int, float)):
+                            r[k] = med(v)
+                        else:
+                            r[k] = v[0]
+                        if not k.endswith("_responses"):
+                            r[f"{k}_trials"] = v
                     row["runs"].append(r)
-                    print(f"{kind}={value} max_new={max_new}: greedy equal {r['greedy_equal']}, passes/token "
-                          f"{r['greedy_passes_per_token']:.2f} (greedy) {r['sample_passes_per_token']:.2f} (sampling), "
-                          f"greedy {r['greedy_plain_s']:.1f}s -> {r['greedy_dflash_s']:.1f}s, sampling "
-                          f"{r['sample_plain_s']:.1f}s -> {r['sample_dflash_s']:.1f}s")
-                # one full GRPO step with each rollout generator (rollout + prepare + update), same policy start
-                for name, gen in (("plain", plain_s), ("dflash", dfl)):
-                    with torch.no_grad():
-                        snapshot = {n: p.detach().clone() for n, p in params.items()}
-                    opt = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
-                    be.sampler = gen
+                    print(f"{kind}={value} max_new={max_new} (x{a.repeats}): greedy equal {r['greedy_equal']}, "
+                          f"passes/token {r['greedy_passes_per_token']:.2f} (greedy) {r['sample_passes_per_token']:.2f} "
+                          f"(sampling), greedy {r['greedy_plain_s']:.1f}s -> {r['greedy_dflash_s']:.1f}s, sampling "
+                          f"{r['sample_plain_s']:.1f}s -> {r['sample_dflash_s']:.1f}s (medians)")
+                # full GRPO steps with each rollout generator (rollout + prepare + update), same policy start, the two
+                # arms interleaved per repeat
+                for rep in range(a.repeats):
+                    for name, gen in (("plain", plain_s), ("dflash", dfl)):
+                        with torch.no_grad():
+                            snapshot = {n: p.detach().clone() for n, p in params.items()}
+                        opt = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
+                        be.sampler = gen
 
-                    def step():
-                        r_ = be.generate_rollouts(tok, prompts, t.group_size, t.max_new_tokens)
-                        rw = group_rewards(decode(tok, r_), [e["label"] for e in examples], t.group_size)
-                        if (rw == rw[:, :1]).all():
-                            rw = torch.tensor([[float((b + k) % 2) for k in range(t.group_size)]
-                                               for b in range(t.batch_size)])
-                        adv, old = prepare(model, r_, rw, t.micro_batch_size, logprobs=be.logprobs)
-                        return grpo_update(model, params, opt, r_, adv, old, t.clip_eps, 0, t.micro_batch_size,
-                                           logprobs=be.logprobs)
-                    with prof.phase(f"grpo_step_{name}"):
-                        _, row[f"grpo_step_{name}_s"], row[f"grpo_step_{name}_peak"] = timed(step)
-                    with torch.no_grad():
-                        for n, p in params.items():
-                            p.copy_(snapshot[n])
+                        def step():
+                            r_ = be.generate_rollouts(tok, prompts, t.group_size, t.max_new_tokens)
+                            rw = group_rewards(decode(tok, r_), [e["label"] for e in examples], t.group_size)
+                            if (rw == rw[:, :1]).all():
+                                rw = torch.tensor([[float((b + k) % 2) for k in range(t.group_size)]
+                                                   for b in range(t.batch_size)])
+                            adv, old = prepare(model, r_, rw, t.micro_batch_size, logprobs=be.logprobs)
+                            return grpo_update(model, params, opt, r_, adv, old, t.clip_eps, 0, t.micro_batch_size,
+                                               logprobs=be.logprobs)
+                        with prof.phase(f"grpo_step_{name}"):
+                            _, s_, pk = timed(step)
+                        row.setdefault(f"grpo_step_{name}_s_trials", []).append(s_)
+                        row.setdefault(f"grpo_step_{name}_peak_trials", []).append(pk)
+                        with torch.no_grad():
+                            for n, p in params.items():
+                                p.copy_(snapshot[n])
+                for name in ("plain", "dflash"):
+                    v = sorted(row[f"grpo_step_{name}_s_trials"])
+                    row[f"grpo_step_{name}_s"] = v[len(v) // 2]
+                    row[f"grpo_step_{name}_peak"] = max(row[f"grpo_step_{name}_peak_trials"])
                 be.sampler = dfl
                 rep["policies"].append(row)
         except KeyboardInterrupt:

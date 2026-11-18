@@ -20,3 +20,6 @@ kaggle/build/
 kaggle/outputs/
 kaggle/submissions.jsonl
 kaggle_working/
+
+# one-command assignment runs (scripts/run_assignment.sh): raw telemetry and reports, kept locally
+assignment_results/

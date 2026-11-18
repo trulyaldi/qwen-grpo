@@ -42,6 +42,20 @@ protocol: research/l2l/protocol.md
 hypotheses: research/l2l/hypotheses.yaml
 tolerances: research/l2l/tolerances.yaml
 
+# Read by scripts/run_assignment.sh (scripts/assignment.py). The assignment says "8 GB of GPU memory as shown by
+# nvidia-smi (CUDA context included)". The conservative reading is 8 GB = 8e9 bytes = 7629.4 MiB = 7.45 GiB: the
+# orchestrator's nvidia-smi watchdog stops a Qwen3-4B workload above it, and requirements are judged against it. The
+# in-process memory.guard of the Qwen3-4B profile (8 GiB = 8.59e9 bytes) and H11's pre-registered criterion (8 GiB) are
+# unchanged; reports show both readings.
+gpu_memory_cap:
+  bytes: 8000000000
+  wording: "8 GB of GPU memory as shown by nvidia-smi (CUDA context included)"
+  binary_reference_bytes: 8589934592     # 8 GiB, the pre-registered H11 threshold, reported beside the cap
+
+host_requirements:                       # Qwen3-4B stages (docs/deployment.md): pinned store ~7.3 GiB, peak RSS est. <= 18.5 GiB
+  ram_bytes_4b: 32000000000
+  disk_bytes_4b: 40000000000
+
 entries:
   # ---------------------------------------------------------------------------------------------------- H01 forward
   - id: H01.lab_sync
@@ -332,9 +346,43 @@ entries:
     min_vram_gib: 8
     configs: [configs/experiments/qwen3_4b_l2l_dflash.yaml]
     steps:
-      - argv: [scripts/dflash_bench.py, --config, configs/experiments/qwen3_4b_l2l_dflash.yaml, --max-new, "4", "32", --out, "{name}"]
+      - argv: [scripts/dflash_bench.py, --config, configs/experiments/qwen3_4b_l2l_dflash.yaml, --max-new, "4", "32", --repeats, "5", --out, "{name}"]
         creates: research/l2l/experiments/{name}.json
     judge: {requirements: [R11, R12]}
+  # End-to-end: the guarded 4-step smoke run with DFlash-drafted rollouts. Its config differs from qwen3_4b_smoke.yaml
+  # only in run.name and the dflash section (same data, seed, batch shape), so the two runs' per-step timings compare a
+  # whole GRPO step with and without DFlash. The final run does not use DFlash.
+  - id: H10.smoke_dflash
+    name: h10_qwen3_4b_smoke_dflash
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true
+    prerequisites: {runs: [qwen3_4b_smoke]}
+    configs: [configs/experiments/qwen3_4b_smoke_dflash.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_smoke_dflash.yaml], creates: "run:qwen3_4b_smoke_dflash"}
+    judge: exit_codes
+  # Acceptance as the policy drifts from the base the drafter was trained on, at real checkpoints of the final run
+  # (step 0 = the base policy). dflash_bench.py exits 0 iff greedy tokens equal plain decoding everywhere and no memory
+  # violation.
+  - id: H10.dflash_drift
+    name: t12_dflash_drift_final
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true
+    prerequisites: {runs: [qwen3_4b_final]}
+    configs: [configs/experiments/qwen3_4b_l2l_dflash.yaml]
+    steps:
+      - argv: [scripts/dflash_bench.py, --config, configs/experiments/qwen3_4b_l2l_dflash.yaml, --b-scales, --adapters,
+               runs/qwen3_4b_final/checkpoints/step0, runs/qwen3_4b_final/checkpoints/step60,
+               runs/qwen3_4b_final/checkpoints/step120, runs/qwen3_4b_final/checkpoints/step210,
+               --max-new, "4", "32", --repeats, "3", --out, "{name}"]
+        creates: research/l2l/experiments/{name}.json
+    judge: exit_codes
 
   # ------------------------------------------------------------------------------------ H11 Qwen3-4B under 8 GB
   - id: H11.smoke
@@ -357,7 +405,7 @@ entries:
     prerequisites: {runs: [qwen3_4b_smoke]}
     configs: [configs/experiments/qwen3_4b_l2l.yaml]
     steps:
-      - argv: [scripts/profile_run.py, --out, "{name}", --config, configs/experiments/qwen3_4b_l2l.yaml, --prediction, results/budget/predictions/qwen3-4b_8gb.json, --budget-gib, "8", --steps, "1", --eval-n, "16"]
+      - argv: [scripts/profile_run.py, --out, "{name}", --config, configs/experiments/qwen3_4b_l2l.yaml, --prediction, results/budget/predictions/qwen3-4b-final_8gb.json, --budget-gib, "8", --steps, "1", --eval-n, "16"]
         creates: research/l2l/experiments/{name}.json
     judge: {requirements: [R13], blocked_means: INCONCLUSIVE}   # criterion: diagnostic-only evidence is INCONCLUSIVE
 

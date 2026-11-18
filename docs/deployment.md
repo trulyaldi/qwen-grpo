@@ -15,6 +15,28 @@ waste money on. Use `tmux` (or `nohup ... &`) so a disconnect does not kill a ru
 Estimates are from the Step-0 calculator (`scripts/budget.py`), not measurements. **Budget evidence (H11) counts only
 if `nvidia-smi` lists the training process with a number**: many containers hide host PIDs. Step 2 checks this.
 
+## One command
+
+After step 1 (environment), the whole protocol below (steps 2–8) runs unattended:
+
+```bash
+tmux new -s assignment
+bash scripts/run_assignment.sh --dry-run     # first: capabilities, blockers, the commands each stage will run
+bash scripts/run_assignment.sh               # then the run; after a disconnect: tmux attach -t assignment
+bash scripts/run_assignment.sh --resume      # after an interruption (refused if the commit, diff or configs changed)
+```
+
+Preflight lists blockers in the first minutes. These are the ones to act on before paying for hours:
+- `per-process nvidia-smi` False: the 8 GB qualification is INCONCLUSIVE and the final run will not start. Use
+  another host.
+- `fixture packages` False: the lab equivalence cases are BLOCKED. Install the pinned torch build.
+- Host RAM or disk below the Qwen3-4B requirement.
+
+Results land in `assignment_results/<run-id>/`. The files to read first are `reports/summary.md` (the three-page
+draft) and `reports/requirements_matrix.md`. Copy the directory off the host (plus `evidence/`,
+`research/l2l/experiments/` and the small files of `runs/`) before destroying it. The steps below are what the script
+does, for running a part by hand.
+
 ## Steps
 
 1. **Environment** (the lab fixtures require exactly these packages):

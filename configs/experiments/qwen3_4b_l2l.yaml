@@ -1,8 +1,9 @@
 # Ticket 11 / H11: Qwen3-4B with the asynchronous L2L backend under the assignment's 8 GB GPU budget: exactly the
 # Qwen3-4B profile (asynchronous prefetching, pinned CPU store, 2 GPU buffers, memory guard). The H11 criterion names
 # this file; qwen3_4b_l2l_sync.yaml and qwen3_4b_resident.yaml differ from it in execution (and budget) only. Profiled by scripts/profile_run.py;
-# predictions in results/budget/predictions/qwen3-4b_8gb.json (which predict a CPU-RAM FAIL at about 15.8 GB on a
-# 6.7 GiB host). Parent of the DFlash and final experiments.
+# compared with results/budget/predictions/qwen3-4b-final_8gb.json (configs/budget/qwen3-4b_final.yaml, the final
+# run's batch shape). The historical Step-0 qwen3-4b_8gb.json (micro-batch 6, GPU merge, 6.7 GiB host) is kept as a
+# record only. Parent of the DFlash and final experiments.
 extends: ../profiles/qwen3_4b.yaml
 
 run:

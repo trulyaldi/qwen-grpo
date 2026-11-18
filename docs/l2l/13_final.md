@@ -12,8 +12,9 @@
   - paired-bootstrap 95% CIs;
   - policy change against base, and LoRA parameter change;
   - a data-separation check.
-- **`scripts/final_run.sh`:** the final Qwen3-4B run (`configs/experiments/qwen3_4b_final.yaml`), resumable, then the
-  LR=0 control (`qwen3_4b_final_lr0.yaml`), the evaluation and the report.
+- **`scripts/final_run.sh`** (now deprecated, it forwards to `scripts/run_assignment.sh`, stages F–G): the final
+  Qwen3-4B run (`configs/experiments/qwen3_4b_final.yaml`), resumable, then the LR=0 control
+  (`qwen3_4b_final_lr0.yaml`), the evaluation and the report.
 - **`scripts/laptop_checks.sh`:** now regenerates the report after the other checks.
 
 ## The final run's design

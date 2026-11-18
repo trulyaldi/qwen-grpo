@@ -36,6 +36,7 @@ from transformers import AutoTokenizer
 from qwen_grpo import runs
 from qwen_grpo.checkpointing import (load_adapter, load_training_state, rel, save_checkpoint, set_rng_state,
                                      training_lock)
+from qwen_grpo.evidence import code_sha256
 from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, require_implemented, sha256
 from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap,
                                   paired_changes, paired_compare, predictions_path, settings, summary, win_matrix)
@@ -141,7 +142,8 @@ def environment(splits, device, models=()):
                        "sha256": hashlib.sha256(SPLITS_PATH.read_bytes()).hexdigest(),
                        "sizes": {s: len(splits[s]) for s in ("train", "validation", "test")}},
            "device": str(device), "host": host(),
-           "models": {m: {"revision": model_revision(m)} for m in models}}
+           "models": {m: {"revision": model_revision(m)} for m in models},
+           "code_sha256": code_sha256()}  # content identity of the experiment code (qwen_grpo/evidence.py)
     if torch.device(device).type == "cuda":
         p = torch.cuda.get_device_properties(device)
         env["gpu"] = {"name": p.name, "capability": f"{p.major}.{p.minor}", "total_gib": p.total_memory / 2**30,
