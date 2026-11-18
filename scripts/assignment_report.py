@@ -123,6 +123,7 @@ class Run:
         self.manifest = read_json(self.dir / "manifest.json") or {}
         self.cap = float((self.manifest.get("gpu_memory_cap") or {}).get("bytes") or 8e9)
         self.cap_gib_ref = float((self.manifest.get("gpu_memory_cap") or {}).get("binary_reference_bytes") or 8 * GIB)
+        self.mode = self.state.get("mode") or "full"
 
     def attempt(self, stage):
         a = self.state["stages"].get(stage, {}).get("attempts", [])
@@ -883,6 +884,137 @@ AUDIT_EXTRA = {  # stage -> (fault-control items of this run, Soup check aimed a
 }
 
 
+GUARD = "the recomputed output differs from the forward's"  # qwen_grpo/execution/backward.py, always-on backward check
+
+
+def unsafe_reuse_finding(it, run_id):
+    """H02.fault_unsafe_reuse (the item `it` of assignment run `run_id`): its lab result split into configurations
+    refused by the backward recompute checksum, configurations that ran (and how many of their comparisons failed), and
+    configurations where the fault went unnoticed. Derived from result.json each time; the recorded status is kept."""
+    if not it or not it.get("evidence_name"):
+        return None
+    r = read_json(EXP / it["evidence_name"] / "result.json")
+    if not r:
+        return {"status": it["status"], "run_id": run_id, "evidence_name": it["evidence_name"], "result": None}
+    refused = {e.split(":")[0].rsplit(".mb", 1)[0] for e in r.get("errors", [])}
+    guard = {e.split(":")[0].rsplit(".mb", 1)[0] for e in r.get("errors", []) if GUARD in e}
+    ran = {}
+    for c in r.get("comparisons", []):
+        ran.setdefault(c["model"], []).append(bool(c.get("pass")))
+    return {"status": it["status"], "run_id": run_id, "evidence_name": it["evidence_name"],
+            "evidence_dir": it.get("evidence_dir"), "status_lab": r.get("status"),
+            "execution_status": r.get("execution_status"), "refused": len(refused),
+            "refused_by_guard": len(guard), "other_errors": len(refused - guard), "ran": len(ran),
+            "ran_all_comparisons_failed": sum(all(not x for x in v) for v in ran.values()),
+            "undetected": sum(all(v) for v in ran.values())}
+
+
+def unsafe_reuse_md(f):
+    if not f:
+        return ["No earlier H02.fault_unsafe_reuse result is recorded."]
+    if f.get("result") is None and "refused" not in f:
+        return [f"H02.fault_unsafe_reuse is {f['status']} in run {f['run_id']}; its lab result "
+                f"{f['evidence_name']} is missing, so it cannot be analysed."]
+    n = f["refused"] + f["ran"]
+    return [
+        f"`H02.fault_unsafe_reuse` (gradient equivalence under async L2L with an injected unsafe buffer reuse) is recorded "
+        f"as **{f['status']}** in run `{f['run_id']}` (lab result `{f['evidence_name']}`: status {f['status_lab']}, "
+        f"execution {f['execution_status']}). The recorded status is kept; the analysis below explains it and does not "
+        "change it.",
+        "",
+        f"- {f['refused_by_guard']} of {n} configurations were refused by the always-on backward recompute checksum "
+        f"(`qwen_grpo/execution/backward.py`, \"{GUARD}\"): no gradients were returned. Other execution errors: "
+        f"{f['other_errors']}.",
+        f"- {f['ran']} of {n} configurations ran; {f['ran_all_comparisons_failed']} of them failed every comparison "
+        "against the resident reference (loss, logits, hidden and LoRA gradients).",
+        f"- Configurations where the fault went unnoticed: **{f['undetected']}**.",
+        "",
+        ("Cause of the FAIL" if f["status"] == "FAIL" else "How the judge reads this case")
+        + ": the `lab_fault` judge (`scripts/experiment.py`) counts a fault as detected only when the "
+        "lab's execution PASSES and its comparisons fail. A refusal by the runtime checksum is recorded as an execution "
+        "failure, so it is judged \"NOT detected\". The checksum predates the fault case. This is a flaw in the test's "
+        "oracle, not evidence of an async L2L defect; the judge was deliberately left unchanged (owner decision).",
+        "",
+        "Limits: (1) training runs with `verify=False`, so the backward checksum is the only runtime guard; in the "
+        f"{f['ran']} configurations that ran, the corruption was caught only by the lab's resident comparison and would be "
+        "silent in training. (2) The fault is a forced, deterministic overwrite, not a real race; it does not prove "
+        "race-freedom. (3) Tiny models only. Runtime integrity protection against asynchronous buffer corruption is therefore "
+        "incomplete" + (". Because the item is FAIL, nothing that depends on it (the full-mode training gate) counts as "
+                        "correctness evidence." if f["status"] == "FAIL" else ".")]
+
+
+REUSE_BANNER = "REUSED PRIOR EVIDENCE — NO NEW TRAINING EXECUTED"
+
+
+def prior_evidence(run):
+    """'<stage> <item>' of every item whose outputs were made outside this run and reused after the provenance check."""
+    return [f"{s} {i['id']}" for s, i in run.all_items() if i.get("prior_evidence")]
+
+
+def conclusions(run, reqs, verdict):
+    """Six separate conclusions; each is a status with its evidence, never inferred from another."""
+    Q = {r["id"]: r for r in reqs}
+    experiment = run.mode == "experiment"
+
+    def w(ids):
+        return worst(Q[i]["status"] for i in ids if i in Q), "; ".join(f"{i} {Q[i]['status']}" for i in ids if i in Q)
+    out = []
+    it = run.item("F", "H12.train_final")
+    logs = {n: run.run_log(n, "F", "H12.train_final") for n in ("qwen3_4b_final", "qwen3_4b_final_lr0")}
+    done = {n: (lg or {}).get("successful_steps") for n, lg in logs.items()}
+    want = {n: configured_steps(run, n) for n in logs}
+    complete = all(done[n] is not None and done[n] == want[n] for n in logs)
+    out.append(("training completed (final run and LR=0 control, every configured update)",
+                ("PASS" if complete else "INCONCLUSIVE") if status_of(it) == "PASS" else status_of(it),
+                f"{why(it, 'H12.train_final')}; updates {done} of {want}"
+                + (f"; {REUSE_BANNER}" if (it or {}).get("prior_evidence") else "")))
+    frozen = {n: (lg or {}).get("frozen_changed") for n, lg in logs.items() if lg}
+    if experiment:
+        waived = {x["item"]: x for x in run.state.get("waivers", [])}
+        b = [i for i in run.items("B") if i["id"] not in waived]
+        st = worst(i["status"] for i in b) if b else "NOT_TESTED"
+        detail = (f"B (reduced): {sum(i['status'] == 'PASS' for i in b)}/{len(b)} PASS"
+                  + "".join(f"; {i['id']} {i['status']}" for i in b if i["status"] != "PASS")
+                  + "".join(f"; known limitation {k} {v['status']} (waived for the F gate, not PASS)"
+                            for k, v in waived.items())
+                  + "; NOT_TESTED in this mode: Qwen3-0.6B real-model equivalence (stage C), sync/CPU lab cases, "
+                    "the pytest suites")
+    else:
+        st, detail = w(["L2", "L3", "L4", "L5"])
+    if any(v != [] for v in frozen.values()):
+        st = "FAIL"
+    out.append(("training correctness established (async L2L forward / gradient / generation / update equal resident; "
+                "frozen base weights unchanged)", st,
+                detail + "; frozen weights: " + (", ".join(f"{n} {'unchanged' if v == [] else v}" for n, v in
+                                                           frozen.items()) or "no training log")))
+    st, d = w(["V1", "V3", "V4"])
+    out.append(("performance improvement established (held-out test, 95% CI vs base; LR=0 control; no reward gaming)",
+                Q["V1"]["status"] if "V1" in Q else "NOT_TESTED", d + ". Successful updates alone are not evidence of "
+                "learning"))
+    st, d = w(["M1", "M2", "M3", "M4"])
+    out.append(("memory compliance established (8,000,000,000 bytes, nvidia-smi per process, CUDA context included)",
+                st, d))
+    st, d = w(["D1", "D2", "D3"])
+    out.append(("DFlash validity established (official drafter; greedy == plain decoding; sampling-law check)", st,
+                d + ". D2 is deterministic greedy equality; D3 is statistical evidence about the sampling law, not "
+                "proof that real-model sampling is exact"))
+    if experiment:
+        out.append(("full assignment qualification established", "NOT_TESTED",
+                    "experiment mode: requirements intentionally omitted are NOT_TESTED and the run cannot qualify; only "
+                    "a full run (bash scripts/run_assignment.sh --full-tests) can give SHIP"))
+    else:
+        ess = [r for r in reqs if r["essential"]]
+        out.append(("full assignment qualification established", "PASS" if verdict == "SHIP" else
+                    worst(r["status"] for r in ess), f"verdict {verdict}"))
+    return [{"conclusion": c, "status": s, "detail": d} for c, s, d in out]
+
+
+def conclusions_md(cons, banner):
+    return ([f"**{banner}**", ""] if banner else []) + ["## Conclusions (each established separately)", "", table(
+        ["conclusion", "status", "evidence"], [[c["conclusion"], f"**{c['status']}**", c["detail"][:500]]
+                                               for c in cons]), ""]
+
+
 def silent_failures_md(run, reqs):
     import importlib.util
     spec = importlib.util.spec_from_file_location("final_report", ROOT / "scripts" / "final_report.py")
@@ -1153,14 +1285,36 @@ def main(run_dir):
     reqs = requirements(run, m)
     ess_bad = [r for r in reqs if r["essential"] and r["status"] != "PASS"]
     verdict = "SHIP" if not ess_bad else "DON'T SHIP"
+    if run.mode == "experiment":  # never SHIP: omitted requirements are NOT_TESTED, H02 is waived, not passed
+        verdict = "NO SHIP VERDICT (experiment mode)"
     must = [f"{r['id']} {r['clause']}: {r['status']} - {r['detail'][:200]}" for r in ess_bad]
+    cons = conclusions(run, reqs, verdict)
+    banner = REUSE_BANNER if (run.item("F", "H12.train_final") or {}).get("prior_evidence") else None
+    reused = prior_evidence(run)
+    waivers = run.state.get("waivers", [])
+    h02 = run.item("B", "H02.fault_unsafe_reuse")
+    h02_md = ["## Known limitation: H02.fault_unsafe_reuse", ""] + (
+        unsafe_reuse_md(unsafe_reuse_finding(h02, run.state.get("run_id"))) if h02 and h02.get("evidence_name") else
+        [f"H02.fault_unsafe_reuse is {status_of(h02)} in this run ({why(h02, 'H02.fault_unsafe_reuse')}); earlier "
+         "evidence (evidence/*_H02.fault_unsafe_reuse) recorded it as FAIL: 48 of 80 injected configurations refused "
+         "by the backward checksum, 32 ran to results caught only by the offline resident comparison. Runtime "
+         "integrity protection against asynchronous buffer corruption is incomplete."]) + [""]
+    head = conclusions_md(cons, banner) + (
+        ["Outputs made outside this run and reused after the provenance check: " + ", ".join(reused), ""]
+        if reused else []) + ([f"Mode: **experiment** (stages {run.manifest.get('stage_order') or 'ADBEFGH'}). This is "
+                               "experimental evidence, not a qualification run; the verdict rule below is not applied.",
+                               ""] if run.mode == "experiment" else []) + h02_md
     from qwen_grpo.evidence import code_sha256, report_code_sha256
     run_code = (run.state.get("identity") or {}).get("experiment_code_sha256")
     report_identity = {"report_code_sha256": report_code_sha256(), "experiment_code_sha256_of_run": run_code,
                        "experiment_code_sha256_now": code_sha256(),
                        "note": "the evidence was produced by the run's experiment code; this report only summarises it"}
-    (d / "requirements.json").write_text(json.dumps({"verdict": verdict, "rule": "SHIP iff every essential requirement "
-                                                     "is PASS", "must_change": must, "requirements": reqs,
+    (d / "requirements.json").write_text(json.dumps({"verdict": verdict, "mode": run.mode,
+                                                     "rule": "SHIP iff every essential requirement is PASS"
+                                                     + ("; never SHIP in experiment mode" if run.mode == "experiment"
+                                                        else ""), "conclusions": cons, "reuse_banner": banner,
+                                                     "prior_evidence": reused, "waivers": waivers,
+                                                     "must_change": must, "requirements": reqs,
                                                      "report_identity": report_identity,
                                                      "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")},
                                                     indent=1, default=str) + "\n")
@@ -1221,6 +1375,7 @@ def main(run_dir):
     (R / "experimental_results.md").write_text(experimental_md(run, m))
     (R / "limitations.md").write_text(limitations_md(run, reqs, m))
     summ = summary_md(run, reqs, verdict, must, m)
+    summ = summ.replace("\n## Verdict\n", "\n" + "\n".join(head) + "\n## Verdict\n", 1)
     words = len(summ.split())
     if words > 1500:
         summ += f"\n> Length check: {words} words; a three-page report holds about 1500. Cut before submitting.\n"
@@ -1229,8 +1384,10 @@ def main(run_dir):
         ["id", "requirement", "status"], [[r["id"], r["clause"], r["status"]] for r in reqs]) + "\n\n"
         + "\n".join(memory_md(run, m).splitlines()[4:]) + "\n")
     (R / "final_verdict.md").write_text(
-        f"# Final verdict: {verdict}\n\nRule (fixed before the run): SHIP only if every essential requirement is PASS. "
-        "The verdict is computed by scripts/assignment_report.py from requirements.json; it is never written by hand.\n\n"
+        f"# Final verdict: {verdict}\n\nRule (fixed before the run): SHIP only if every essential requirement is PASS"
+        + (" and the run is a full qualification run (never in experiment mode)" if run.mode == "experiment" else "")
+        + ". The verdict is computed by scripts/assignment_report.py from requirements.json; it is never written by hand."
+        "\n\n" + "\n".join(head) + "\n"
         + table(["essential requirement", "status", "detail"],
                 [[f"{r['id']} {r['clause']}", r["status"], r["detail"][:300]] for r in reqs if r["essential"]])
         + ("\n\n## What must change first\n\n" + "\n".join(f"- {x}" for x in must) if must else "") + "\n")
@@ -1246,8 +1403,13 @@ def main(run_dir):
     (d / "checksums.sha256").write_text("\n".join(lines) + "\n")
     print(f"verdict: {verdict} ({sum(r['status'] == 'PASS' for r in reqs)}/{len(reqs)} requirements PASS); "
           f"reports in {d / 'reports'}")
+    if banner:
+        print(banner)
     for r in reqs:
         print(f"  {r['status']:12s} {r['id']:4s} {r['clause']}")
+    print("conclusions:")
+    for c in cons:
+        print(f"  {c['status']:12s} {c['conclusion']}")
     return 0 if verdict == "SHIP" else 1
 
 

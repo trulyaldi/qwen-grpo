@@ -433,3 +433,41 @@ def test_without_per_process_nvidia_smi_the_allocator_figures_do_not_make_memory
     _, _, R, req = result(tmp)
     assert R["T7"]["status"] == "INCONCLUSIVE" and R["T6"]["status"] == "INCONCLUSIVE"
     assert "1.300 GiB" in R["T6"]["detail"] and req["verdict"] == "LOCAL TRAINING INCOMPLETE"
+
+
+def test_experiment_flag_names_the_default_mode_and_resume_selects_runs_by_mode(fast):
+    tmp, e = fast
+    p = run(e, "--experiment")
+    assert p.returncode == 0, p.stdout[-3000:]
+    [first] = sorted((tmp / "results").iterdir())
+    assert json.loads((first / "state.json").read_text())["local_mode"] == "fast"
+    assert json.loads((first / "manifest.json").read_text())["command"].endswith("--experiment")
+    req = json.loads((first / "requirements.json").read_text())
+    con = {c["conclusion"].split(" (")[0]: c["status"] for c in req["conclusions"]}
+    assert con["training completed"] == "PASS" and con["full assignment qualification established"] == "NOT_TESTED"
+    assert con["DFlash validity established"] == "NOT_TESTED" and req["reuse_banner"] is None
+    run(e, "--full-tests")  # a newer run in the other mode
+    newer = sorted((tmp / "results").iterdir())[-1]
+    assert newer != first and json.loads((newer / "state.json").read_text())["local_mode"] == "full"
+    p = run(e, "--experiment", "--resume")  # continues the experiment run, not the newer full one
+    assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-2000:]
+    assert json.loads((first / "state.json").read_text())["history"][-1]["event"] == "resume"
+    assert json.loads((newer / "state.json").read_text())["history"][-1]["event"] == "new"
+    assert run(e, "--experiment", "--full-tests").returncode == 2
+    assert run(e, "--experiment", "--fresh", "--resume").returncode == 2
+
+
+def test_fresh_moves_existing_local_runs_aside_and_trains_again(fast):
+    tmp, e = fast
+    for name in ("local_qwen3_0.6b_smoke", "local_qwen3_0.6b_streaming"):
+        (tmp / "runs" / name).mkdir(parents=True)
+        (tmp / "runs" / name / "manifest.json").write_text(json.dumps({"status": "completed"}))
+    p = run(e, "--experiment", "--dry-run")
+    assert "--fresh would move aside:" in p.stdout and "local_qwen3_0.6b_streaming" in p.stdout
+    p = run(e, "--experiment", "--fresh")
+    assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-2000:]
+    d, state, R, req = result(tmp)
+    moved = json.loads((d / "manifest.json").read_text())["archived_by_fresh"]
+    assert len(moved) == 2 and all(".archived-" in m["to"] for m in moved)
+    assert len(list((tmp / "runs").glob("local_qwen3_0.6b_streaming.archived-*"))) == 1
+    assert "trained in this launch" in R["T4"]["detail"] and req["reuse_banner"] is None

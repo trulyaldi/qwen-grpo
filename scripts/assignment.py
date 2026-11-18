@@ -33,6 +33,18 @@ Never run here: opt_in study entries (H12.train_extended = the 210-update contin
 check_no_opt_in refuses a stage list naming one.
   H audit          Soup checks if Soup is installed (else NOT_TESTED); the silent-failure matrix is built by the report
 
+Two modes, recorded per run in state.json (`mode`; runs made before it existed are "full"):
+  full        (default; --full-tests is an alias) everything above. The only mode that can produce SHIP.
+  experiment  --experiment: the stages run in the order A D B E F G H; C (Qwen3-0.6B reference) is not run and its
+              requirements are NOT_TESTED. B is reduced to the async-L2L lab cases the final run depends on (forward,
+              gradient, generation, update; this GPU), the two unsafe-reuse fault controls, tiny resume and merge, and
+              the DFlash unit tests - no full pytest suites, no sync / CPU lab matrix. F's gate: those B items PASS
+              except H02.fault_unsafe_reuse (a known FAIL, recorded as a waived limitation, never as PASS); D and E's
+              memory and DFlash gates are unchanged. The report never gives SHIP for an experiment run.
+--resume continues the latest run of the requested mode only; --fresh (new runs only) moves the fixed-name training
+runs and Qwen3-4B results of the mode's stages aside to <path>.archived-<UTC> (never deleted) so they are re-run.
+Every item's stdout/stderr is streamed live with a heartbeat every ASSIGNMENT_HEARTBEAT_S seconds (default 30).
+
 Statuses: PASS, FAIL, BLOCKED, INCONCLUSIVE, NOT_TESTED. An item's status is what its tool judged (never its exit code
 alone); a capped item whose telemetry shows a sample above the cap is FAIL whatever the tool said. Resume re-runs only
 stages that did not finish. Evidence that predates this run is re-run under a new name (stages B, C) or, where that is
@@ -52,6 +64,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -112,6 +125,25 @@ BUDGET_CONFIGS = ("configs/budget/qwen3-4b_final_dflash.yaml", "configs/budget/q
                   "configs/budget/qwen3-4b.yaml", "configs/budget/qwen3-0.6b.yaml")
 FINAL_RUNS = {"qwen3_4b_final": "configs/experiments/qwen3_4b_final.yaml",
               "qwen3_4b_final_lr0": "configs/experiments/qwen3_4b_final_lr0.yaml"}
+
+# --experiment: prioritise the Qwen3-4B experiments; the full qualification protocol above is unchanged
+MODE, MODE_KEY = "full", "mode"  # the active mode, and its key in state.json (scripts/assignment_local.py: local_mode)
+MODES = ("full", "experiment")
+EXPERIMENT_STAGES = "ADBEFGH"
+EXPERIMENT_STAGE_ENTRIES = {
+    "B": ["H01.lab_async_cuda", "H01.fault_unsafe_reuse", "H02.lab_async_cuda", "H02.fault_unsafe_reuse",
+          "H04.lab_async_cuda", "H05.lab_async_cuda", "H08.resume_tiny_cpu", "H09.merge_tiny_cpu"],
+    **{s: STAGE_ENTRIES[s] for s in "DEFG"},
+}
+PYTEST_DFLASH = ["tests/test_dflash.py", "tests/test_dflash_training.py"]
+# H02.fault_unsafe_reuse stays FAIL (its lab_fault judge counts a refusal by the backward checksum as "not detected";
+# 32 of 80 injected configurations ran to wrong results caught only by the offline resident comparison). It is the
+# only item experiment mode does not require for F: recorded in state["waivers"] and the report, never as PASS.
+WAIVED = {"H02.fault_unsafe_reuse": "historical fault-injection FAIL (runtime protection against async buffer "
+                                    "corruption is incomplete); experiment mode trains without it, the report lists it "
+                                    "as a known limitation, and no qualification claim depends on it"}
+EXPERIMENT_ESSENTIAL_B = ["dflash_tests"] + [i for i in EXPERIMENT_STAGE_ENTRIES["B"] if i not in WAIVED]
+EXPERIMENT_BUDGET_CONFIGS = BUDGET_CONFIGS[:2]  # the final configuration's budgets; the Step-0 ones are history
 
 STOP = {"signal": None}  # set by SIGINT/SIGTERM: finish the current item gracefully, then stop
 
@@ -298,7 +330,123 @@ def install_signals():
         signal.signal(sig, _forward)
 
 
+HEARTBEAT_S = float(os.environ.get("ASSIGNMENT_HEARTBEAT_S", "30"))
+STEP_LINE = re.compile(r"^step\s+(\d+)\s+\(attempt")
+EVIDENCE_LINE = re.compile(r"-> evidence/(\S+)")
+
+
+def descendants(pid):
+    """[(pid, command line)] of every live descendant of `pid` (Linux /proc), parents first."""
+    kids = {}
+    for p in Path("/proc").glob("[0-9]*"):
+        try:
+            ppid = int((p / "stat").read_text().rsplit(")", 1)[1].split()[1])
+            kids.setdefault(ppid, []).append((int(p.name), (p / "cmdline").read_bytes().replace(b"\0", b" ")
+                                              .decode(errors="replace").strip()))
+        except (OSError, IndexError, ValueError):
+            continue
+    out, todo = [], [pid]
+    while todo:
+        for c in kids.get(todo.pop(0), []):
+            out.append(c)
+            todo.append(c[0])
+    return out
+
+
+class Live(threading.Thread):
+    """Streams an item's output files to the terminal as they grow (stdout.log, stderr.log, and the step logs of the
+    dispatcher's evidence directory), with a heartbeat; keeps <run>/active.json current. Reads files only: the raw
+    logs are written by run_item_quiet and never modified."""
+
+    def __init__(self, out_dir, argv):
+        super().__init__(daemon=True)
+        self.out_dir, self.argv, self.t0, self.done = Path(out_dir), argv, time.time(), threading.Event()
+        self.run_dir = next((p for p in self.out_dir.parents if (p / "state.json").exists()), None)
+        self.files, self.step, self.pids, self.last_out = {}, None, [], time.time()
+        self.started = utc()
+
+    def tail(self, path, label):
+        pos, buf = self.files.get(path, (0, b""))
+        try:
+            with open(path, "rb") as f:
+                f.seek(pos)
+                data = f.read()
+        except OSError:
+            return
+        lines = (buf + data).replace(b"\r", b"\n").split(b"\n")
+        self.files[path] = (pos + len(data), lines.pop())
+        for raw in lines:
+            line = raw.decode(errors="replace").rstrip()
+            if not line:
+                continue
+            self.last_out = time.time()
+            if m := STEP_LINE.match(line):
+                self.step = int(m[1])
+            if m := EVIDENCE_LINE.search(line):
+                for root in (EVIDENCE, ROOT / "evidence"):
+                    if (root / m[1]).exists():
+                        self.files.setdefault(root / m[1] / "raw", None)
+            print(f"   {label}| {line}", flush=True)
+
+    def poll(self):
+        for name in ("stdout.log", "stderr.log"):
+            self.tail(self.out_dir / name, "" if name == "stdout.log" else "stderr")
+        for raw_dir in [k for k, v in self.files.items() if v is None]:  # an evidence raw/ directory: its step logs
+            for log in sorted(raw_dir.glob("step*.log")):
+                self.tail(log, log.stem)
+            self.files[raw_dir] = None
+
+    def active(self, final=False):
+        if self.run_dir is None:
+            return
+        rec = {"item": self.out_dir.name, "argv": self.argv, "raw_dir": rel(self.out_dir), "started_utc": self.started,
+               "elapsed_s": round(time.time() - self.t0, 1), "orchestrator_pid": os.getpid(),
+               "pids": [{"pid": p, "cmd": c[:300]} for p, c in self.pids], "last_step": self.step,
+               "updated_utc": utc(), "running": not final}
+        write_json(self.run_dir / "active.json", rec)
+
+    def heartbeat(self):
+        self.pids = descendants(os.getpid())
+        main = next((f"{p} ({c[:120]})" for p, c in reversed(self.pids) if "run.py" in c or "pytest" in c), None)
+        e = int(time.time() - self.t0)
+        print(f"   [heartbeat {utc()}] {self.out_dir.name}: elapsed {e // 60}m{e % 60:02d}s, pids "
+              f"{[p for p, _ in self.pids if 'nvidia-smi' not in _]}" + (f", workload pid {main}" if main else "")
+              + f", trainer step {self.step if self.step is not None else '-'}, last output "
+              f"{int(time.time() - self.last_out)}s ago", flush=True)
+        self.active()
+
+    def run(self):
+        print(f"-> {self.out_dir.name}: started {self.started}\n   $ {' '.join(map(str, self.argv))}", flush=True)
+        time.sleep(0.5)
+        self.pids = descendants(os.getpid())
+        print(f"   pid {[p for p, c in self.pids if 'nvidia-smi' not in c][:4]}", flush=True)
+        self.active()
+        beat = time.time()
+        while not self.done.wait(0.5):
+            self.poll()
+            if time.time() - beat >= HEARTBEAT_S:
+                beat = time.time()
+                self.heartbeat()
+
+    def stop(self):
+        self.done.set()
+        self.join(timeout=5)
+        self.poll()
+        self.active(final=True)
+        print(f"<- {self.out_dir.name}: ended after {time.time() - self.t0:.0f} s", flush=True)
+
+
 def run_item(out_dir, argv, env=None, cap=None, telemetry_on=True):
+    """run_item_quiet with the item's output streamed live (Live)."""
+    live = Live(out_dir, argv)
+    live.start()
+    try:
+        return run_item_quiet(out_dir, argv, env=env, cap=cap, telemetry_on=telemetry_on)
+    finally:
+        live.stop()
+
+
+def run_item_quiet(out_dir, argv, env=None, cap=None, telemetry_on=True):
     """Run `argv` from the repository root in its own process group, under telemetry. Returns the record. On a
     watchdog violation or a stop signal: SIGINT to the group, SIGTERM after GRACE_S, SIGKILL after 1.5 GRACE_S."""
     out_dir = Path(out_dir)
@@ -600,6 +748,9 @@ def foreign_check(entry, cap_facts):
             ev_code = _find(data, "code_sha256")
             if ev_code is None or code is None or ev_code != code:
                 problems.append(f"{o}: experiment code {_short(ev_code)!r} != current {_short(code)!r}")
+        if o.startswith("run:") and MODE == "full" and (by := started_in_other_modes(o[4:])):
+            problems.append(f"{o}: trained by {', '.join(by)}; a full qualification run never reuses training from "
+                            "another mode")
         if o.startswith("run:"):
             cfg_path = run_configs(entry).get(o[4:])
             if cfg_path and config.sha256(config.load(ROOT / cfg_path)) != data.get("config_sha256"):
@@ -607,6 +758,20 @@ def foreign_check(entry, cap_facts):
         if not problems:
             notes.append(f"{o}: same GPU model ({name}), same experiment code and configuration")
     return (not problems), "; ".join(problems or notes)
+
+
+def mode_of_state(s):
+    return (s or {}).get(MODE_KEY) or "full"
+
+
+def started_in_other_modes(name):
+    """'<run-id> (<mode>)' of every assignment run under RESULTS, in another mode than this one, that started runs/<name>."""
+    out = []
+    for d in sorted(RESULTS.glob("*")) if RESULTS.exists() else []:
+        s = read_json(d / "state.json")
+        if s and mode_of_state(s) != MODE and name in s.get("started_runs", []):
+            out.append(f"assignment run {d.name} ({mode_of_state(s)} mode)")
+    return out
 
 
 def run_entry(run_dir, state, stage, entry_id, entries, cap, cap_facts, attempt_dir):
@@ -641,7 +806,8 @@ def run_entry(run_dir, state, stage, entry_id, entries, cap, cap_facts, attempt_
     before = evidence_dirs(entry_id)
     argv = [*dispatcher(), "run", "--entry", entry_id] + (["--again"] if again else [])
     rec = run_item(attempt_dir / entry_id.replace("/", "_"), argv, cap=cap)
-    rec.update(id=entry_id, kind="entry", again=again, reused=bool(reused_note))
+    rec.update(id=entry_id, kind="entry", again=again, reused=bool(reused_note),
+               prior_evidence=bool(reused_note))  # outputs made outside this run, reused after the provenance check
     new = sorted(evidence_dirs(entry_id) - before)
     stdout = (ROOT / rec["stdout"]).read_text(errors="replace") if (ROOT / rec["stdout"]).exists() else ""
     if new:
@@ -927,7 +1093,7 @@ def gate(stage, state):
             if not r or r["status"] != "PASS":
                 why.append(f"stage B: {i} is {r and r['status']}")
         r = item(state, "C", "H05.real_0.6b_bf16")
-        if not r or r["status"] != "PASS":
+        if "C" in STAGES and (not r or r["status"] != "PASS"):  # experiment mode has no stage C
             why.append(f"stage C: H05.real_0.6b_bf16 is {r and r['status']}")
         for i in ("H11.smoke", "H11.profile"):
             r = item(state, "D", i)
@@ -965,9 +1131,14 @@ def stage_ids(stage):
     return STAGE_ENTRIES.get(stage, [])
 
 
+def at_or_after(stage, ref):
+    """`stage` runs at or after `ref` in this mode's order (experiment mode runs D before B)."""
+    return stage in STAGES and ref in STAGES and STAGES.index(stage) >= STAGES.index(ref)
+
+
 def carried(state, stage, item_id):
     """An item finished (not interrupted) in an earlier attempt of this stage, unless the stage is being forced."""
-    if state.get("force_from") and stage >= state["force_from"]:
+    if state.get("force_from") and at_or_after(stage, state["force_from"]):
         return None
     for a in reversed(state["stages"].get(stage, {}).get("attempts", [])[:-1]):
         for i in a.get("items", []):
@@ -994,10 +1165,11 @@ def stage_entries(stage, run_dir, state, attempt_dir, study, entries):
     return items
 
 
-def stage_B(run_dir, state, attempt_dir, study, entries):
+def stage_B(run_dir, state, attempt_dir, study, entries, suites=None):
     items = []
-    for item_id, paths, cuda in (("unit_tests_cpu", PYTEST_CPU, False), ("silent_failure_tests", PYTEST_SILENT, False),
-                                 ("unit_tests_cuda", PYTEST_CUDA, True)):
+    for item_id, paths, cuda in suites or (("unit_tests_cpu", PYTEST_CPU, False),
+                                           ("silent_failure_tests", PYTEST_SILENT, False),
+                                           ("unit_tests_cuda", PYTEST_CUDA, True)):
         prev = carried(state, "B", item_id)
         if prev:
             items.append(prev)
@@ -1010,6 +1182,16 @@ def stage_B(run_dir, state, attempt_dir, study, entries):
         last_attempt(state, "B")["items"] = list(items)
         save_state(run_dir, state)
     return items + stage_entries("B", run_dir, state, attempt_dir, study, entries)
+
+
+def stage_B_experiment(run_dir, state, attempt_dir, study, entries):
+    """The DFlash unit tests and the reduced lab list; the waived item's outcome is recorded as it is."""
+    items = stage_B(run_dir, state, attempt_dir, study, entries, suites=(("dflash_tests", PYTEST_DFLASH, True),))
+    state["waivers"] = [{"item": i["id"], "stage": "B", "status": i["status"], "detail": i.get("detail"),
+                         "evidence_dir": i.get("evidence_dir"), "waiver": WAIVED[i["id"]]}
+                        for i in items if i["id"] in WAIVED]
+    save_state(run_dir, state)
+    return items
 
 
 def stage_C(run_dir, state, attempt_dir, study, entries):
@@ -1099,7 +1281,8 @@ def cmd_stage(args):
     install_signals()
     st = state["stages"].setdefault(stage, {"name": STAGE_NAMES[stage], "attempts": []})
     last = st["attempts"][-1] if st["attempts"] else None
-    forced = state.get("force_from") and stage >= state["force_from"] and not state.get("forced_done", {}).get(stage)
+    forced = state.get("force_from") and at_or_after(stage, state["force_from"]) \
+        and not state.get("forced_done", {}).get(stage)
     if last and last.get("final") and not forced:
         print(f"stage {stage} ({STAGE_NAMES[stage]}): {last['status']} in attempt {last['n']} - not re-run")
         return 0
@@ -1142,17 +1325,64 @@ def cmd_stage(args):
 
 # --- init, status, dry-run ---------------------------------------------------------------------------------------
 
-def latest_run():
+def install_experiment():
+    """Point this module at the experiment protocol (module globals are read at call time)."""
+    global MODE, STAGES, STAGE_ENTRIES, ESSENTIAL_B, FRESH, BUDGET_CONFIGS
+    MODE, STAGES, STAGE_ENTRIES = "experiment", EXPERIMENT_STAGES, EXPERIMENT_STAGE_ENTRIES
+    ESSENTIAL_B, FRESH, BUDGET_CONFIGS = EXPERIMENT_ESSENTIAL_B, {"B"}, EXPERIMENT_BUDGET_CONFIGS
+    RUNNERS["B"] = stage_B_experiment
+
+
+def latest_run(mode=None):
+    """The latest run directory (of `mode` only, if given)."""
     runs = sorted(p for p in RESULTS.glob("*") if (p / "state.json").exists()) if RESULTS.exists() else []
+    if mode is not None:
+        runs = [p for p in runs if mode_of_state(load_state(p)) == mode]
     return runs[-1] if runs else None
+
+
+def fresh_targets():
+    """Outputs with fixed names that this mode's non-FRESH stages would reuse: training runs and Qwen3-4B results."""
+    _, entries = load_study()
+    out = []
+    for s in STAGES:
+        if s in FRESH:
+            continue
+        for eid in STAGE_ENTRIES.get(s, []):
+            for o in entry_outputs(entries[eid]) if eid in entries else []:
+                p = RUNS_DIR / o[4:] if o.startswith("run:") else repo_path(o)
+                if p.exists() and p not in out:
+                    out.append(p)
+    return out
+
+
+def archive_fresh(stamp_):
+    """--fresh: move each existing fixed-name output aside to <path>.archived-<stamp> (nothing is deleted)."""
+    moved = []
+    for p in fresh_targets():
+        dst = p.with_name(f"{p.name}.archived-{stamp_}")
+        p.rename(dst)
+        moved.append({"from": rel(p), "to": rel(dst)})
+        print(f"--fresh: moved {rel(p)} -> {rel(dst)}", file=sys.stderr)
+    return moved
 
 
 def cmd_init(args):
     ident = code_identity()
     if args.resume or args.from_stage:
-        run_dir = Path(args.run_dir) if args.run_dir else latest_run()
+        if args.fresh:
+            print("--fresh starts a new run; it cannot be combined with --resume or --from-stage", file=sys.stderr)
+            return 2
+        run_dir = Path(args.run_dir) if args.run_dir else latest_run(MODE)
         if run_dir is None:
-            print("no earlier assignment run to resume under " + str(RESULTS), file=sys.stderr)
+            other = latest_run()
+            print(f"no earlier assignment run in {MODE} mode to resume under {RESULTS}"
+                  + (f" (the latest run, {other.name}, was started in {mode_of_state(load_state(other))} mode)"
+                     if other else ""), file=sys.stderr)
+            return 2
+        if mode_of_state(load_state(run_dir)) != MODE:
+            print(f"refusing: {run_dir} was started in {mode_of_state(load_state(run_dir))} mode, not {MODE}",
+                  file=sys.stderr)
             return 2
         state = load_state(run_dir)
         diffs = [k for k in EXPERIMENT_IDENTITY if state["identity"].get(k) != ident.get(k) or ident.get(k) is None]
@@ -1182,25 +1412,30 @@ def cmd_init(args):
     run_id = stamp()
     run_dir = RESULTS / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
+    archived = archive_fresh(run_id) if args.fresh else []
     untracked = (git("status", "--porcelain", "--untracked-files=all") or "").splitlines()
-    manifest = {"run_id": run_id, "created_utc": utc(), "command": "bash scripts/run_assignment.sh",
+    manifest = {"run_id": run_id, "created_utc": utc(),
+                "command": "bash scripts/run_assignment.sh" + (" --experiment" if MODE == "experiment" else "")
+                + (" --fresh" if args.fresh else ""), MODE_KEY: MODE, "stage_order": STAGES,
                 "identity": ident, "untracked_files": [l[3:] for l in untracked if l.startswith("??")],
                 "study": rel(STUDY), "gpu_memory_cap": load_study()[0]["gpu_memory_cap"],
-                "python": sys.version.split()[0]}
+                "python": sys.version.split()[0], "archived_by_fresh": archived}
     write_json(run_dir / "manifest.json", manifest)
-    save_state(run_dir, {"run_id": run_id, "created_utc": manifest["created_utc"], "identity": ident, "stages": {},
-                         "produced": [], "history": [{"utc": utc(), "event": "new"}]})
+    save_state(run_dir, {"run_id": run_id, "created_utc": manifest["created_utc"], MODE_KEY: MODE,
+                         "identity": ident, "stages": {}, "produced": [], "archived_by_fresh": archived,
+                         "history": [{"utc": utc(), "event": "new" + (" --fresh" if args.fresh else "")}]})
     print(run_dir)
     return 0
 
 
 def cmd_status(args):
-    run_dir = Path(args.run_dir) if args.run_dir else latest_run()
+    run_dir = Path(args.run_dir) if args.run_dir else latest_run(os.environ.get("ASSIGNMENT_MODE") or None)
     if run_dir is None:
         print("no assignment run yet")
         return 1
     state = load_state(run_dir)
-    print(f"run {run_dir} (commit {str(state['identity']['git_commit'])[:10]}, updated {state.get('updated')})")
+    print(f"run {run_dir} (commit {str(state['identity']['git_commit'])[:10]}, updated {state.get('updated')}, "
+          f"mode {mode_of_state(state)})")
     for s in STAGES:
         st = state["stages"].get(s)
         if not st:
@@ -1232,10 +1467,16 @@ def cmd_dry_run(args):
           f"Linux {cap.get('linux_native')}, fixture packages {cap.get('fixture_packages')}, host RAM {cap.get('host_ram_gib')} GiB")
     c = study["gpu_memory_cap"]
     print(f"GPU memory cap: {c['bytes']:.0f} bytes = {c['bytes'] / 2**30:.3f} GiB ({c['wording']})")
+    print(f"mode: {MODE}; stage order: {' '.join(STAGES)}")
+    if MODE == "experiment":
+        print_experiment_plan()
     print("A preflight: provenance, capabilities, CUDA streams/events under nvidia-smi, resolved configs, study plan, "
-          "budget predictions -> predictions/ (read-only)")
-    print(f"B correctness: pytest {' '.join(PYTEST_CPU + PYTEST_SILENT)} (CPU); {' '.join(PYTEST_CUDA)} (CUDA)")
-    for s in "BCDEFG":
+          f"budget predictions {', '.join(BUDGET_CONFIGS)} -> predictions/ (read-only)")
+    if MODE == "experiment":
+        print(f"B essential correctness: pytest {' '.join(PYTEST_DFLASH)} (CUDA); no full pytest suites")
+    else:
+        print(f"B correctness: pytest {' '.join(PYTEST_CPU + PYTEST_SILENT)} (CPU); {' '.join(PYTEST_CUDA)} (CUDA)")
+    for s in [x for x in STAGES if x in "BCDEFG"]:
         if s == "F":
             for name in FINAL_RUNS:
                 m = read_json(RUNS_DIR / name / "manifest.json")
@@ -1249,7 +1490,27 @@ def cmd_dry_run(args):
     if "H" in STAGES:
         print("H audit: Soup " + ("found: " + (os.environ.get("SOUP_BIN") or shutil.which("soup"))
                                   if (os.environ.get("SOUP_BIN") or shutil.which("soup")) else "not installed: NOT_TESTED"))
+    t = fresh_targets()
+    print("--fresh would move aside: " + (", ".join(rel(p) for p in t) if t else "nothing (no fixed-name output exists)"))
     return 0
+
+
+def print_experiment_plan():
+    """The resolved facts an experiment run depends on, read from the configs (not from documentation)."""
+    from qwen_grpo import config
+    for name, path in FINAL_RUNS.items():
+        c = config.load(ROOT / path)
+        print(f"{name}: {c.model.name} {c.model.dtype}, {c.training.max_steps} updates, B={c.training.batch_size} "
+              f"G={c.training.group_size}, {c.training.max_new_tokens} new tokens, lr {c.training.learning_rate}, clip "
+              f"{c.training.clip_eps}, LoRA r{c.lora.rank}/a{c.lora.alpha} {c.lora.targets}, {c.execution.backend}, "
+              f"disk streaming {c.streaming.enabled}, DFlash {c.dflash.enabled} ({c.dflash.draft_model}), memory guard "
+              f"{c.memory.guard}")
+    print(f"B: {', '.join(STAGE_ENTRIES['B'])}; waived for the F gate (recorded, stays FAIL if it fails): "
+          f"{', '.join(WAIVED)}")
+    print(f"F gate (experiment): B {', '.join(ESSENTIAL_B)} PASS; D H11.smoke and H11.profile PASS with per-process "
+          "nvidia-smi memory PASS; E H10.dflash_bench PASS and H10.smoke_dflash PASS with memory PASS")
+    print("not run in this mode: stage C (Qwen3-0.6B reference), the CPU / silent-failure / CUDA pytest suites, the "
+          "sync / CPU lab cases and their fault controls (NOT_TESTED in the report; --full-tests runs them)")
 
 
 def main(argv=None):
@@ -1259,15 +1520,33 @@ def main(argv=None):
     i.add_argument("--resume", action="store_true")
     i.add_argument("--from-stage")
     i.add_argument("--run-dir")
+    i.add_argument("--fresh", action="store_true")
     s = sub.add_parser("stage")
-    s.add_argument("stage", choices=list(STAGES))
+    s.add_argument("stage", choices=list("ABCDEFGH"))
     s.add_argument("--run-dir", required=True)
     r = sub.add_parser("report")
     r.add_argument("--run-dir", required=True)
     t = sub.add_parser("status")
     t.add_argument("--run-dir")
     sub.add_parser("dry-run")
+    o = sub.add_parser("order", help="the stage order of a run directory (for scripts/run_assignment.sh)")
+    o.add_argument("--run-dir", required=True)
     a = ap.parse_args(argv)
+    if MODE_KEY == "mode":  # this module's own entry point (scripts/assignment_local.py installs its own modes)
+        if a.cmd in ("stage", "report", "order") or (a.cmd == "status" and a.run_dir):
+            mode = mode_of_state(load_state(a.run_dir))
+        else:
+            mode = os.environ.get("ASSIGNMENT_MODE") or "full"
+        if mode not in MODES:
+            raise SystemExit(f"ASSIGNMENT_MODE must be one of {MODES}, not {mode!r}")
+        if mode == "experiment":
+            install_experiment()
+    if a.cmd == "order":
+        print(" ".join(STAGES))
+        return 0
+    if a.cmd == "stage" and a.stage not in STAGES:
+        print(f"stage {a.stage} is not part of the {MODE} protocol ({STAGES})", file=sys.stderr)
+        return 2
     if a.cmd == "report":
         import importlib.util
         spec = importlib.util.spec_from_file_location("assignment_report", ROOT / "scripts" / "assignment_report.py")

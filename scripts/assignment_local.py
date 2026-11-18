@@ -35,10 +35,7 @@ The active item is kept in <run>/active.json for --status.
 """
 import fcntl
 import os
-import re
 import sys
-import threading
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,7 +70,6 @@ MODES = ("fast", "full")
 FAST_STAGES = "AF"
 FAST_STAGE_ENTRIES = {"F": ["H12.local_smoke_0.6b", "H12.local_train_fast_0.6b"]}
 FAST_RUN_NAMES = ("local_qwen3_0.6b_smoke", "local_qwen3_0.6b_streaming")
-HEARTBEAT_S = float(os.environ.get("ASSIGNMENT_HEARTBEAT_S", "30"))
 
 
 def local_config_check(configs):
@@ -179,8 +175,9 @@ def fast_extras(run_dir, state, items, f):
     f["existing_runs"] = existing
     if existing:
         print(f"   NOTE: {', '.join(existing)} already exist and are never overwritten: a completed run with the same "
-              "code, config and GPU is reused (not retrained), otherwise it is reported INCONCLUSIVE. To train again: "
-              "python scripts/run.py remove --run <name> --confirm")
+              "code, config and GPU is reused (not retrained; the report says REUSED PRIOR EVIDENCE), otherwise it is "
+              "reported INCONCLUSIVE. To train again without deleting anything: bash scripts/run_assignment_local.sh "
+              "--experiment --fresh (moves them to runs/<name>.archived-<UTC>)")
 
 
 _stage_A = A.stage_A
@@ -242,125 +239,6 @@ def fast_gate(stage, state):
     return why
 
 
-# --- live output -----------------------------------------------------------------------------------------------
-
-STEP_LINE = re.compile(r"^step\s+(\d+)\s+\(attempt")
-EVIDENCE_LINE = re.compile(r"-> evidence/(\S+)")
-
-
-def descendants(pid):
-    """[(pid, command line)] of every live descendant of `pid` (Linux /proc), parents first."""
-    kids = {}
-    for p in Path("/proc").glob("[0-9]*"):
-        try:
-            ppid = int((p / "stat").read_text().rsplit(")", 1)[1].split()[1])
-            kids.setdefault(ppid, []).append((int(p.name), (p / "cmdline").read_bytes().replace(b"\0", b" ")
-                                              .decode(errors="replace").strip()))
-        except (OSError, IndexError, ValueError):
-            continue
-    out, todo = [], [pid]
-    while todo:
-        for c in kids.get(todo.pop(0), []):
-            out.append(c)
-            todo.append(c[0])
-    return out
-
-
-class Live(threading.Thread):
-    """Streams an item's output files to the terminal as they grow (stdout.log, stderr.log, and the step logs of the
-    dispatcher's evidence directory), with a heartbeat; keeps <run>/active.json current. Reads files only."""
-
-    def __init__(self, out_dir, argv):
-        super().__init__(daemon=True)
-        self.out_dir, self.argv, self.t0, self.done = Path(out_dir), argv, time.time(), threading.Event()
-        self.run_dir = next((p for p in self.out_dir.parents if (p / "state.json").exists()), None)
-        self.files, self.step, self.pids, self.last_out = {}, None, [], time.time()
-        self.started = A.utc()
-
-    def tail(self, path, label):
-        pos, buf = self.files.get(path, (0, b""))
-        try:
-            with open(path, "rb") as f:
-                f.seek(pos)
-                data = f.read()
-        except OSError:
-            return
-        lines = (buf + data).replace(b"\r", b"\n").split(b"\n")
-        self.files[path] = (pos + len(data), lines.pop())
-        for raw in lines:
-            line = raw.decode(errors="replace").rstrip()
-            if not line:
-                continue
-            self.last_out = time.time()
-            if m := STEP_LINE.match(line):
-                self.step = int(m[1])
-            if m := EVIDENCE_LINE.search(line):
-                for root in (A.EVIDENCE, A.ROOT / "evidence"):
-                    if (root / m[1]).exists():
-                        self.files.setdefault(root / m[1] / "raw", None)
-            print(f"   {label}| {line}", flush=True)
-
-    def poll(self):
-        for name in ("stdout.log", "stderr.log"):
-            self.tail(self.out_dir / name, "" if name == "stdout.log" else "stderr")
-        for raw_dir in [k for k, v in self.files.items() if v is None]:  # an evidence raw/ directory: its step logs
-            for log in sorted(raw_dir.glob("step*.log")):
-                self.tail(log, log.stem)
-            self.files[raw_dir] = None
-
-    def active(self, final=False):
-        if self.run_dir is None:
-            return
-        rec = {"item": self.out_dir.name, "argv": self.argv, "raw_dir": A.rel(self.out_dir), "started_utc": self.started,
-               "elapsed_s": round(time.time() - self.t0, 1), "orchestrator_pid": os.getpid(),
-               "pids": [{"pid": p, "cmd": c[:300]} for p, c in self.pids], "last_step": self.step,
-               "updated_utc": A.utc(), "running": not final}
-        A.write_json(self.run_dir / "active.json", rec)
-
-    def heartbeat(self):
-        self.pids = descendants(os.getpid())
-        main = next((f"{p} ({c[:120]})" for p, c in reversed(self.pids) if "run.py" in c or "pytest" in c), None)
-        e = int(time.time() - self.t0)
-        print(f"   [heartbeat {A.utc()}] {self.out_dir.name}: elapsed {e // 60}m{e % 60:02d}s, pids "
-              f"{[p for p, _ in self.pids if 'nvidia-smi' not in _]}" + (f", workload pid {main}" if main else "")
-              + f", trainer step {self.step if self.step is not None else '-'}, last output "
-              f"{int(time.time() - self.last_out)}s ago", flush=True)
-        self.active()
-
-    def run(self):
-        print(f"-> {self.out_dir.name}: started {self.started}\n   $ {' '.join(map(str, self.argv))}", flush=True)
-        time.sleep(0.5)
-        self.pids = descendants(os.getpid())
-        print(f"   pid {[p for p, c in self.pids if 'nvidia-smi' not in c][:4]}", flush=True)
-        self.active()
-        beat = time.time()
-        while not self.done.wait(0.5):
-            self.poll()
-            if time.time() - beat >= HEARTBEAT_S:
-                beat = time.time()
-                self.heartbeat()
-
-    def stop(self):
-        self.done.set()
-        self.join(timeout=5)
-        self.poll()
-        self.active(final=True)
-        print(f"<- {self.out_dir.name}: ended after {time.time() - self.t0:.0f} s", flush=True)
-
-
-_run_item = A.run_item
-
-
-def live_run_item(out_dir, argv, env=None, cap=None, telemetry_on=True):
-    """scripts/assignment.py run_item, unchanged, with its output streamed live (Live)."""
-    live = Live(out_dir, argv)
-    live.start()
-    try:
-        return _run_item(out_dir, argv, env=env, cap=cap, telemetry_on=telemetry_on)
-    finally:
-        live.stop()
-
-
 def compare(attempt_dir, a, b, allow):
     out = Path(attempt_dir) / f"compare_{a}_vs_{b}"
     argv = [*A.tool("compare_runs", [sys.executable, str(ROOT / "scripts" / "compare_runs.py")]), a, b,
@@ -418,8 +296,8 @@ def install(mode="full"):
     A.assignment_config_check = local_config_check
     A.gate = local_gate
     A.RUNNERS = {"A": local_stage_A, "B": A.stage_B, "C": with_comparisons("C"), "D": A.stage_entries, "F": stage_F}
-    A.run_item = live_run_item
     A.stage_A = local_stage_A  # cmd_stage calls stage_A by name, not through RUNNERS
+    A.MODE_KEY, A.MODE = "local_mode", mode
     if mode == "fast":
         A.STAGES, A.STAGE_ENTRIES, A.FRESH, A.CAPPED = FAST_STAGES, FAST_STAGE_ENTRIES, set(), {"F"}
         A.gate = fast_gate
@@ -480,6 +358,8 @@ def fast_dry_run():
     print("A preflight: provenance, capabilities, CUDA streams/events, resolved local configs (B5 G6, LoRA r32/a64, "
           "DFlash off, guard on), model and dataset availability, earlier correctness evidence (recorded, not re-run)")
     print("correctness suite (stages B C D, the resume experiment): NOT run in this mode; use --full-tests")
+    t = A.fresh_targets()
+    print("--fresh would move aside: " + (", ".join(A.rel(p) for p in t) if t else "nothing (no local run exists)"))
     for name in FAST_RUN_NAMES:
         m = A.read_json(A.RUNS_DIR / name / "manifest.json")
         print(f"runs/{name}: " + ("absent (will be trained)" if m is None else
@@ -495,19 +375,28 @@ def main(argv=None):
     install()
     run_dir = Path(argv[argv.index("--run-dir") + 1]) if "--run-dir" in argv else None
     cmd = argv[:1]
-    if cmd == ["mode"]:
-        print(mode_of(A.latest_run()) or requested_mode())
+    if cmd == ["mode"]:  # the mode a continued run is in: the latest run's, or --want's if a run of that mode exists
+        want = argv[argv.index("--want") + 1] if "--want" in argv else None
+        if want is None:
+            print(mode_of(A.latest_run()) or requested_mode())
+            return 0
+        install(want)
+        if A.latest_run(want) is None:
+            last = A.latest_run()
+            print(f"no earlier local run in {want} mode to continue" + (
+                f" (the latest local run, {last.name}, was started in {mode_of(last)} mode)" if last else "")
+                + "; start a new run instead", file=sys.stderr)
+            return 2
+        print(want)
         return 0
     if cmd in (["stage"], ["report"]):
         mode = mode_of(run_dir)
     elif cmd == ["status"]:
         mode = mode_of(run_dir or A.latest_run()) or "fast"
     elif cmd == ["init"] and ("--resume" in argv or "--from-stage" in argv):
-        mode = mode_of(run_dir or A.latest_run()) or requested_mode()
-        if os.environ.get("ASSIGNMENT_LOCAL_MODE") not in (None, mode):
-            print(f"refusing: the run to continue was started in {mode} mode, not "
-                  f"{os.environ['ASSIGNMENT_LOCAL_MODE']}", file=sys.stderr)
-            return 2
+        # the wrapper resolved the mode (scripts/run_assignment_local.sh `mode`); A.cmd_init continues the latest run
+        # of that mode and refuses a --run-dir of another one
+        mode = os.environ.get("ASSIGNMENT_LOCAL_MODE") or mode_of(run_dir or A.latest_run()) or "fast"
     else:
         mode = requested_mode()
     install(mode)
@@ -522,7 +411,7 @@ def main(argv=None):
         return cmd_status(run_dir)
     if cmd == ["dry-run"]:
         if mode == "fast":
-            print("LOCAL run, default mode (Qwen3-0.6B, 4 GB GPU): A preflight, F real GRPO + LoRA + async L2L training "
+            print("LOCAL run, default mode = --experiment (Qwen3-0.6B, 4 GB GPU): A preflight, F real GRPO + LoRA + async L2L training "
                   "(2-step smoke, then 10 steps). DFlash, the Qwen3-4B 8 GB cap, held-out test evaluation and Soup are "
                   "out of scope (NOT_TESTED). Nothing below is run.")
             return fast_dry_run()
@@ -541,7 +430,8 @@ def main(argv=None):
             A.save_state(d, state)
             man = A.read_json(d / "manifest.json")
             man.update(local_mode=mode, command="bash scripts/run_assignment_local.sh"
-                       + (" --full-tests" if mode == "full" else ""))
+                       + (" --full-tests" if mode == "full" else " --experiment") + (" --fresh" if "--fresh" in argv
+                                                                                     else ""))
             A.write_json(d / "manifest.json", man)
         sys.stdout.write(out.getvalue())
         return rc

@@ -585,64 +585,16 @@ def fast_requirements(run, m):
     return Q
 
 
-GUARD = "the recomputed output differs from the forward's"  # qwen_grpo/execution/backward.py, always-on backward check
-
-
 def unsafe_reuse_finding(pc, results_root):
-    """H02.fault_unsafe_reuse, from the earlier run that recorded it: its lab result split into configurations refused
-    by the backward recompute checksum, configurations that ran (and how many of their comparisons failed), and
-    configurations where the fault went unnoticed. Derived from result.json each time; the recorded status is kept."""
+    """H02.fault_unsafe_reuse from the earlier run that recorded it (scripts/assignment_report.py does the analysis)."""
     ev = (pc or {}).get("evidence") or {}
     st = R.read_json(Path(results_root) / ev.get("run_id", "") / "state.json") if ev else None
     it = next((i for a in reversed((st or {}).get("stages", {}).get("B", {}).get("attempts", []))
                for i in a.get("items", []) if i["id"] == "H02.fault_unsafe_reuse"), None)
-    if not it or not it.get("evidence_name"):
-        return None
-    r = R.read_json(R.EXP / it["evidence_name"] / "result.json")
-    if not r:
-        return {"status": it["status"], "run_id": ev["run_id"], "evidence_name": it["evidence_name"], "result": None}
-    refused = {e.split(":")[0].rsplit(".mb", 1)[0] for e in r.get("errors", [])}
-    guard = {e.split(":")[0].rsplit(".mb", 1)[0] for e in r.get("errors", []) if GUARD in e}
-    ran = {}
-    for c in r.get("comparisons", []):
-        ran.setdefault(c["model"], []).append(bool(c.get("pass")))
-    return {"status": it["status"], "run_id": ev["run_id"], "evidence_name": it["evidence_name"],
-            "evidence_dir": it.get("evidence_dir"), "status_lab": r.get("status"),
-            "execution_status": r.get("execution_status"), "refused": len(refused),
-            "refused_by_guard": len(guard), "other_errors": len(refused - guard), "ran": len(ran),
-            "ran_all_comparisons_failed": sum(all(not x for x in v) for v in ran.values()),
-            "undetected": sum(all(v) for v in ran.values())}
+    return R.unsafe_reuse_finding(it, ev.get("run_id"))
 
 
-def unsafe_reuse_md(f):
-    if not f:
-        return ["No earlier H02.fault_unsafe_reuse result is recorded."]
-    if f.get("result") is None and "refused" not in f:
-        return [f"H02.fault_unsafe_reuse is {f['status']} in run {f['run_id']}; its lab result "
-                f"{f['evidence_name']} is missing, so it cannot be analysed."]
-    n = f["refused"] + f["ran"]
-    return [
-        f"`H02.fault_unsafe_reuse` (gradient equivalence under async L2L with an injected unsafe buffer reuse) is recorded "
-        f"as **{f['status']}** in run `{f['run_id']}` (lab result `{f['evidence_name']}`: status {f['status_lab']}, "
-        f"execution {f['execution_status']}). It stays FAIL here; the analysis below explains it and does not change it.",
-        "",
-        f"- {f['refused_by_guard']} of {n} configurations were refused by the always-on backward recompute checksum "
-        f"(`qwen_grpo/execution/backward.py`, \"{GUARD}\"): no gradients were returned. Other execution errors: "
-        f"{f['other_errors']}.",
-        f"- {f['ran']} of {n} configurations ran; {f['ran_all_comparisons_failed']} of them failed every comparison "
-        "against the resident reference (loss, logits, hidden and LoRA gradients).",
-        f"- Configurations where the fault went unnoticed: **{f['undetected']}**.",
-        "",
-        "Cause of the FAIL: the `lab_fault` judge (`scripts/experiment.py`) counts a fault as detected only when the "
-        "lab's execution PASSES and its comparisons fail. A refusal by the runtime checksum is recorded as an execution "
-        "failure, so it is judged \"NOT detected\". The checksum predates the fault case. This is a flaw in the test's "
-        "oracle, not evidence of an async L2L defect; the judge was deliberately left unchanged (owner decision).",
-        "",
-        "Limits: (1) training runs with `verify=False`, so the backward checksum is the only runtime guard; in the "
-        f"{f['ran']} configurations that ran, the corruption was caught only by the lab's resident comparison and would be "
-        "silent in training. (2) The fault is a forced, deterministic overwrite, not a real race; it does not prove "
-        "race-freedom. (3) Tiny models only. Because the item is FAIL, nothing that depends on it (the --full-tests "
-        "training gate) counts as correctness evidence."]
+unsafe_reuse_md = R.unsafe_reuse_md
 
 
 def fast_main(run):
@@ -671,9 +623,12 @@ def fast_main(run):
     ess = [r for r in reqs if r["essential"]]
     verdict = "PASS" if all(r["status"] == "PASS" for r in ess) else \
         "FAIL" if any(r["status"] == "FAIL" for r in ess) else "INCOMPLETE"
+    cons = fast_conclusions(reqs)
+    banner = R.REUSE_BANNER if (run.item("F", "H12.local_train_fast_0.6b") or {}).get("prior_evidence") else None
     from qwen_grpo.evidence import code_sha256, report_code_sha256
     (d / "requirements.json").write_text(json.dumps({
-        "verdict": f"LOCAL TRAINING {verdict}", "mode": "fast",
+        "verdict": f"LOCAL TRAINING {verdict}", "mode": "fast", "mode_name": "experiment", "conclusions": cons,
+        "reuse_banner": banner, "prior_evidence": R.prior_evidence(run),
         "scope": "Qwen3-0.6B GRPO + LoRA + async L2L + disk streaming on a 4 GB GPU; the correctness suite was not "
                  "re-run; does NOT verify DFlash or the Qwen3-4B assignment",
         "rule": "PASS iff every essential requirement (T1-T6) is PASS", "requirements": reqs,
@@ -713,8 +668,10 @@ def fast_main(run):
     (d / "measurements" / "local.json").write_text(json.dumps({k: v for k, v in m.items() if k != "logs"}, indent=1,
                                                               default=str) + "\n")
     f = run.facts()
-    md = ["# Local training run (Qwen3-0.6B, default mode)", "",
-          f"**Verdict: LOCAL TRAINING {verdict}** (PASS iff every essential requirement T1-T6 is PASS).", "",
+    md = ["# Local training run (Qwen3-0.6B, experiment mode)", "",
+          f"**Verdict: LOCAL TRAINING {verdict}** (PASS iff every essential requirement T1-T6 is PASS). This is "
+          "experimental evidence on Qwen3-0.6B, not a qualification of the Qwen3-4B assignment.", "",
+          *R.conclusions_md(cons, banner),
           "Scope: one real GRPO + LoRA training run through asynchronous L2L (pinned CPU weights, 2 GPU buffers, "
           "prefetch depth 1, activation checkpointing) with disk-backed streaming, on a 4 GB GPU. The correctness suite "
           "was **not** re-run (see T13). **This local experiment does not validate the official Qwen3-4B DFlash "
@@ -746,9 +703,31 @@ def fast_main(run):
     (d / "checksums.sha256").write_text("\n".join(lines) + "\n")
     print(f"LOCAL TRAINING {verdict} ({sum(r['status'] == 'PASS' for r in reqs)}/{len(reqs)} PASS); report "
           f"{d / 'reports' / 'local_report.md'}")
+    if banner:
+        print(banner)
     for r in reqs:
         print(f"  {r['status']:12s} {r['id']:4s} {r['clause'][:100]}")
+    print("conclusions:")
+    for c in cons:
+        print(f"  {c['status']:12s} {c['conclusion']}")
     return 0 if verdict == "PASS" else 1
+
+
+def fast_conclusions(reqs):
+    """Six separate conclusions of a local experiment run, from its requirements (never inferred from each other)."""
+    Q = {r["id"]: r for r in reqs}
+
+    def w(ids, conclusion):
+        return {"conclusion": conclusion, "status": R.worst(Q[i]["status"] for i in ids),
+                "detail": "; ".join(f"{i} {Q[i]['status']}: {Q[i]['detail'][:160]}" for i in ids)}
+    return [w(["T3", "T4"], "training completed (2-step smoke and 10-step run, every update)"),
+            w(["T5", "T13"], "training correctness established (frozen weights unchanged; L2L equivalence suite: "
+                             "not re-run in this mode, earlier evidence only if same code and GPU)"),
+            w(["T10"], "performance improvement established (validation subset, exact sign test)"),
+            w(["T6"], "memory compliance established (the local 4 GiB card; not the assignment's 8 GB cap)"),
+            w(["X1"], "DFlash validity established"),
+            {"conclusion": "full assignment qualification established", "status": "NOT_TESTED",
+             "detail": "a local Qwen3-0.6B run never qualifies the Qwen3-4B assignment"}]
 
 
 if __name__ == "__main__":
