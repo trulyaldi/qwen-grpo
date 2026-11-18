@@ -1140,6 +1140,10 @@ def gate(stage, state):
         if not s or s["status"] != "PASS" or s.get("memory_status") == "FAIL":
             why.append(f"stage D: H11.smoke is {s and s['status']} (memory {s and s.get('memory_status')})")
     if stage == "F":
+        r = item(state, "A", "assignment_config")  # the resolved final configs hold the assignment's fixed choices
+        if not r or r["status"] != "PASS":
+            why.append(f"stage A: assignment_config is {r and r['status']}"
+                       + (f" ({r.get('detail')})" if r and r.get("detail") else ""))
         for i in ESSENTIAL_B:
             r = item(state, "B", i)
             if not r or r["status"] != "PASS":

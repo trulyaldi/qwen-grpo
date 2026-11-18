@@ -656,9 +656,69 @@ def test_experiment_gate_refuses_a_dflash_primary_config():
     passing = {"stages": {s: {"attempts": [{"items": [
         {"id": i, "status": "PASS", "memory_status": "PASS"} for i in ids]}]} for s, ids in A.STAGE_ENTRIES.items()}}
     passing["stages"]["A"] = {"attempts": [{"facts": {"cuda": True, "bf16": True, "cuda_streams_ok": True,
-                                                       "ram_ok": True, "disk_ok": True}, "items": []}]}
+                                                       "ram_ok": True, "disk_ok": True},
+                                             "items": [{"id": "assignment_config", "status": "PASS"}]}]}
     why = A.gate("F", passing)
     assert len(why) == 1 and "enables DFlash" in why[0], why
+
+
+def load_runner(name):
+    """A fresh copy of scripts/assignment.py (install_experiment rebinds module globals)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / "assignment.py")
+    A = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(A)
+    return A
+
+
+@pytest.mark.parametrize("mode", ["full", "experiment"])
+def test_a_failed_or_missing_configuration_check_blocks_training(mode):
+    """F starts only if stage A's assignment_config is PASS, in both modes; every other gate is unchanged (a state
+    where everything else passes opens F only with a PASS configuration check)."""
+    A = load_runner(f"assignment_config_gate_{mode}")
+    if mode == "experiment":
+        A.install_experiment()
+    facts = {"cuda": True, "bf16": True, "cuda_streams_ok": True, "ram_ok": True, "disk_ok": True}
+
+    def state(config_item):
+        s = {"stages": {st: {"attempts": [{"items": [{"id": i, "status": "PASS", "memory_status": "PASS"}
+                                                     for i in ids]}]} for st, ids in A.STAGE_ENTRIES.items()}}
+        s["stages"]["B"]["attempts"][0]["items"] += [{"id": i, "status": "PASS"} for i in A.ESSENTIAL_B]
+        s["stages"]["A"] = {"attempts": [{"facts": facts, "items": [config_item] if config_item else []}]}
+        return s
+    assert A.gate("F", state({"id": "assignment_config", "status": "PASS"})) == []
+    bad = {"id": "assignment_config", "status": "FAIL", "detail": "violated: L2L backend"}
+    why = A.gate("F", state(bad))
+    assert why == ["stage A: assignment_config is FAIL (violated: L2L backend)"], why
+    assert A.gate("F", state(None)) == ["stage A: assignment_config is None"]  # stage A never ran the check
+    # the other gates still apply on top of it
+    s = state(bad)
+    s["stages"]["D"]["attempts"][0]["items"][0]["memory_status"] = "FAIL"
+    assert len(A.gate("F", s)) == 2
+
+
+def test_training_is_not_dispatched_after_a_failed_configuration_check(env):
+    """End to end (experiment mode, fake tools): stages A, D and B pass, then the recorded configuration check is
+    FAIL; stage F is BLOCKED with that reason and no training is dispatched."""
+    tmp, e = experiment_env(env, **PLAIN_TRAIN)
+    e = {**e, "ASSIGNMENT_MODE": "experiment"}
+    py = [sys.executable, str(ROOT / "scripts" / "assignment.py")]
+    d = Path(subprocess.run(py + ["init"], env=e, cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip())
+    for st in "ADB":
+        subprocess.run(py + ["stage", st, "--run-dir", str(d)], env=e, cwd=ROOT, capture_output=True, text=True,
+                       check=True, timeout=600)
+    state = json.loads((d / "state.json").read_text())
+    cfg = items(state, "A")["assignment_config"]
+    assert cfg["status"] == "PASS"  # the real configs pass; the failure is injected into the recorded result
+    cfg.update(status="FAIL", detail="violated: plain L2L rollouts (dflash disabled, no drafter)")
+    (d / "state.json").write_text(json.dumps(state))
+    subprocess.run(py + ["stage", "F", "--run-dir", str(d)], env=e, cwd=ROOT, capture_output=True, text=True,
+                   check=True, timeout=600)
+    state = json.loads((d / "state.json").read_text())
+    F = state["stages"]["F"]
+    assert F["status"] == "BLOCKED" and "stage A: assignment_config is FAIL" in json.dumps(F["attempts"][-1]["blocked_by"])
+    assert items(state, "F")["H12.train_final_plain"]["status"] == "BLOCKED"
+    assert not any("H12.train_final" in json.dumps(a) for a in dispatched(tmp))
 
 
 def test_experiment_dry_run_shows_the_plain_4b_plan_and_writes_nothing(env):
