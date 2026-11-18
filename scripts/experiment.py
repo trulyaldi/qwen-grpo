@@ -122,6 +122,10 @@ def load_study(path=STUDY):
             errors.append(f"{eid}: {sorted(forbidden)} belong to hypotheses.yaml / tolerances.yaml, not the study")
         if not e.get("steps"):
             errors.append(f"{eid}: no steps")
+        if bad := set(e.get("prerequisites") or {}) - {"runs", "lab", "checkpoints"}:
+            errors.append(f"{eid}: unknown prerequisites {sorted(bad)}")
+        if "opt_in" in e and not isinstance(e["opt_in"], bool):
+            errors.append(f"{eid}: opt_in must be true or false")
     if errors:
         raise SystemExit("invalid study manifest:\n  " + "\n  ".join(errors))
     return study, hyps
@@ -197,6 +201,15 @@ def unmet_prerequisites(entry):
         ok, reason = run_state(name)
         if not ok:
             why.append(reason)
+    for ck in pre.get("checkpoints", []):  # saved, complete (COMMIT.json hashes) and holding an adapter
+        from qwen_grpo.streaming.resume import validate
+        p = ROOT / ck
+        if not p.is_dir():
+            why.append(f"checkpoint {ck} was not saved")
+            continue
+        ok, reason = validate(p, resumable=False)
+        if not ok or not (p / "adapter_model.safetensors").is_file():
+            why.append(f"checkpoint {ck} is not a valid adapter checkpoint ({reason or 'no adapter_model.safetensors'})")
     for name in pre.get("lab", []):
         r = read_result(EXPERIMENTS / name)
         if r is None:
@@ -479,7 +492,7 @@ def cmd_plan(args):
             hw = unmet(e, cap)
             pre = unmet_prerequisites(e)
             state = "DONE" if done(e) else "RUN" if not hw and not pre else "BLOCKED"
-            tags = "".join(f" [{k}]" for k in ("diagnostic", "supplementary") if e.get(k))
+            tags = "".join(f" [{k}]" for k in ("diagnostic", "supplementary", "opt_in") if e.get(k))
             why = "; ".join(hw + pre)
             print(f"  {state:7s} {e['id']:34s} {e.get('model', ''):10s} {','.join(e.get('precision', [])):17s}{tags}"
                   + (f"  <- {why}" if why and state != "DONE" else ""))
@@ -488,8 +501,10 @@ def cmd_plan(args):
 
 def cmd_run(args):
     study, _ = load_study(args.study)
+    # opt_in entries (e.g. the 210-update extension) run only when named with --entry, never via --hypothesis
     entries = [e for e in study["entries"] if (args.entry and e["id"] in args.entry)
-               or (not args.entry and args.hypothesis and e["id"].split(".")[0] in args.hypothesis)]
+               or (not args.entry and args.hypothesis and e["id"].split(".")[0] in args.hypothesis
+                   and not e.get("opt_in"))]
     if not entries:
         raise SystemExit("no matching entry: give --hypothesis H.. and/or --entry <id> (see `plan`)")
     cap = probe()

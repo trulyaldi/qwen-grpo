@@ -63,7 +63,7 @@ def metrics(acc, pos=0.5, inv=0.0):
             "changed_vs_base": 0.0}
 
 
-EVAL = {"n_test": 1066, "split": "test", "checkpoint": "runs/qwen3_4b_final/checkpoints/step210",
+EVAL = {"n_test": 1066, "split": "test", "checkpoint": "runs/qwen3_4b_final/checkpoints/step60",
         "models": {"base": metrics(0.80), "trained": {**metrics(0.86), "changed_vs_base": 0.1},
                    "merged": {**metrics(0.86), "changed_vs_base": 0.1}, "control": metrics(0.80)},
         "paired": {"trained_minus_base": {"diff": 0.06, "ci_low": 0.04, "ci_high": 0.08},
@@ -74,10 +74,28 @@ EVAL = {"n_test": 1066, "split": "test", "checkpoint": "runs/qwen3_4b_final/chec
         "control_log": {"params_equal_init": True}}
 
 
-def training_log(steps=4):
+DRAFTER = "z-lab/Qwen3-4B-DFlash-b16"
+
+
+def generator(dflash):
+    """A rollout_generator record as qwen_grpo.trainer.rollout_evidence writes it (synthetic numbers)."""
+    if not dflash:
+        return {"generator": "StreamedGenerator"}
+    return {"generator": "DFlashGenerator", "draft_model": DRAFTER, "drafter_bytes": 1074854400, "steps": 4,
+            "target_passes": 2, "accepted_per_pass": [2], "accepted_drafts": 2, "calls": 1}
+
+
+def training_log(steps=4, dflash=False, record=True, max_steps=None):
+    """record False: a log from before the trainer recorded its rollout generator (config-only evidence)."""
+    gen = {"rollout_generator": generator(dflash)} if record else {}
+    backend = "l2l_async+dflash" if dflash else "l2l_async"
     return {"timings": [{"step": s, "rollout_s": 12.0, "prepare_s": 3.0, "update_s": 6.0, "step_s": 21.0 + s * 0.1,
-                         "cpu_rss_bytes": 1.3e10, "backend": "l2l_async"} for s in range(1, steps + 1)],
-            "training": [{"step": s, "attempt": s, "mean_reward": 0.5, "grad_norm": 0.1, "update_norm": 0.01,
+                         "cpu_rss_bytes": 1.3e10, "backend": backend, **gen} for s in range(1, steps + 1)],
+            "config": {"steps": steps if max_steps is None else max_steps, "train_samples": 1024, "G": 6},
+            **({"rollout_backend": {"backend": backend, "generator": generator(dflash)["generator"],
+                                    "draft_model": DRAFTER if dflash else None}} if record else {}),
+            "training": [{"step": s, "attempt": s, "prompt_ids": list(range(5 * s, 5 * s + 5)), "mean_reward": 0.5,
+                          "grad_norm": 0.1, "update_norm": 0.01,
                           "peak_reserved_gib": 3.0, "peak_allocated_gib": 2.8, "change_from_init": 0.1}
                          for s in range(1, steps + 1)], "zero_signal": [], "successful_steps": steps,
             "groups_generated": steps, "frozen_changed": [], "final_checkpoint": {"path": "x"}}
@@ -93,9 +111,10 @@ def scenario(**over):
          "H11.profile": {"status": "PASS", "files": {"t11_profile_qwen3_4b_async.json": PROFILE}},
          "H10.dflash_bench": {"status": "PASS", "files": {"t12_dflash_bench.json": bench()}},
          "H10.smoke_dflash": {"status": "PASS",
-                              "files": {"runs/qwen3_4b_smoke_dflash/training/training.json": training_log()}},
-         "H12.train_final": {"status": "PASS", "files": {"runs/qwen3_4b_final/training/training.json": training_log(8),
-                                                         "runs/qwen3_4b_final_lr0/training/training.json": training_log(3)}},
+                              "files": {"runs/qwen3_4b_smoke_dflash/training/training.json": training_log(dflash=True)}},
+         "H12.train_final": {"status": "PASS", "files": {
+             "runs/qwen3_4b_final/training/training.json": training_log(8, dflash=True),
+             "runs/qwen3_4b_final_lr0/training/training.json": training_log(3, dflash=True)}},
          "H12.final_eval": {"status": "PASS", "files": {"t13_final_eval_qwen3_4b_final.json": EVAL}},
          "H10.dflash_drift": {"status": "PASS", "files": {"t12_dflash_drift_final.json": bench()}}}
     for k, v in over.items():
@@ -169,7 +188,12 @@ def test_successful_synthetic_run(env):
     R = reqs(r)
     for rid in ("T1", "M1", "M2", "M3", "M4", "L2", "L5", "S1", "S2", "V1", "V2", "V3", "V4", "D2", "D3", "D4"):
         assert R[rid]["status"] == "PASS", R[rid]
-    assert R["D0"]["status"] == "FAIL"  # the final config does not enable DFlash: stated, not hidden
+    assert R["D0"]["status"] == "PASS" and "8/8 rollout batches by DFlash" in R["D0"]["detail"]
+    assert R["D0c"]["status"] == "PASS" and "3/3 rollout batches by DFlash" in R["D0c"]["detail"]
+    # coverage is measured from the run's own records and no epoch is claimed (8 synthetic updates x 5 prompts)
+    assert R["T2"]["status"] == "PASS" and "40/1024 unique prompts visited" in R["T2"]["detail"]
+    assert "full pass over the pool: False" in R["T2"]["detail"]
+    assert not any(x in json.dumps(a) for a in dispatched(tmp) for x in ("H12.train_extended", "drift_extended"))
     no_unmeasured_pass(r)
     for f in ("manifest.json", "requirements.json", "checksums.sha256", "measurements/memory.csv",
               "measurements/memory_summary.json", "measurements/timing.csv", "measurements/throughput.csv",
@@ -312,7 +336,8 @@ def test_a_training_run_with_another_config_is_neither_resumed_nor_reused(env):
     assert F["H12.train_final"]["status"] == "BLOCKED" and r["verdict"] == "DON'T SHIP"
 
 
-def test_failed_dflash_benchmark_is_reported_and_does_not_gate_training(env):
+def test_failed_dflash_benchmark_blocks_the_dflash_final_run(env):
+    """The final run samples through DFlash, so greedy DFlash != plain decoding on Qwen3-4B must stop it."""
     tmp, e = env
     (tmp / "scenario.json").write_text(json.dumps(scenario(
         H10__dflash_bench={"status": "FAIL", "files": {"t12_dflash_bench.json": bench(equal=False)}})))
@@ -320,7 +345,36 @@ def test_failed_dflash_benchmark_is_reported_and_does_not_gate_training(env):
     _, state, r = the_run(tmp)
     assert items(state, "E")["H10.dflash_bench"]["status"] == "FAIL"
     assert reqs(r)["D2"]["status"] == "FAIL"
-    assert state["stages"]["F"]["status"] == "PASS"  # DFlash is not used by the final run, so it does not gate it
+    F = items(state, "F")["H12.train_final"]
+    assert F["status"] == "BLOCKED" and "H10.dflash_bench" in F["detail"]
+    assert not any("H12.train_final" in a for a in map(json.dumps, dispatched(tmp)))  # never started
+    assert reqs(r)["D0"]["status"] in ("BLOCKED", "NOT_TESTED") and r["verdict"] == "DON'T SHIP"
+
+
+def test_d0_is_never_passed_from_the_configuration_alone(env):
+    """dflash.enabled in the resolved final config, the training items PASS, but the logs carry no per-batch rollout
+    generator records (e.g. written by an older trainer): D0 / D0c are INCONCLUSIVE, not PASS. A log showing plain
+    rollouts despite the config is a FAIL."""
+    tmp, e = env
+    (tmp / "scenario.json").write_text(json.dumps(scenario(H12__train_final={"status": "PASS", "files": {
+        "runs/qwen3_4b_final/training/training.json": training_log(8, dflash=True, record=False),
+        "runs/qwen3_4b_final_lr0/training/training.json": training_log(3, dflash=False)}})))
+    run(e)
+    _, _, r = the_run(tmp)
+    R = reqs(r)
+    assert R["D0"]["status"] == "INCONCLUSIVE" and "not recorded" in R["D0"]["detail"], R["D0"]
+    assert R["D0c"]["status"] == "FAIL" and "without DFlash" in R["D0c"]["detail"], R["D0c"]
+
+
+def test_d0_fails_when_the_final_training_fails(env):
+    tmp, e = env
+    (tmp / "scenario.json").write_text(json.dumps(scenario(H12__train_final={"status": "FAIL", "files": {
+        "runs/qwen3_4b_final/training/training.json": training_log(8, dflash=True, max_steps=60),
+        "runs/qwen3_4b_final_lr0/training/training.json": training_log(3, dflash=True)}})))
+    run(e)
+    _, _, r = the_run(tmp)
+    R = reqs(r)
+    assert R["D0"]["status"] == "FAIL" and "training item FAIL" in R["D0"]["detail"], R["D0"]
 
 
 def test_a_pass_without_its_result_file_is_not_a_measured_pass(env):
@@ -377,3 +431,14 @@ def test_status_and_usage(env):
     assert run(e, "--status").returncode == 1  # no run yet
     assert run(e, "--from-stage", "Z").returncode == 2
     assert run(e, "--bogus").returncode == 2
+
+
+def test_the_default_protocol_refuses_to_run_an_opt_in_entry(env):
+    """The 210-update continuation (H12.train_extended) is opt-in: even an override that slips it into a stage list
+    is refused before anything runs."""
+    tmp, e = env
+    e = {**e, "ASSIGNMENT_STAGE_ITEMS": json.dumps({"B": ESSENTIAL_ENTRIES, "F": ["H12.train_final",
+                                                                                   "H12.train_extended"]})}
+    p = run(e)
+    assert p.returncode != 0 and "opt-in entries ['H12.train_extended']" in p.stderr, p.stderr[-2000:]
+    assert not any("H12.train_extended" in json.dumps(a) for a in dispatched(tmp))

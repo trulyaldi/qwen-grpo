@@ -2,6 +2,9 @@
 # disk streaming with crash-consistent checkpoints, the memory guard, subset evaluations and a checkpoint every 2 steps.
 # Batch shape (B = 5 prompts x G = 6 completions, 4 new tokens, no micro-batching) equals the final run's, so its GPU
 # peaks are the final run's training peaks; only the number of steps and prompts is smaller.
+# This is the PLAIN-L2L baseline (H11.smoke): it turns off the DFlash rollouts that qwen3_4b_final.yaml enables, so its
+# resolved config (and hash) is the one it had before the final run used DFlash. qwen3_4b_smoke_dflash.yaml re-enables
+# them and is then the final run's exact configuration at smoke scale.
 #   python scripts/experiment.py run --entry H11.smoke     # or: python scripts/run.py train --config <this file>
 extends: qwen3_4b_final.yaml
 
@@ -18,3 +21,7 @@ training:
 evaluation:
   every: 2
   full_validation: false
+
+dflash:                        # plain autoregressive rollouts (the baseline); qwen3_4b_final.yaml enables DFlash
+  enabled: false
+  draft_model: null

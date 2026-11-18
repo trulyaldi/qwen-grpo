@@ -322,7 +322,6 @@ def test_config_errors():
     for mutate, match in [(lambda c: c["grpo"].update(extra=1), "unknown keys"),
                           (lambda c: c["lora"].pop("rank"), "missing keys"),
                           (lambda c: c["streaming"].update(kv_cache="disk"), "kv_cache"),
-                          (lambda c: c["dflash"].update(enabled=True), "not implemented"),
                           (lambda c: c["grpo"].update(reference_logprobs=True), "beta"),
                           (lambda c: c["grpo"].update(group_size=True), "expected")]:
         broken = copy.deepcopy(cfg)
@@ -343,3 +342,89 @@ def test_report_round_trip_and_no_overwrite(tmp_path):
     with pytest.raises(FileExistsError):
         C.write_prediction(rep, md, tmp_path)
     assert math.isfinite(rep["transfers_per_grpo_step"]["transfer_s"])
+
+
+# ------------------------------------------------------------------------------------------------------- DFlash
+
+DRAFT = {"num_hidden_layers": 2, "block_size": 4, "num_target_features": 3, "hidden_size": 64, "intermediate_size": 128,
+         "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 16}
+
+
+def gpu_item(moment, prefix):
+    return next(i for i in moment.gpu if i.name.startswith(prefix))
+
+
+def test_dflash_enabled_keeps_the_drafter_resident_in_every_phase_and_models_its_rollout():
+    arch, _ = tiny_arch()
+    on = C.Budget(tiny_cfg(**{"dflash.enabled": True}), arch, draft_bytes=12345, draft=DRAFT)
+    off = C.Budget(tiny_cfg(), arch)
+    for p in on.phases():
+        for m in p.moments:
+            if m.gpu and p.name != "merge":  # the merge is standalone: training state and drafter released
+                assert gpu_item(m, "DFlash drafter weights").bytes == 12345, (p.name, m.name)
+    assert not any(i.name.startswith("DFlash") for p in off.phases() for m in p.moments for i in m.gpu)
+    assert "dflash (optional estimate)" not in [p.name for p in on.phases()]  # folded into the real rollout phase
+    n, P, R, V, H = 6, 10, 3, arch.vocab_size, arch.hidden_size
+    names = [m.name for m in on.rollout().moments]
+    assert all("(DFlash)" in x for x in names) and len(names) == 4
+    head = on.rollout().moments[1]
+    # dflash._target_step: the LM head over all P prompt positions, bf16 then an fp32 copy
+    assert gpu_item(head, "prefill logits [").bytes == n * P * V * 2
+    assert gpu_item(head, "prefill logits fp32").bytes == n * P * V * 4
+    assert gpu_item(head, "captured target features").bytes == 3 * n * P * H * 2
+    kv = gpu_item(head, "KV cache")  # dflash_generate allocates P + max_new + block_size positions
+    assert kv.bytes == C.kv_bytes(n, P + R + 4, arch.num_hidden_layers, arch.num_key_value_heads, arch.head_dim,
+                                  "bfloat16")
+    verify = on.rollout().moments[3]
+    q = min(4, R)
+    assert gpu_item(verify, f"block logits [{n}, {q}, V]").bytes == n * q * V * 6
+    assert gpu_item(verify, "prefill logits fp32").bytes == n * P * V * 4  # still referenced at the first verify
+
+
+def test_dflash_raises_the_rollout_peak_by_at_least_the_drafter_and_prefill_logits():
+    arch, _ = tiny_arch()
+    cfg_on, cfg_off = tiny_cfg(**{"dflash.enabled": True}), tiny_cfg()
+    on = C.phase_summary(C.Budget(cfg_on, arch, draft_bytes=10**6, draft=DRAFT).rollout(), cfg_on)
+    off = C.phase_summary(C.Budget(cfg_off, arch).rollout(), cfg_off)
+    assert on["gpu_peak"]["gpu_allocated"] >= off["gpu_peak"]["gpu_allocated"] + 10**6 + 6 * 10 * arch.vocab_size * 4
+
+
+def test_dflash_without_drafter_metadata_is_unknown_not_pass():
+    arch, _ = tiny_arch()
+    cfg = tiny_cfg(**{"dflash.enabled": True})
+    for kwargs in ({"draft_bytes": None, "draft": DRAFT}, {"draft_bytes": 10**6, "draft": None}):
+        rep = C.build_report(cfg, arch, **kwargs)
+        roll = next(p for p in rep["phases"] if p["phase"] == "rollout")
+        assert roll["gpu_verdict"] == C.UNSURE and rep["overall_verdict"] != C.PASS, kwargs
+    with pytest.raises(ValueError, match="lacks"):
+        C.Budget(cfg, arch, draft={"block_size": 4})
+
+
+def test_dflash_transfers_bound_the_verify_passes():
+    arch, _ = tiny_arch()
+    b = C.Budget(tiny_cfg(**{"dflash.enabled": True}), arch, draft_bytes=1, draft=DRAFT)
+    t = next(x for x in b.transfers() if x.name.startswith("rollout verify"))
+    assert t.sweeps == 2 and "between 1" in t.note  # R - 1 = 2 rejections at most, ceil(2 / 4) = 1 at best
+
+
+def test_draft_config_reads_the_z_lab_layout():
+    raw = {"num_hidden_layers": 5, "block_size": 16, "dflash_config": {"target_layer_ids": [1, 9, 17, 25, 33]},
+           "hidden_size": 2560, "intermediate_size": 9728, "num_attention_heads": 32, "num_key_value_heads": 8,
+           "head_dim": 128}
+    assert C.draft_config(raw) == {"num_hidden_layers": 5, "block_size": 16, "num_target_features": 5,
+                                   "hidden_size": 2560, "intermediate_size": 9728, "num_attention_heads": 32,
+                                   "num_key_value_heads": 8, "head_dim": 128}
+
+
+def test_the_committed_dflash_final_prediction_matches_its_budget_file():
+    import hashlib
+    import json
+    pred = json.loads((ROOT / "results/budget/predictions/qwen3-4b-final-dflash_8gb.json").read_text())
+    path = ROOT / pred["provenance"]["config"].split("qwen-grpo/")[-1]
+    assert pred["provenance"]["config_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert pred["config"] == C.load_config(path) and pred["config"]["dflash"]["enabled"] is True
+    assert pred["dflash"]["draft_bytes"] and pred["dflash"]["draft_architecture"]["block_size"] == 16
+    roll = next(p for p in pred["phases"] if p["phase"] == "rollout")
+    assert roll["gpu_peak_moment"].startswith("rollout (DFlash)")
+    assert all(any(i["name"].startswith("DFlash drafter weights") for i in m["gpu"])
+               for p in pred["phases"] if p["phase"] != "merge" for m in p["moments"] if m["gpu"])

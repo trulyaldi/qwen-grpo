@@ -24,8 +24,11 @@
 #                                    the evidence it actually got
 #   min_vram_gib  smallest GPU the entry needs
 #   prerequisites runs: training runs that must be completed with frozen weights unchanged; lab: lab results that
-#                 must exist with status PASS (fault runs: FAIL with execution PASS, i.e. the fault was detected).
-#                 Anything missing makes the entry BLOCKED, never PASS
+#                 must exist with status PASS (fault runs: FAIL with execution PASS, i.e. the fault was detected);
+#                 checkpoints: checkpoint directories that must have been saved complete (COMMIT.json hashes) with an
+#                 adapter. Anything missing makes the entry BLOCKED, never PASS
+#   opt_in        true: run only when named explicitly (`run --entry <id>`); never selected by --hypothesis and never
+#                 listed in a stage of scripts/assignment.py (which refuses such a stage list)
 #   steps         commands run from the repository root with this Python, in order; a step with `creates` is skipped
 #                 when that output already exists (run:<name> = a completed training run). {name} is the evidence
 #                 name, {evidence} this execution's evidence directory
@@ -350,8 +353,10 @@ entries:
         creates: research/l2l/experiments/{name}.json
     judge: {requirements: [R11, R12]}
   # End-to-end: the guarded 4-step smoke run with DFlash-drafted rollouts. Its config differs from qwen3_4b_smoke.yaml
-  # only in run.name and the dflash section (same data, seed, batch shape), so the two runs' per-step timings compare a
-  # whole GRPO step with and without DFlash. The final run does not use DFlash.
+  # (the plain-L2L baseline, H11.smoke) only in run.name and the dflash section (same data, seed, batch shape), so the
+  # two runs' per-step timings compare a whole GRPO step with and without DFlash; and from qwen3_4b_final.yaml (which
+  # uses DFlash rollouts) only in scale (prompts, steps, evaluation cadence). It qualifies the final run's DFlash path
+  # under the cap: scripts/assignment.py does not start stage F unless it passes with PASS memory.
   - id: H10.smoke_dflash
     name: h10_qwen3_4b_smoke_dflash
     model: Qwen3-4B
@@ -364,9 +369,10 @@ entries:
     steps:
       - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_smoke_dflash.yaml], creates: "run:qwen3_4b_smoke_dflash"}
     judge: exit_codes
-  # Acceptance as the policy drifts from the base the drafter was trained on, at real checkpoints of the final run
-  # (step 0 = the base policy). dflash_bench.py exits 0 iff greedy tokens equal plain decoding everywhere and no memory
-  # violation.
+  # Acceptance as the policy drifts from the base the drafter was trained on, at real checkpoints of the primary
+  # 60-update run (step 0 = the initial adapter, i.e. the base policy; qwen3_4b_final.yaml checkpoints every 10
+  # updates, so step20/40/60 exist when the run completed, and the prerequisite checks each one was saved and is
+  # complete). dflash_bench.py exits 0 iff greedy tokens equal plain decoding everywhere and no memory violation.
   - id: H10.dflash_drift
     name: t12_dflash_drift_final
     model: Qwen3-4B
@@ -374,12 +380,37 @@ entries:
     requires: [cuda, bf16, linux_native]
     min_vram_gib: 8
     supplementary: true
-    prerequisites: {runs: [qwen3_4b_final]}
+    prerequisites:
+      runs: [qwen3_4b_final]
+      checkpoints: [runs/qwen3_4b_final/checkpoints/step0, runs/qwen3_4b_final/checkpoints/step20,
+                    runs/qwen3_4b_final/checkpoints/step40, runs/qwen3_4b_final/checkpoints/step60]
     configs: [configs/experiments/qwen3_4b_l2l_dflash.yaml]
     steps:
       - argv: [scripts/dflash_bench.py, --config, configs/experiments/qwen3_4b_l2l_dflash.yaml, --b-scales, --adapters,
-               runs/qwen3_4b_final/checkpoints/step0, runs/qwen3_4b_final/checkpoints/step60,
-               runs/qwen3_4b_final/checkpoints/step120, runs/qwen3_4b_final/checkpoints/step210,
+               runs/qwen3_4b_final/checkpoints/step0, runs/qwen3_4b_final/checkpoints/step20,
+               runs/qwen3_4b_final/checkpoints/step40, runs/qwen3_4b_final/checkpoints/step60,
+               --max-new, "4", "32", --repeats, "3", --out, "{name}"]
+        creates: research/l2l/experiments/{name}.json
+    judge: exit_codes
+  # OPT-IN only (never in scripts/run_assignment.sh): the longer drift study on the 210-update extension, whose run
+  # holds copies of the primary run's step0/step60 and its own step70..step210.
+  - id: H10.dflash_drift_extended
+    name: t12_dflash_drift_ext210
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true
+    opt_in: true
+    prerequisites:
+      runs: [qwen3_4b_final_ext210]
+      checkpoints: [runs/qwen3_4b_final_ext210/checkpoints/step0, runs/qwen3_4b_final_ext210/checkpoints/step60,
+                    runs/qwen3_4b_final_ext210/checkpoints/step120, runs/qwen3_4b_final_ext210/checkpoints/step210]
+    configs: [configs/experiments/qwen3_4b_l2l_dflash.yaml]
+    steps:
+      - argv: [scripts/dflash_bench.py, --config, configs/experiments/qwen3_4b_l2l_dflash.yaml, --b-scales, --adapters,
+               runs/qwen3_4b_final_ext210/checkpoints/step0, runs/qwen3_4b_final_ext210/checkpoints/step60,
+               runs/qwen3_4b_final_ext210/checkpoints/step120, runs/qwen3_4b_final_ext210/checkpoints/step210,
                --max-new, "4", "32", --repeats, "3", --out, "{name}"]
         creates: research/l2l/experiments/{name}.json
     judge: exit_codes
@@ -417,11 +448,33 @@ entries:
     requires: [cuda, bf16, linux_native]
     min_vram_gib: 8
     supplementary: true
-    prerequisites: {runs: [qwen3_4b_smoke]}
+    prerequisites: {runs: [qwen3_4b_smoke, qwen3_4b_smoke_dflash]}   # plain baseline, and the final's DFlash path
+    # Both runs use DFlash rollouts (dflash.enabled in qwen3_4b_final.yaml, inherited by _lr0); evaluation is plain.
+    # The primary run has 60 updates (checkpoints every 10), the LR=0 control 30.
     configs: [configs/experiments/qwen3_4b_final.yaml, configs/experiments/qwen3_4b_final_lr0.yaml]
     steps:
       - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final.yaml], creates: "run:qwen3_4b_final"}
       - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final_lr0.yaml], creates: "run:qwen3_4b_final_lr0"}
+    judge: exit_codes
+  # OPT-IN only (never in scripts/run_assignment.sh): continue the completed primary run from its step-60 checkpoint
+  # to 210 updates as the separate run qwen3_4b_final_ext210 (trainer.continue_run: copies of step0/step60 and the
+  # streaming state, source recorded, runs/qwen3_4b_final untouched). An interrupted extension resumes with
+  # `scripts/run.py train --config configs/experiments/qwen3_4b_final_ext210.yaml --resume latest`.
+  - id: H12.train_extended
+    name: h12_train_extended_210
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true
+    opt_in: true
+    prerequisites:
+      runs: [qwen3_4b_final]
+      checkpoints: [runs/qwen3_4b_final/checkpoints/step60]
+    configs: [configs/experiments/qwen3_4b_final_ext210.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final_ext210.yaml, --continue-from,
+                runs/qwen3_4b_final/checkpoints/step60], creates: "run:qwen3_4b_final_ext210"}
     judge: exit_codes
   - id: H12.final_eval
     name: t13_final_eval_qwen3_4b_final

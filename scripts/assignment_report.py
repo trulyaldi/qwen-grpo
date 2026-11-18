@@ -250,12 +250,13 @@ def memory_rows(run):
     return rows
 
 
-FINAL_PREDICTION = "qwen3-4b-final_8gb.json"  # configs/budget/qwen3-4b_final.yaml: the configuration that runs
+FINAL_PREDICTION = "qwen3-4b-final-dflash_8gb.json"  # configs/budget/qwen3-4b_final_dflash.yaml: the final run as it runs
 
 
 def predictions(run):
-    """The prediction of the final configuration only. The historical Step-0 prediction (qwen3-4b_8gb.json) describes
-    another configuration (micro-batch 6, GPU merge) and is never used for a comparison."""
+    """The prediction of the final configuration only (DFlash rollouts, drafter resident). qwen3-4b-final_8gb.json is the
+    same shape with plain rollouts (H11.profile compares against it); the historical Step-0 prediction (qwen3-4b_8gb.json)
+    describes another configuration (micro-batch 6, GPU merge). Neither is used for the final run's comparison."""
     for sub in ("calculator", "committed"):
         d = read_json(run.dir / "predictions" / sub / FINAL_PREDICTION)
         if d:
@@ -331,8 +332,48 @@ def correctness(run):
     return out
 
 
+DFLASH_RUNS = (  # every Qwen3-4B training run, and what it is for: the report keeps them apart
+    ("qwen3_4b_smoke", "D", "H11.smoke", "plain L2L baseline (smoke, plain streamed rollouts)"),
+    ("qwen3_4b_smoke_dflash", "E", "H10.smoke_dflash", "DFlash-assisted integration smoke"),
+    ("qwen3_4b_final", "F", "H12.train_final", "DFlash-assisted primary training"),
+    ("qwen3_4b_final_lr0", "F", "H12.train_final", "LR=0 control with DFlash rollouts"),
+)  # update counts are read from each run's resolved config and log, never assumed
+
+
+def rollout_evidence(log):
+    """How a training run's rollouts were actually generated, from its training.json (qwen_grpo.trainer: header
+    rollout_backend; per update timings[].rollout_generator; per zero-signal batch zero_signal_rollout_generators).
+    Counts every rollout batch; a batch counts as DFlash only with DFlash statistics (>= 1 target pass)."""
+    if not log:
+        return None
+    gens = [t.get("rollout_generator", "unrecorded") for t in log.get("timings", []) if t.get("rollout_s") is not None]
+    gens += [z.get("rollout_generator", "unrecorded") for z in log.get("zero_signal_rollout_generators", [])]
+    dfl = [g for g in gens if isinstance(g, dict) and g.get("generator") == "DFlashGenerator"
+           and (g.get("target_passes") or 0) >= 1]
+    plain = [g for g in gens if isinstance(g, dict) and g.get("generator") not in (None, "DFlashGenerator")]
+    unrec = [g for g in gens if not isinstance(g, dict)]
+    acc = [a for g in dfl for a in g.get("accepted_per_pass", [])]
+    passes, steps = sum(g["target_passes"] for g in dfl), sum(g.get("steps") or 0 for g in dfl)
+    rb = log.get("rollout_backend") or {}
+    return {"rollout_backend": rb, "rollout_batches": len(gens), "dflash_batches": len(dfl),
+            "plain_batches": len(plain), "unrecorded_batches": len(unrec),
+            "zero_signal_batches_recorded": len(log.get("zero_signal_rollout_generators", [])),
+            "zero_signal_batches": log.get("zero_signal_groups"),
+            "draft_models": sorted({g.get("draft_model") for g in dfl if g.get("draft_model")}),
+            "accepted_per_pass_mean": statistics.mean(acc) if acc else None, "verify_passes": len(acc),
+            "target_passes_per_token": passes / steps if steps else None,
+            "successful_steps": log.get("successful_steps"),
+            "max_steps": ((log.get("config") or {}).get("steps")),
+            "all_dflash": bool(gens) and len(dfl) == len(gens), "none_dflash": not dfl}
+
+
 def dflash(run):
-    d = {"benchmarks": {}, "end_to_end": None, "distribution_checks": []}
+    d = {"benchmarks": {}, "end_to_end": None, "distribution_checks": [], "training_runs": {}}
+    for name, stage, iid, role in DFLASH_RUNS:
+        it = run.item(stage, iid)
+        d["training_runs"][name] = {"role": role, "item": iid, "item_status": status_of(it),
+                                    "evidence": rollout_evidence(run.run_log(name, stage, iid)),
+                                    "file": str(RUNS / name / "training" / "training.json")}
     for iid, stage in (("H10.dflash_bench", "E"), ("H10.dflash_drift", "G")):
         b = run.output(stage, iid)
         if not b:
@@ -426,6 +467,8 @@ def learning(run):
             "attempts_contiguous_unique": attempts == list(range(attempts[0], attempts[0] + len(attempts))) if attempts else None,
             "train_seconds": lg.get("train_seconds"), "config_sha256": lg.get("config_sha256"),
             "adapter_sha256": adapter_hash(RUNS / name / "checkpoints"),
+            "configured_updates": configured_steps(run, name), "coverage": coverage_of(lg),
+            "continued_from": lg.get("continued_from"),
         }
     return out
 
@@ -441,6 +484,82 @@ def adapter_hash(ckpt_dir):
 
 
 # --- requirements -------------------------------------------------------------------------------------------------
+
+def resolved_config(run, name):
+    """runs/<name>'s config as resolved by stage A (None if not resolved)."""
+    p = run.dir / "resolved_configs" / f"configs__experiments__{name}.yaml"
+    if not p.exists():
+        return None
+    import yaml
+    return yaml.safe_load("\n".join(l for l in p.read_text().splitlines() if not l.startswith("#"))) or {}
+
+
+def resolved_dflash(run, name):
+    """dflash section of runs/<name>'s config as resolved by stage A (None if not resolved)."""
+    doc = resolved_config(run, name)
+    return None if doc is None else (doc.get("dflash") or {"enabled": False})
+
+
+def configured_steps(run, name):
+    return ((resolved_config(run, name) or {}).get("training") or {}).get("max_steps")
+
+
+def coverage_of(log):
+    """Training coverage from a run's own log (the trainer's "coverage" if present, else recomputed the same way from
+    its update rows and zero-signal records). An epoch / full pass is never assumed."""
+    if not log:
+        return None
+    if log.get("coverage"):
+        return {**log["coverage"], "source": "training.json coverage"}
+    by_attempt = {r["attempt"]: r.get("prompt_ids", []) for r in log.get("training", []) if "attempt" in r}
+    by_attempt.update({z["attempt"]: z.get("prompt_ids", []) for z in log.get("zero_signal", []) if "attempt" in z})
+    sel = [i for a in sorted(by_attempt) for i in by_attempt[a]]
+    pool = ((log.get("config") or {}).get("train_samples"))
+    G = (log.get("config") or {}).get("G")
+    return {"train_pool_prompts": pool, "rollout_attempts": log.get("groups_generated"),
+            "successful_updates": log.get("successful_steps"), "attempts_with_records": len(by_attempt),
+            "prompt_selections": len(sel), "unique_prompts_visited": len(set(sel)),
+            "coverage_fraction": len(set(sel)) / pool if pool else None,
+            "zero_signal_batches": len(log.get("zero_signal", [])), "skipped_batches": len(log.get("zero_signal", [])),
+            "generated_completions": len(sel) * G if G else None,
+            "full_pass_over_pool": bool(pool) and len(set(sel)) == pool, "source": "recomputed from training.json"}
+
+
+def d0_status(run, name, tr):
+    """D0 / D0c: PASS only with execution evidence - the run's training item produced a result, the run completed its
+    configured steps, and every rollout batch it generated was produced by DFlashGenerator with DFlash statistics and
+    the configured drafter. The config alone never passes."""
+    cfg = resolved_dflash(run, name)
+    rc = f"resolved_configs/configs__experiments__{name}.yaml"
+    if cfg is None:
+        return "NOT_TESTED", f"{name}: config not resolved (stage A did not run)", []
+    if not cfg.get("enabled"):
+        return "FAIL", f"{name}: the resolved config has dflash.enabled false (plain rollouts by configuration)", [rc]
+    it = run.item("F", "H12.train_final")
+    ev = tr.get("evidence")
+    ev_files = [rc] + ([tr["file"]] if ev else [])
+    if ev is None:
+        st = missing(it)
+        return st, (f"{name}: dflash.enabled in the config, but no training log of this run to show that DFlash "
+                    f"executed; " + why(it, "H12.train_final")), ev_files
+    facts_ = (f"{ev['dflash_batches']}/{ev['rollout_batches']} rollout batches by DFlash "
+              f"(plain {ev['plain_batches']}, unrecorded {ev['unrecorded_batches']}); drafter {ev['draft_models']}; "
+              f"accepted drafts/pass {fmt(ev['accepted_per_pass_mean'], '', 2)}; target passes/token "
+              f"{fmt(ev['target_passes_per_token'], '', 2)}; updates {ev['successful_steps']}/{ev['max_steps']}")
+    if ev["plain_batches"]:
+        return "FAIL", f"{name}: rollouts generated without DFlash although the config enables it - {facts_}", ev_files
+    if ev["dflash_batches"] and ev["draft_models"] != [cfg.get("draft_model")]:
+        return "FAIL", f"{name}: drafter differs from the configured {cfg.get('draft_model')} - {facts_}", ev_files
+    if status_of(it) != "PASS":
+        return ("FAIL" if status_of(it) == "FAIL" else "INCONCLUSIVE"), \
+            f"{name}: training item {status_of(it)} - {facts_}", ev_files
+    if not ev["rollout_batches"] or ev["unrecorded_batches"] or not ev["all_dflash"]:
+        return "INCONCLUSIVE", (f"{name}: DFlash execution not recorded for every rollout batch (a training log "
+                                f"without the trainer's rollout_generator records) - {facts_}"), ev_files
+    if ev["max_steps"] is not None and ev["successful_steps"] != ev["max_steps"]:
+        return "INCONCLUSIVE", f"{name}: run did not complete its configured updates - {facts_}", ev_files
+    return "PASS", f"{name}: {facts_}", ev_files
+
 
 def requirements(run, m):
     R = []
@@ -462,6 +581,22 @@ def requirements(run, m):
     add("T1", "Qwen3-4B non-thinking, no SFT, GRPO + LoRA, verifiable reward, 1-2k prompts", True, status_of(it),
         (it or {}).get("detail", "stage A not run") + ("; " + "; ".join(it.get("notes", [])) if it else ""),
         ["resolved_configs/"])
+    lt0 = m["learning"].get("training") or {}
+    cov = lt0.get("coverage")
+    tit = run.item("F", "H12.train_final")
+    if cov:
+        complete = cov["attempts_with_records"] == cov["rollout_attempts"] and cov["unique_prompts_visited"] is not None
+        add("T2", "training coverage of the prompt pool measured (no epoch claimed without evidence)", False,
+            "PASS" if complete else "INCONCLUSIVE",
+            f"{cov['successful_updates']} updates / {lt0.get('configured_updates')} configured, {cov['rollout_attempts']} "
+            f"rollout attempts ({cov['zero_signal_batches']} zero-signal, skipped), {cov['prompt_selections']} prompt "
+            f"selections, {cov['unique_prompts_visited']}/{cov['train_pool_prompts']} unique prompts visited "
+            f"({fmt(cov['coverage_fraction'], '', 3)}), {cov['generated_completions']} completions; full pass over the "
+            f"pool: {cov['full_pass_over_pool']}" + ("" if complete else "; some attempts have no prompt record"),
+            [str(RUNS / "qwen3_4b_final" / "training" / "training.json")], cov)
+    else:
+        add("T2", "training coverage of the prompt pool measured (no epoch claimed without evidence)", False,
+            missing(tit), why(tit, "H12.train_final") + " (no training log)")
 
     # memory
     def mem(rid, clause, pairs, phases=()):
@@ -583,21 +718,12 @@ def requirements(run, m):
     add("S2", "merge tensor by tensor, never the full model on the GPU; peak shown", True, st, d, ev)
 
     # DFlash
-    final_cfg = read_json(run.dir / "resolved_configs" / "hashes.json")
-    final_dflash = None
-    p = run.dir / "resolved_configs" / "configs__experiments__qwen3_4b_final.yaml"
-    if p.exists():
-        import yaml
-        doc = yaml.safe_load("\n".join(l for l in p.read_text().splitlines() if not l.startswith("#"))) or {}
-        final_dflash = bool((doc.get("dflash") or {}).get("enabled"))
-    add("D0", "the final GRPO run uses DFlash-accelerated rollouts", False,
-        "NOT_TESTED" if final_dflash is None else ("PASS" if final_dflash else "FAIL"),
-        "final config not resolved" if final_dflash is None else
-        ("dflash.enabled in the final config" if final_dflash else
-         "the final run's config has dflash.enabled false: DFlash is measured end to end only in the 4-step "
-         "qwen3_4b_smoke_dflash run and in dflash_bench.py, not in the shipped training run"),
-        ["resolved_configs/configs__experiments__qwen3_4b_final.yaml"] if final_cfg else [])
     dfl = m["dflash"]
+    for rid, name, clause in (("D0", "qwen3_4b_final", "the final GRPO run uses DFlash-accelerated rollouts (executed, "
+                                                       "not only configured)"),
+                              ("D0c", "qwen3_4b_final_lr0", "the LR=0 control samples through the same DFlash path")):
+        st, detail, ev = d0_status(run, name, dfl["training_runs"].get(name) or {})
+        add(rid, clause, False, st, detail, ev)
     bench = dfl["benchmarks"].get("H10.dflash_bench")
     bit = run.item("E", "H10.dflash_bench")
     add("D1", "drafter z-lab/Qwen3-4B-DFlash-b16 resident, conditioned on target hidden features inside the L2L loop",
@@ -878,8 +1004,27 @@ def summary_md(run, reqs, verdict, must, m):
            "## L2L, streaming, merge", ""]
     md += [f"- {r['id']} {r['clause']}: **{r['status']}** - {r['detail'][:260]}"
            for r in reqs if r["id"] in ("L2", "L3", "L4", "L5", "L6", "S1", "S2")]
-    md += ["", "## DFlash", ""]
-    md += [f"- {r['id']} {r['clause']}: **{r['status']}** - {r['detail'][:260]}" for r in reqs if r["id"].startswith("D")]
+    md += ["", "## DFlash", "", "Rollout generator per experiment (from each run's own training.json; a batch counts as "
+           "DFlash only with recorded DFlash statistics):", ""]
+    tr = m["dflash"].get("training_runs", {})
+    rows_ = []
+    for name, r in tr.items():
+        ev = r.get("evidence") or {}
+        rows_.append([r["role"], f"`{name}` ({r['item']}: {r['item_status']})",
+                      (ev.get("rollout_backend") or {}).get("generator", "MISSING") if ev else "MISSING",
+                      f"{ev.get('dflash_batches')}/{ev.get('rollout_batches')}" if ev else "MISSING",
+                      fmt(ev.get("accepted_per_pass_mean"), "", 2) if ev else "MISSING",
+                      fmt(ev.get("target_passes_per_token"), "", 2) if ev else "MISSING"])
+    for iid, role in (("H10.dflash_bench", "DFlash acceptance and speed benchmark (plain vs DFlash, repeats)"),
+                      ("H10.dflash_drift", "DFlash acceptance across real checkpoints of the final run")):
+        b = m["dflash"]["benchmarks"].get(iid)
+        stage = "E" if iid == "H10.dflash_bench" else "G"
+        rows_.append([role, f"{iid}: {status_of(run.item(stage, iid))}", "plain and DFlash", "n/a",
+                      ", ".join(fmt(x["accepted_per_pass_mean"], "", 2) for p_ in b["policies"] for x in p_["runs"])
+                      if b else "MISSING", "see comparisons/dflash_vs_plain.csv" if b else "MISSING"])
+    md += [table(["experiment", "run / item", "rollout generator", "DFlash rollout batches", "accepted drafts / pass",
+                  "target passes / token"], rows_), ""]
+    md += [f"- {r['id']} {r['clause']}: **{r['status']}** - {r['detail'][:300]}" for r in reqs if r["id"].startswith("D")]
     md += ["", "## Did the model learn? (held-out test split, used once)", ""]
     if e and e.get("models"):
         md.append(table(["model", "accuracy", "macro F1", "invalid", "pred. POSITIVE", "recall POS", "recall NEG",
@@ -893,6 +1038,7 @@ def summary_md(run, reqs, verdict, must, m):
     else:
         md.append("MISSING: no held-out evaluation in this run.")
     md += [f"- {r['id']}: **{r['status']}** - {r['detail'][:260]}" for r in reqs if r["id"].startswith("V")]
+    md += [f"- {r['id']} {r['clause']}: **{r['status']}** - {r['detail'][:400]}" for r in reqs if r["id"] == "T2"]
     md += ["", "A rising reward, a finished run or a nonzero adapter change is not counted as learning: only the paired "
            "held-out difference against the base, with the LR=0 control as the no-learning reference and the "
            "invalid-rate / label-collapse checks against reward gaming. What these checks cannot see: "
@@ -933,9 +1079,18 @@ def limitations_md(run, reqs, m):
            "- nvidia-smi is sampled every 200 ms: a measured peak is a lower bound; shorter spikes are invisible.",
            "- The cap is judged on the process group's per-process readings. Where nvidia-smi does not list our PIDs (containers), "
            "memory requirements are INCONCLUSIVE, never PASS.",
-           "- The LR=0 control runs 30 updates against 210 for the trained run: it is matched in data order, seed, batch "
+           f"- The LR=0 control runs {configured_steps(run, 'qwen3_4b_final_lr0')} updates against "
+           f"{configured_steps(run, 'qwen3_4b_final')} for the primary run: it is matched in data order, seed, batch "
            "shape and code path, not in length.",
-           "- The final run does not use DFlash; DFlash is measured in a separate benchmark and a 4-step smoke run.",
+           f"- The primary run's {configured_steps(run, 'qwen3_4b_final')} updates draw "
+           f"{(configured_steps(run, 'qwen3_4b_final') or 0) * 5} or more prompt selections from a 1024-prompt pool: "
+           "not one epoch; the prompts actually visited are measured (requirement T2). The optional 210-update "
+           "continuation (qwen3_4b_final_ext210) is not part of this protocol.",
+           "- The primary run and the LR=0 control sample through DFlash; the plain-L2L baseline at the same batch shape "
+           "is only the smoke run (H11.smoke), so plain vs DFlash GRPO step time is compared on the two smoke runs and "
+           "the benchmark, not on the primary run.",
+           "- DFlash on-policy correctness on Qwen3-4B rests on greedy token identity (benchmark, real adapters) and a "
+           "two-sample test of sampled responses; the exact-law sampling test runs on tiny models only.",
            "- The 4B sampling-distribution check is a two-sample test of a few hundred samples; only the tiny-model test is "
            "exact.",
            "- Bitwise L2L equivalence holds per machine and software stack; it is re-established on this GPU in stage B.",

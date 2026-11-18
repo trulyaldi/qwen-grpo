@@ -1,5 +1,9 @@
-# Ticket 13 negative control: the final run with learning_rate 0 (30 steps): rollouts, rewards, gradients and optimizer
+# Ticket 13 negative control: the primary run (60 updates) with learning_rate 0 and its own 30-update schedule
+# (checkpoints every 10, inherited): rollouts, rewards, gradients and optimizer
 # steps all happen, but the adapter must not change and neither may its predictions (the trainer's LR=0 control).
+# DFlash rollouts are inherited from qwen3_4b_final.yaml, so the control samples through the same generator as the
+# trained run: the drafter is frozen and the verifier is the (unchanging) LoRA policy, so with LR 0 every rollout is
+# still drawn from the initial policy and the control stays comparable in code path.
 extends: qwen3_4b_final.yaml
 
 run:

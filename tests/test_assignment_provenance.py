@@ -5,6 +5,8 @@
   3. the Qwen3-4B budget prediction the profile is compared with describes the configuration that actually runs;
   4. an interrupted non-streaming run (no crash-consistent checkpoint) is never "resumed".
 """
+import dataclasses
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -43,7 +45,7 @@ def heldout(monkeypatch, tmp_path):
     import qwen_grpo.trainer as trainer
     monkeypatch.setattr(trainer, "model_revision", lambda m: f"rev-of-{m}")
     checkpoint(tmp_path / "runs", "qwen3_4b_final", 0, b"init")
-    checkpoint(tmp_path / "runs", "qwen3_4b_final", 210, b"trained adapter")
+    checkpoint(tmp_path / "runs", "qwen3_4b_final", 60, b"trained adapter")  # the primary run's last update
     checkpoint(tmp_path / "runs", "qwen3_4b_final_lr0", 30, b"control adapter")
     _, entries = a.load_study()
     return a, entries["H12.final_eval"], tmp_path
@@ -175,15 +177,8 @@ def test_the_report_records_its_identity_and_status_flags_a_stale_report(monkeyp
 
 # --- 3. the budget prediction describes the configuration that runs --------------------------------------------------
 
-def test_the_profiled_prediction_matches_the_resolved_final_configuration():
-    from qwen_grpo import config
-    study = yaml.safe_load((ROOT / "configs" / "studies" / "assignment.yaml").read_text())
-    prof = next(e for e in study["entries"] if e["id"] == "H11.profile")
-    argv = prof["steps"][0]["argv"] if isinstance(prof["steps"][0], dict) else prof["steps"][0]
-    pred_path = ROOT / argv[argv.index("--prediction") + 1]
-    pred = json.loads(pred_path.read_text())
-    budget = yaml.safe_load((ROOT / pred["provenance"]["config"]).read_text())
-    cfg = config.load(ROOT / "configs" / "experiments" / "qwen3_4b_final.yaml")
+def budget_mismatches(budget, cfg):
+    """{field: (budget value, resolved config value)} where a budget file describes another configuration."""
     t, x, e = cfg.training, cfg.execution, cfg.evaluation
     N = t.batch_size * t.group_size
     g, s = budget["grpo"], budget["streaming"]
@@ -204,10 +199,57 @@ def test_the_profiled_prediction_matches_the_resolved_final_configuration():
         "eval examples": (budget["evaluation"]["examples"], cfg.data.val_subset),
         "eval batch": (budget["evaluation"]["batch_size"], e.batch_size),
         "eval new tokens": (budget["evaluation"]["generation_tokens"], e.max_new_tokens),
+        "DFlash rollouts": (budget["dflash"]["enabled"], cfg.dflash.enabled),
+        # peaks are per phase and do not depend on the number of updates; what the schedule decides is whether the
+        # AdamW state is live during the subset evaluations (an evaluation every 10 of 60 updates: yes)
+        "eval during training": (budget["evaluation"]["during_training"],
+                                 cfg.evaluation.every <= cfg.training.max_steps),
     }
-    wrong = {k: v for k, v in expected.items() if v[0] != v[1]}
-    assert not wrong, f"{pred_path.name} ({pred['provenance']['config']}) describes another configuration: {wrong}"
-    assert pred["provenance"]["config_sha256"]  # the prediction names the exact budget file it came from
+    if cfg.dflash.enabled:
+        expected["drafter"] = (budget["dflash"]["draft_model_id"], cfg.dflash.draft_model)
+    return {k: v for k, v in expected.items() if v[0] != v[1]}
+
+
+def committed_prediction(path):
+    pred = json.loads(path.read_text())
+    cfg_file = ROOT / pred["provenance"]["config"]
+    assert pred["provenance"]["config_sha256"] == hashlib.sha256(cfg_file.read_bytes()).hexdigest(), \
+        f"{path.name}: its budget file changed after the prediction was made"
+    return pred, yaml.safe_load(cfg_file.read_text())
+
+
+def test_the_final_prediction_matches_the_resolved_final_configuration_with_dflash():
+    """The report's final-run prediction (assignment_report.FINAL_PREDICTION) and the budget recomputed in stage A
+    describe qwen3_4b_final.yaml as it resolves now, DFlash rollouts and drafter included (and so the LR=0 control,
+    which differs only in learning rate and length)."""
+    from qwen_grpo import config
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import assignment_report
+    pred, budget = committed_prediction(ROOT / "results" / "budget" / "predictions" / assignment_report.FINAL_PREDICTION)
+    for rel in ("qwen3_4b_final.yaml", "qwen3_4b_final_lr0.yaml", "qwen3_4b_final_ext210.yaml"):
+        cfg = config.load(ROOT / "configs" / "experiments" / rel)
+        assert cfg.dflash.enabled
+        assert not (wrong := budget_mismatches(budget, cfg)), f"{rel}: {wrong}"
+    assert pred["provenance"]["config"] == "configs/budget/qwen3-4b_final_dflash.yaml"
+    assert config.load(ROOT / "configs" / "experiments" / "qwen3_4b_final.yaml").training.max_steps == 60
+    assert pred["overall_verdict"] == "PASS" and pred["config"]["hardware"]["gpu_vram_gib"] * 2**30 <= 8e9 + 1e5
+    assert "configs/budget/qwen3-4b_final_dflash.yaml" in (ROOT / "scripts" / "assignment.py").read_text()  # stage A
+
+
+def test_the_profiled_prediction_matches_the_plain_l2l_configurations_it_profiles():
+    """H11.profile profiles qwen3_4b_l2l.yaml (plain rollouts) at the final batch shape; its prediction is the plain
+    one, which must keep describing the plain-L2L baseline (qwen3_4b_smoke.yaml) exactly."""
+    from qwen_grpo import config
+    study = yaml.safe_load((ROOT / "configs" / "studies" / "assignment.yaml").read_text())
+    prof = next(e for e in study["entries"] if e["id"] == "H11.profile")
+    argv = prof["steps"][0]["argv"] if isinstance(prof["steps"][0], dict) else prof["steps"][0]
+    pred_path = ROOT / argv[argv.index("--prediction") + 1]
+    pred, budget = committed_prediction(pred_path)
+    smoke = config.load(ROOT / "configs" / "experiments" / "qwen3_4b_smoke.yaml")
+    smoke = dataclasses.replace(smoke, data=dataclasses.replace(smoke.data, val_subset=128))  # smoke evaluates 16, the
+    # budget sizes the final run's 128-example subset evaluation; every other field must match as it resolves
+    assert not smoke.dflash.enabled and not (wrong := budget_mismatches(budget, smoke)), wrong
+    assert config.load(ROOT / argv[argv.index("--config") + 1]).dflash.enabled is False
 
 
 def test_the_historical_prediction_is_preserved_and_labelled():

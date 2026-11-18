@@ -1,7 +1,17 @@
-# Ticket 13 / H12: the final Qwen3-4B GRPO + LoRA run on the full system: L2L with asynchronous prefetching, disk-backed
-# streaming with crash-consistent checkpoints, 8 GiB budget. 1024 balanced training prompts (the assignment's 1-2k),
-# ~210 updates of B = 5 prompts x G = 6 so that every prompt is used about once; the validation subset only monitors;
-# the held-out test split is touched only by scripts/final_eval.py after training.
+# Ticket 13 / H12: the PRIMARY Qwen3-4B GRPO + LoRA run on the full system: L2L with asynchronous prefetching,
+# disk-backed streaming with crash-consistent checkpoints, 8 GB budget. Training pool: 1024 balanced prompts (the
+# assignment's 1-2k). 60 updates of B = 5 prompts x G = 6 draw at least 300 prompt selections, i.e. NOT one epoch over
+# the pool: the trainer records the prompts actually visited (training.json "coverage") and nothing claims an epoch.
+# Subset evaluation and a crash-consistent checkpoint every 10 updates (step0 is the initial adapter): checkpoints
+# step0/10/20/30/40/50/60, of which step0/20/40/60 feed the DFlash drift study (H10.dflash_drift). The validation
+# subset only monitors; the held-out test split is touched only by scripts/final_eval.py after training.
+# Optional, opt-in only: qwen3_4b_final_ext210.yaml continues THIS run's step-60 checkpoint to 210 updates as a separate
+# run (scripts/run.py train --continue-from ...); scripts/run_assignment.sh never starts it.
+# Rollouts are DFlash-drafted (z-lab/Qwen3-4B-DFlash-b16, frozen, GPU-resident beside the streamed target) and verified
+# token by token by the current LoRA policy through the same L2L executor (qwen_grpo/execution/backend.py ->
+# DFlashGenerator); evaluation and the held-out test stay plain greedy decoding. The plain-L2L baseline with this batch
+# shape is qwen3_4b_smoke.yaml (dflash disabled there explicitly), the DFlash one qwen3_4b_smoke_dflash.yaml.
+# Budget (theoretical): configs/budget/qwen3-4b_final_dflash.yaml -> results/budget/predictions/qwen3-4b-final-dflash_8gb.*
 extends: qwen3_4b_l2l.yaml
 
 run:
@@ -12,12 +22,16 @@ data:
   val_subset: 128
 
 training:
-  max_steps: 210
+  max_steps: 60
 
 evaluation:
-  every: 30
+  every: 10
   full_validation: false
 
 streaming:
   enabled: true
   directory: streaming
+
+dflash:
+  enabled: true
+  draft_model: z-lab/Qwen3-4B-DFlash-b16

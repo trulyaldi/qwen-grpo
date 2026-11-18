@@ -159,11 +159,125 @@ def check_resume(cfg, checkpoint, state):
     if name != cfg.run.name or step != state["step"]:
         raise SystemExit(f"{checkpoint} is not a checkpoint of run {cfg.run.name!r}")
     strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items() if k != "verification"}
-    if diff := differences(strip(normalized(state["config"])), strip(as_dict(cfg))):
+    diff = differences(strip(normalized(state["config"])), strip(as_dict(cfg)))
+    if diff and set(diff) <= CONTINUATION_KEYS and continuation_of(name, checkpoint) is not None:
+        pass  # the copied source checkpoint of a recorded continuation (continue_run): only the step budget changed
+    elif diff:
         raise SystemExit(f"{checkpoint} was trained with a different config ({', '.join(diff)}); resume needs the same "
                          f"settings, e.g. --config {rel(runs.run_dir(name) / 'config.yaml')}")
     if later := [rel(p) for s, p in runs.checkpoints(name) if s > step]:
         raise SystemExit(f"resuming from step {step} would overwrite later checkpoints {later}")
+
+
+# --- continuation: a longer run that continues another run's checkpoint ----------------------------------------------
+# A run's identity includes training.max_steps, so a 60-update run cannot simply be resumed to 210 updates (check_resume
+# refuses the different config). continue_run creates a NEW run that starts from a byte-for-byte copy of the source
+# run's checkpoint (adapter, AdamW state, RNG state, sampler state, counters, log so far) and of its streaming
+# directory, records where it came from, and resumes it with the standard resume path. Only CONTINUATION_KEYS may
+# differ from the source config, and only for that recorded copied checkpoint: the continued trajectory is the one an
+# uninterrupted run with the larger max_steps would have produced. The source run is only read.
+CONTINUATION_KEYS = frozenset({"run.name", "training.max_steps"})
+
+
+def _tree_sha256(path):
+    h = hashlib.sha256()
+    for p in sorted(Path(path).rglob("*")):
+        if p.is_file():
+            h.update(str(p.relative_to(path)).encode() + b"\0" + hashlib.sha256(p.read_bytes()).hexdigest().encode())
+    return h.hexdigest()
+
+
+def continuation_of(name, checkpoint):
+    """The manifest's continued_from record if `checkpoint` is the copied source checkpoint of run `name` and still has
+    the recorded content, else None."""
+    rec = (runs.manifest(name) or {}).get("continued_from")
+    if not rec:
+        return None
+    copied = runs.ROOT / rec["copied_checkpoint"]
+    if Path(checkpoint).resolve() != copied.resolve():
+        return None
+    if _tree_sha256(copied) != rec["checkpoint_tree_sha256"]:
+        raise SystemExit(f"{checkpoint}: the copied source checkpoint changed since the continuation was set up")
+    return rec
+
+
+def continue_run(cfg, source, device="cuda"):
+    """Train run cfg.run.name as the continuation of `source` (a checkpoint runs/<src>/checkpoints/step<N> of a
+    completed streaming run) up to cfg.training.max_steps updates. Refuses: an existing target run, a source that is not
+    a valid resumable checkpoint of a completed run, a config differing from the source's in anything but
+    CONTINUATION_KEYS, or a step budget not above N."""
+    source = Path(source).resolve()
+    src_name, step, layout = runs.parse_checkpoint(source)
+    name = cfg.run.name
+    if layout != "run" or not cfg.streaming.enabled:
+        raise SystemExit("continuation needs a streaming run's checkpoint under runs/ (crash-consistent, with its "
+                         "sampler and rollout records)")
+    if src_name == name:
+        raise SystemExit(f"--continue-from: {source} belongs to run {name!r} itself; use --resume for that")
+    if runs.run_dir(name).exists():
+        raise SystemExit(f"run {name!r} already exists ({rel(runs.run_dir(name))}/): a continuation is set up once; "
+                         f"resume it with --resume latest")
+    ok, why = stream_resume.validate(source)
+    if not ok:
+        raise SystemExit(f"{source} is not a valid resumable checkpoint: {why}")
+    src_manifest = runs.manifest(src_name) or {}
+    if src_manifest.get("status") not in ("completed", "complete"):
+        raise SystemExit(f"run {src_name!r} is {src_manifest.get('status')!r}: only a completed run is continued")
+    state = load_training_state(source)
+    strip = lambda c: {k: ({**v, "overwrite": None} if k == "run" else v) for k, v in c.items() if k != "verification"}
+    diff = set(differences(strip(normalized(state["config"])), strip(as_dict(cfg))))
+    if not diff <= CONTINUATION_KEYS:
+        raise SystemExit(f"{name} differs from {src_name} in {sorted(diff - CONTINUATION_KEYS)}: a continuation may "
+                         f"change only {sorted(CONTINUATION_KEYS)}")
+    if state["step"] != step or cfg.training.max_steps <= step:
+        raise SystemExit(f"continuation from step {step} needs training.max_steps > {step} "
+                         f"(got {cfg.training.max_steps})")
+    src_dir, dst = runs.run_dir(src_name), runs.run_dir(name)
+    try:  # setup only; a failure here removes the half-built target (the source is never touched)
+        src_stream = src_dir / Path(normalized(state["config"])["streaming"]["directory"])
+        (dst / "checkpoints").mkdir(parents=True)
+        runs.training_dir(name).mkdir(parents=True)
+        for s in (0, step):  # the initial adapter (parameter-delta reference) and the checkpoint continued from
+            shutil.copytree(runs.checkpoint_path(src_name, s), runs.checkpoint_path(name, s))
+        shutil.copytree(src_stream, streaming_dir(cfg))
+        copied = runs.checkpoint_path(name, step)
+        for s in (0, step):
+            ok, why = stream_resume.validate(runs.checkpoint_path(name, s), resumable=s > 0)
+            if not ok:
+                raise SystemExit(f"copy of {src_name} step{s} is not valid: {why}")
+        (dst / "config.yaml").write_text(f"# resolved config of run {name}, sha256 {sha256(cfg)}\n"
+                                         + yaml.safe_dump(as_dict(cfg), sort_keys=False))
+        runs.create(name, sha256(cfg), git_state())
+        record = {"run": src_name, "run_id": src_manifest.get("id"), "checkpoint": rel(source), "step": step,
+                  "config_sha256": src_manifest.get("config_sha256"), "copied_checkpoint": rel(copied),
+                  "checkpoint_tree_sha256": _tree_sha256(copied), "source_checkpoint_tree_sha256": _tree_sha256(source),
+                  "streaming_tree_sha256": _tree_sha256(streaming_dir(cfg)), "changed": sorted(diff)}
+        if record["checkpoint_tree_sha256"] != record["source_checkpoint_tree_sha256"]:
+            raise SystemExit("the copied checkpoint differs from its source")
+        m = runs.manifest(name)
+        m["continued_from"] = record  # identity: a new run (own id and config hash) whose trajectory starts at `source`
+        runs.write_json(runs.run_dir(name) / "manifest.json", m)
+    except BaseException:
+        shutil.rmtree(dst, ignore_errors=True)
+        raise
+    print(f"continuation: run {name} continues {rel(source)} (step {step}) to {cfg.training.max_steps} updates")
+    return train(cfg, resume=copied, device=device)
+
+
+def coverage(result, train_ids, attempts, steps, G):
+    """What the run actually trained on, from its own records: every rollout attempt (updates and zero-signal batches)
+    with the prompt ids it drew. A full pass over the pool is claimed only when every pool prompt was visited."""
+    by_attempt = {r["attempt"]: r["prompt_ids"] for r in result.get("training", [])}
+    by_attempt.update({z["attempt"]: z["prompt_ids"] for z in result.get("zero_signal", [])})
+    selections = [i for a in sorted(by_attempt) for i in by_attempt[a]]
+    pool = set(train_ids)
+    visited = set(selections) & pool
+    return {"train_pool_prompts": len(pool), "rollout_attempts": attempts, "successful_updates": steps,
+            "attempts_with_records": len(by_attempt), "prompt_selections": len(selections),
+            "unique_prompts_visited": len(visited), "coverage_fraction": len(visited) / len(pool) if pool else None,
+            "zero_signal_batches": len(result.get("zero_signal", [])),
+            "skipped_batches": len(result.get("zero_signal", [])), "generated_completions": len(selections) * G,
+            "full_pass_over_pool": bool(pool) and visited == pool}
 
 
 def start(cfg, resume):
@@ -341,6 +455,23 @@ def rss_bytes():
     return None
 
 
+def rollout_evidence(backend):
+    """What generated the last rollout batch (kept in the step's timings, outside the bitwise-compared training rows):
+    the generator class and, for DFlash, its per-call statistics, i.e. proof that DFlash actually ran rather than that
+    the config asked for it. None for the resident backend's model.generate()."""
+    gen = getattr(backend, "sampler", None)
+    if gen is None:
+        return None
+    out = {"generator": type(gen).__name__}
+    last = getattr(gen, "last", None)
+    if out["generator"] == "DFlashGenerator" and last is not None:
+        acc = list(last["accepted_per_pass"])
+        out.update(draft_model=getattr(backend, "draft_model", None), drafter_bytes=last.get("drafter_bytes"),
+                   steps=int(last["steps"]), target_passes=int(last["target_passes"]), accepted_per_pass=acc,
+                   accepted_drafts=int(sum(acc)), calls=len(getattr(gen, "history", [])))
+    return out
+
+
 def weight_bytes_copied(backend):
     """Frozen weight bytes the L2L executor has copied host -> GPU so far (None for the resident backend)."""
     ex = getattr(backend, "executor", None)
@@ -425,6 +556,12 @@ def _train(cfg: Config, resume, state, device):
             "model": cfg.model.name, "method": "GRPO+LoRA", "seed": t.seed, "yaml_config": as_dict(cfg),
             "config_sha256": sha256(cfg),
             "environment": environment(splits, device, models(cfg)),
+            # how rollouts are produced (per-step proof: timings[].rollout_generator)
+            "rollout_backend": {"backend": backend.name,
+                                "generator": type(getattr(backend, "sampler", None)).__name__
+                                if getattr(backend, "sampler", None) is not None else "model.generate",
+                                "draft_model": getattr(backend, "draft_model", None),
+                                "drafter_bytes": backend.drafter.nbytes() if getattr(backend, "drafter", None) else None},
             "config": {"lr": t.learning_rate, "steps": t.max_steps, "max_attempts": t.max_attempts, "train_samples": d.train_samples,
                        "train_ids": [e["id"] for e in train_set], "val_subset_ids": [e["id"] for e in val_sub],
                        "B": B, "G": G, "micro_batch_size": t.micro_batch_size,
@@ -460,6 +597,11 @@ def _train(cfg: Config, resume, state, device):
         pending = to(state.get("pending"), model.device)  # a batch whose remaining updates were cut by this checkpoint
         result.setdefault("resumed", []).append({"from": rel(resume), "step": step, "attempts": attempts,
                                                  "environment": environment(splits, device, models(cfg))})
+        if (cont := continuation_of(name, resume)) is not None:  # first start of a continuation run
+            result.update(yaml_config=as_dict(cfg), config_sha256=sha256(cfg), continued_from=cont)
+            result["config"]["steps"] = t.max_steps
+            ckpt = rel(resume)
+            print(f"continuing run {cont['run']} from step {step} as run {name} (to {t.max_steps} updates)")
         print(f"resumed from {rel(resume)}: step {step}, attempt {attempts}")
 
     def stream_restore(s, step, attempts):
@@ -542,6 +684,7 @@ def _train(cfg: Config, resume, state, device):
             sync()
             timing["rollout_s"] = time.time() - t0_phase
             timing["rollout_tokens"] = int(rollouts["completion_mask"].sum())
+            timing["rollout_generator"] = rollout_evidence(backend)
             check_grouping(rollouts, tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"].to(model.device), G)
             responses = decode(tok, rollouts)
             rewards = group_rewards(responses, [e["label"] for e in batch], G)  # [B, G]
@@ -567,6 +710,9 @@ def _train(cfg: Config, resume, state, device):
             if targets is None:
                 del rollouts
                 result["zero_signal"].append(group)
+                # kept apart from the zero_signal records, which runs compare bitwise
+                result.setdefault("zero_signal_rollout_generators", []).append(
+                    {"attempt": attempts, "rollout_generator": timing["rollout_generator"]})
                 continue
             pending = {"rollouts": rollouts, "adv": targets[0], "old_logp": targets[1], "group": group, "iteration": 0,
                        "policy_version": step}
@@ -622,6 +768,7 @@ def _train(cfg: Config, resume, state, device):
     result["prompt_groups"], result["responses_generated"] = attempts * B, attempts * B * G
     result["batches_by_mixed_groups"] = {str(k): mixed_counts[k] for k in range(B + 1)}
     result["zero_signal_groups"] = len(result["zero_signal"])  # batches skipped: no group had mixed rewards
+    result["coverage"] = coverage(result, [e["id"] for e in train_set], attempts, step, G)
     if step < t.max_steps:
         print(f"Attempt budget exhausted: {step} of {t.max_steps} steps after {attempts} groups")
 

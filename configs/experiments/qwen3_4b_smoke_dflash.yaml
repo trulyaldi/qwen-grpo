@@ -1,7 +1,11 @@
 # qwen3_4b_smoke.yaml with DFlash-drafted rollouts (z-lab/Qwen3-4B-DFlash-b16, ~1.08 GB bf16, GPU-resident beside the
-# streamed target). Run after the plain smoke: it adds the drafter's memory and the DFlash rollout path. The final run
-# (qwen3_4b_final.yaml) does NOT enable DFlash; whether it should is decided from this run and scripts/dflash_bench.py
-# (on-policy checks and speed, H10).
+# streamed target). Run after the plain smoke: it adds the drafter's memory and the DFlash rollout path. Its resolved
+# config differs from qwen3_4b_final.yaml (which enables DFlash) only in run.name, data sizes, steps and evaluation
+# cadence: it is the guarded qualification of the final run's DFlash path, and stage F does not start unless it passes.
+# 10 optimizer updates (the integration smoke; the plain baseline qwen3_4b_smoke.yaml keeps its 4): same 64-prompt pool,
+# seed, B, G, optimizer, sampling and evaluation subset; the prompt sampler draws the same batch sequence per rollout
+# attempt (which attempts end zero-signal depends on the sampled responses), and per-step times compare directly
+# (step 1 is warm-up in both).
 extends: qwen3_4b_smoke.yaml
 
 run:
@@ -10,3 +14,6 @@ run:
 dflash:
   enabled: true
   draft_model: z-lab/Qwen3-4B-DFlash-b16
+
+training:
+  max_steps: 10

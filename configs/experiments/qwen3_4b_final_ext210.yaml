@@ -1,0 +1,19 @@
+# OPTIONAL, OPT-IN extension of the primary run: qwen3_4b_final.yaml continued from its step-60 checkpoint to 210
+# updates (~1050 prompt selections, about one pass over the 1024-prompt pool; coverage is still measured, not assumed).
+# Never started by scripts/run_assignment.sh (study entry H12.train_extended is opt_in). Run it only explicitly:
+#   python scripts/run.py train --config configs/experiments/qwen3_4b_final_ext210.yaml \
+#       --continue-from runs/qwen3_4b_final/checkpoints/step60
+# Continuation, not a restart (qwen_grpo/trainer.py continue_run): a NEW run runs/qwen3_4b_final_ext210/ receives
+# byte-for-byte copies of the source's step0 and step60 checkpoints and its streaming directory (prompt-stream and
+# rollout records); adapter, AdamW state, RNG state, sampler position, attempt counter and the log so far are restored
+# from that checkpoint, and the manifest records the source run, checkpoint, config hash and file hashes. The resumed
+# config may differ from the source's in run.name and training.max_steps only (anything else is refused), so the
+# continued trajectory equals an uninterrupted 210-update run of qwen3_4b_final.yaml (tests/test_continuation.py).
+# runs/qwen3_4b_final/ is only read, never written. Its LR=0 control stays the 30-update qwen3_4b_final_lr0.
+extends: qwen3_4b_final.yaml
+
+run:
+  name: qwen3_4b_final_ext210
+
+training:
+  max_steps: 210

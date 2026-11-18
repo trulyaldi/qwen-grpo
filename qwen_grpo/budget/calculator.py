@@ -18,7 +18,10 @@ GiB, MiB, GB = 2**30, 2**20, 10**9
 DTYPE = {"bfloat16": 2, "float16": 2, "float32": 4}
 EXACT, ESTIMATE, UNKNOWN = "exact", "estimate", "unknown"
 PASS, FAIL, UNSURE = "PASS", "FAIL", "UNKNOWN"
-OVERALL_PHASES = ("initialization", "rollout", "training", "evaluation", "merge")  # DFlash is optional, excluded
+OVERALL_PHASES = ("initialization", "rollout", "training", "evaluation", "merge")  # with dflash.enabled the rollout
+# phase is DFlash's (drafter resident in every phase); otherwise the optional "dflash (optional estimate)" is excluded
+DRAFT_KEYS = ("num_hidden_layers", "block_size", "num_target_features", "hidden_size", "intermediate_size",
+              "num_attention_heads", "num_key_value_heads", "head_dim")
 
 SCHEMA = {
     "run_name": str,
@@ -217,8 +220,6 @@ def validate(cfg: dict, schema: dict = SCHEMA, path: str = "") -> dict:
         if cfg.get(sec, {}).get(key) not in allowed and path == "":
             raise ValueError(f"{sec}.{key}: {cfg[sec][key]!r} not in {allowed}")
     if path == "":
-        if cfg["dflash"]["enabled"]:
-            raise ValueError("dflash.enabled: DFlash is not implemented; only dflash.estimate is available")
         g = cfg["grpo"]
         if min(g["prompt_batch_size"], g["group_size"], g["rollout_batch_size"], g["micro_batch_size"],
                g["prompt_tokens"], g["generation_tokens"], g["num_iterations"]) < 1:
@@ -238,8 +239,14 @@ def load_config(path) -> dict:
 class Budget:
     """All phases for one configuration and one Architecture (qwen_grpo.budget.architecture)."""
 
-    def __init__(self, cfg: dict, arch, draft_bytes: int | None = None, resident: int | None = None):
-        self.cfg, self.arch, self.draft_bytes = cfg, arch, draft_bytes
+    def __init__(self, cfg: dict, arch, draft_bytes: int | None = None, resident: int | None = None,
+                 draft: dict | None = None):
+        """draft: the DFlash drafter's architecture (DRAFT_KEYS, from its config.json; draft_config()); needed to size
+        the DFlash rollout when dflash.enabled, else its activations are unknown (critical)."""
+        self.cfg, self.arch, self.draft_bytes, self.draft = cfg, arch, draft_bytes, draft
+        self.dflash_on = cfg["dflash"]["enabled"]
+        if draft is not None and (missing := [k for k in DRAFT_KEYS if k not in draft]):
+            raise ValueError(f"draft architecture lacks {missing}")
         s, a = cfg["streaming"], arch
         self.dt, self.w = cfg["model"]["weight_dtype"], DTYPE[cfg["model"]["weight_dtype"]]
         self.L = a.num_hidden_layers
@@ -280,7 +287,15 @@ class Budget:
                   Item(f"layer buffers x{self.cfg['streaming']['gpu_layer_buffers'] if self.streamed else 0}",
                        self.buffer_bytes(), EXACT, "each sized for the largest streamed layer"),
                   Item(f"LoRA parameters ({self.cfg['lora']['dtype']})", self.lora_b, EXACT)]
+        if self.dflash_on:  # loaded once by make_backend and kept on the GPU for the whole run (all phases)
+            items.append(self.draft_weights())
         return items
+
+    def draft_weights(self) -> Item:
+        name = f"DFlash drafter weights ({self.cfg['dflash']['draft_model_id']}, frozen, resident)"
+        if self.draft_bytes is None:
+            return Item(name, None, UNKNOWN, "draft checkpoint metadata unavailable", critical=True)
+        return Item(name, self.draft_bytes, EXACT, "safetensors header")
 
     def gpu_optimizer(self, grads: bool) -> list[Item]:
         items = [Item("AdamW exp_avg + exp_avg_sq", adamw_state_bytes(self.lora, self.cfg["lora"]["dtype"]), EXACT)]
@@ -347,6 +362,60 @@ class Budget:
         decode = Moment(f"{label}: last decode step", base + gk + [ids, grow, sample], cpu + ck)
         return [prefill, decode]
 
+    def dflash_moments(self, n: int, R: int, label: str, base: list[Item]) -> list[Moment]:
+        """Rollout with qwen_grpo.execution.dflash.dflash_generate, as implemented: one target prefill that keeps
+        hidden features of the drafter's target layers and computes the LM head at EVERY prompt position (fp32 copy
+        kept until the first verify pass has produced its logits), then rounds of (drafter proposes a block from those
+        features, target verifies the block in one pass through the layer executor)."""
+        a, P, V, w = self.arch, self.P, self.arch.vocab_size, self.w
+        cpu = self.cpu_weights()
+        T = P + R
+        ids = Item("token ids + attention mask (int64)", 2 * n * T * 8, EXACT)
+        d = self.draft
+        if d is None:
+            unk = Item("DFlash activations (drafter config unavailable)", None, UNKNOWN,
+                       "drafter config.json not read: block size, feature layers and drafter KV unknown", critical=True)
+            gk, ck = self.kv_items(n, T)
+            return [Moment(f"{label}: DFlash (unsized)", base + gk + [ids, unk], cpu + ck)]
+        bs, k, Ld = d["block_size"], d["num_target_features"], d["num_hidden_layers"]
+        q = min(bs, R)                     # a block never runs past max_new_tokens (first block: q = R when R <= bs)
+        cap = P + R + bs                   # dflash_generate allocates the target KVCache with block_size slack
+        gk, ck = self.kv_items(n, cap)
+        kv_copy = Item("KV prefix copy of one layer (KVCache.update returns a contiguous copy)", self.kv_layer(n, cap),
+                       ESTIMATE)
+        feats = lambda t, label_: Item(f"{label_} [{k} target layers x {n} seq x {t} tok x H]", k * self.hidden(n, t),
+                                       EXACT)
+        prefill_logits_fp32 = Item(f"prefill logits fp32 [{n}, {P}, V] (all prompt positions, kept until the first "
+                                   "verify's logits exist)", n * P * V * 4, EXACT,
+                                   "dflash._target_step applies the LM head to every position; only the last is used")
+        dkv = 2 * Ld * n * d["num_key_value_heads"] * T * d["head_dim"] * w
+        prefill = Moment(f"{label} (DFlash): prefill, last layer", base + gk + [
+            ids, kv_copy, Item("hidden state in/out", 2 * self.hidden(n, P), ESTIMATE),
+            Item("layer intermediates (no grad)", self.layer_transient(n * P, grad=False), ESTIMATE),
+            feats(P, "captured target features")], cpu + ck)
+        head = Moment(f"{label} (DFlash): prefill LM head over all prompt positions", base + gk + [
+            ids, feats(P, "captured target features"), feats(P, "concatenated features (torch.cat)"),
+            Item("final-norm output", self.hidden(n, P), ESTIMATE),
+            Item(f"prefill logits [{n}, {P}, V] in the weight dtype", n * P * V * w, EXACT, "transient of .float()"),
+            prefill_logits_fp32,
+            Item("sampling probs of the last position (fp32)", n * V * 4, ESTIMATE)], cpu + ck)
+        nh, nkv, hd, H = d["num_attention_heads"], d["num_key_value_heads"], d["head_dim"], d["hidden_size"]
+        draft_round = Moment(f"{label} (DFlash): first drafter round (context = whole prompt)", base + gk + [
+            ids, prefill_logits_fp32, feats(P, "drafter context features"),
+            Item("fc + hidden_norm output (context)", 2 * n * P * H * w, ESTIMATE),
+            Item("drafter K/V of context + block, GQA-repeated for attention",
+                 2 * n * (P + q) * (nkv + nh) * hd * w, ESTIMATE),
+            Item(f"drafter context cache [{Ld} layers] + its concatenated copy", 2 * dkv, ESTIMATE),
+            Item(f"draft logits [{n}, {q - 1}, V] (+ fp32 for argmax)", n * max(q - 1, 0) * V * (w + 4), EXACT)],
+            cpu + ck)
+        verify = Moment(f"{label} (DFlash): first verify pass, LM head over the block", base + gk + [
+            ids, kv_copy, prefill_logits_fp32, Item(f"drafter context cache [{Ld} layers]", dkv, ESTIMATE),
+            Item("hidden state in/out (block)", 2 * self.hidden(n, q), ESTIMATE),
+            feats(q, "captured block features"), feats(q, "concatenated block features (torch.cat)"),
+            Item(f"block logits [{n}, {q}, V] native + fp32", n * q * V * (w + 4), EXACT),
+            Item("block sampling probs (fp32)", n * q * V * 4, ESTIMATE)], cpu + ck)
+        return [prefill, head, draft_round, verify]
+
     def forward_logits_moment(self, label: str, base: list[Item], n_hidden: int, m: int, cpu: list[Item]) -> Moment:
         """No-grad teacher-forced pass (old log-probs, scoring): layer transient on one micro-batch, hidden states of
         `n_hidden` sequences, then the logits path."""
@@ -379,9 +448,16 @@ class Budget:
         g = self.cfg["grpo"]
         n = min(g["rollout_batch_size"], self.N)
         base = self.gpu_weights() + self.gpu_optimizer(grads=False)
-        return Phase("rollout", self.generation_moments(n, self.R, "rollout", base),
-                     [f"{n} sequences per generate() call, {math.ceil(self.N / n)} call(s) per rollout batch",
-                      "LoRA grads were freed by zero_grad(set_to_none=True); AdamW states persist across steps"])
+        notes = [f"{n} sequences per generate() call, {math.ceil(self.N / n)} call(s) per rollout batch",
+                 "LoRA grads were freed by zero_grad(set_to_none=True); AdamW states persist across steps"]
+        if self.dflash_on:
+            d = self.draft or {}
+            notes += [f"DFlash rollouts ({self.cfg['dflash']['draft_model_id']}): block size {d.get('block_size')}, "
+                      f"{d.get('num_target_features')} target feature layers, {d.get('num_hidden_layers')} drafter layers; "
+                      "verifier = the current LoRA policy through the layer executor (dflash_generate)",
+                      "the drafter weights are GPU-resident in every phase (loaded once by make_backend)"]
+            return Phase("rollout", self.dflash_moments(n, self.R, "rollout", base), notes)
+        return Phase("rollout", self.generation_moments(n, self.R, "rollout", base), notes)
 
     def training(self) -> Phase:
         s, g, h = self.cfg["streaming"], self.cfg["grpo"], self.arch.hidden_size
@@ -465,7 +541,7 @@ class Budget:
 
     def phases(self) -> list[Phase]:
         out = [self.initialization(), self.rollout(), self.training(), self.evaluation(), self.merge()]
-        return out + ([self.dflash()] if self.cfg["dflash"]["estimate"] else [])
+        return out + ([self.dflash()] if self.cfg["dflash"]["estimate"] and not self.dflash_on else [])
 
     # ------------------------------------------------------------------------------------------------ PCIe
     def transfers(self) -> list[Transfer]:
@@ -488,10 +564,18 @@ class Budget:
                                                                                       e["score_batch_size"])
         adapted = sum(t.numel for t in a.lora_targets) * self.w
         merge_bytes = 2 * adapted + self.lora_b if self.cfg["merge"]["device"] == "gpu" else 0
+        if self.dflash_on and self.draft:
+            bs = self.draft["block_size"]
+            best = math.ceil((R - 1) / bs) if R > 1 else 0
+            decode = Transfer("rollout verify passes (DFlash, upper bound)", calls * (R - 1), calls * (R - 1) * sweep,
+                              decode_kv, n, f"one weight sweep per verify pass: between {best} (every draft accepted) "
+                              f"and {R - 1} (every draft rejected) per call; the drafter is resident (no PCIe)")
+        else:
+            decode = Transfer("rollout decode", calls * (R - 1), calls * (R - 1) * sweep, decode_kv, n,
+                              "one weight sweep per generated token after the first")
         return [
             Transfer("rollout prefill", calls, calls * sweep, prefill_kv, n * P),
-            Transfer("rollout decode", calls * (R - 1), calls * (R - 1) * sweep, decode_kv, n,
-                     "one weight sweep per generated token after the first"),
+            decode,
             Transfer("old log-probs forward", passes, passes * sweep, 0, self.N * S // passes),
             Transfer(f"training forward (x{K} iterations)", K * passes, K * passes * sweep, K * ck,
                      self.N * S // passes),
@@ -519,11 +603,11 @@ class Budget:
 
 # ------------------------------------------------------------------------------------------------ whole report
 
-def residency_sweep(cfg: dict, arch, draft_bytes=None) -> list[dict]:
+def residency_sweep(cfg: dict, arch, draft_bytes=None, draft=None) -> list[dict]:
     """GPU/CPU peaks and verdicts for every resident-layer count r = 0..L (the last r layers resident)."""
     rows = []
     for r in range(arch.num_hidden_layers + 1):
-        b = Budget(cfg, arch, draft_bytes, resident=r)
+        b = Budget(cfg, arch, draft_bytes, resident=r, draft=draft)
         summ = [phase_summary(p, cfg) for p in b.phases() if p.name in OVERALL_PHASES]
         rows.append({"resident": r, "streamed": len(b.streamed),
                      "gpu_peak_bytes": max(s["gpu_peak"]["gpu_device"] for s in summ),
@@ -545,15 +629,26 @@ def recommend(rows: list[dict]) -> dict:
             "recommended_resident": hi if hi is not None and lo is not None and lo <= hi else None}
 
 
-def build_report(cfg: dict, arch, draft_bytes: int | None = None) -> dict:
-    b = Budget(cfg, arch, draft_bytes)
+def draft_config(raw: dict) -> dict:
+    """DRAFT_KEYS from a DFlash drafter's config.json (z-lab layout: block_size, dflash_config.target_layer_ids)."""
+    return {"num_hidden_layers": raw["num_hidden_layers"], "block_size": raw["block_size"],
+            "num_target_features": len(raw["dflash_config"]["target_layer_ids"]), "hidden_size": raw["hidden_size"],
+            "intermediate_size": raw["intermediate_size"], "num_attention_heads": raw["num_attention_heads"],
+            "num_key_value_heads": raw["num_key_value_heads"],
+            "head_dim": raw.get("head_dim") or raw["hidden_size"] // raw["num_attention_heads"]}
+
+
+def build_report(cfg: dict, arch, draft_bytes: int | None = None, draft: dict | None = None) -> dict:
+    b = Budget(cfg, arch, draft_bytes, draft=draft)
     phases = b.phases()
     summaries = [phase_summary(p, cfg) for p in phases]
-    sweep = residency_sweep(cfg, arch, draft_bytes)
+    sweep = residency_sweep(cfg, arch, draft_bytes, draft)
     overall = combine(s["verdict"] for s in summaries if s["phase"] in OVERALL_PHASES)
     transfers = b.transfer_rows()
     return {
         "run_name": cfg["run_name"], "config": cfg, "overall_verdict": overall,
+        "dflash": {"enabled": cfg["dflash"]["enabled"], "draft_model_id": cfg["dflash"]["draft_model_id"],
+                   "draft_bytes": draft_bytes, "draft_architecture": draft},
         "model": metadata(arch, b),
         "phases": [{**s, "notes": p.notes, "moments": [asdict(m) for m in p.moments]} for p, s in zip(phases, summaries)],
         "residency": {"configured_resident": len(b.resident), "streamed": len(b.streamed),
@@ -597,6 +692,12 @@ def uncertainties(cfg: dict, phases: list[Phase]) -> list[str]:
            "the CPU limit is total RAM; other processes' usage at run time is not subtracted",
            "compute time is not estimated: critical paths are lower bounds from transfer time alone",
            "HF generate() internals beyond KV cache and next-token logits are covered only by the safety margin"]
+    if cfg["dflash"]["enabled"]:
+        out += ["DFlash rollout: the prefill LM head over all prompt positions and the drafter's tensors are sized from "
+                "the code of qwen_grpo/execution/dflash.py as it stands; the drafter's attention internals and SDPA "
+                "workspaces are estimates, and none of it has been measured on Qwen3-4B",
+                "DFlash rollout: acceptance (verify passes per call) changes PCIe traffic, not peak memory; the "
+                "transfer rows give the reject-everything upper bound"]
     for p in phases:
         for m in p.moments:
             out += [f"{p.name} / {m.name}: {i.name} unknown ({i.note})" for i in m.gpu + m.cpu if i.kind == UNKNOWN]

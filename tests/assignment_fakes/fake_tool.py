@@ -24,7 +24,8 @@ if "--out-dir" in args:
     d = Path(args[args.index("--out-dir") + 1])
     d.mkdir(parents=True, exist_ok=True)
     cfg = args[args.index("--config") + 1] if "--config" in args else ""
-    name = "qwen3-4b-final_8gb.json" if "final" in cfg else Path(cfg).stem.replace("qwen3-4b", "qwen3-4b_8gb") + ".json"
+    name = ("qwen3-4b-final-dflash_8gb.json" if "final_dflash" in cfg else "qwen3-4b-final_8gb.json" if "final" in cfg
+            else Path(cfg).stem.replace("qwen3-4b", "qwen3-4b_8gb") + ".json")
     (d / name).write_text(os.environ.get("FAKE_PREDICTION", "{}"))
     sys.exit(0)
 sys.exit(int(os.environ.get("FAKE_TOOL_EXIT", "0")))

@@ -21,8 +21,10 @@
 
 - **Model and system:** Qwen3-4B with L2L async, disk streaming with crash-consistent checkpoints, and the 8 GiB
   budget.
-- **Data:** 1,024 balanced training prompts, within the assignment's 1–2k. 210 updates of 5 prompts × 6 completions
-  use each prompt about once.
+- **Data:** a pool of 1,024 balanced training prompts, within the assignment's 1–2k. The primary run makes 60 updates
+  of 5 prompts × 6 completions (>= 300 prompt selections, plus zero-signal batches): not one epoch. The prompts
+  actually visited are recorded (`training.json` `coverage`, report requirement T2). The optional 210-update
+  continuation (`qwen3_4b_final_ext210.yaml`, opt-in) covers about one pass, still measured rather than assumed.
 - **Held out:** the validation subset (128) only monitors training; the test split is used once, after training.
 - **Negative control:** LR=0, with the trainer's own control checks.
 
@@ -38,5 +40,7 @@ report is regenerated on the GPU host.
 
 - **The GPU budget (R13) can only be BLOCKED under WSL2,** where there are no per-process nvidia-smi readings. A native
   Linux host is needed for PASS.
-- **DFlash speed (R12) may FAIL** because of the batched minimum-acceptance rule (docs/l2l/12_dflash.md).
+- **DFlash speed (R12) may FAIL** because of the batched minimum-acceptance rule (docs/l2l/12_dflash.md). The final
+  run and its LR=0 control nevertheless sample through DFlash (`dflash.enabled` in `qwen3_4b_final.yaml`); the plain
+  baseline at the same batch shape is the H11 smoke run.
 - **The memory-efficient head (R3) is not essential,** because training uses the exact full head.

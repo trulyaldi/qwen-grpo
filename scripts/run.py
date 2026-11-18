@@ -2,6 +2,8 @@
 
 python scripts/run.py train    --config configs/experiments/<exp>.yaml
 python scripts/run.py train    --config runs/<run>/config.yaml --resume runs/<run>/checkpoints/step<N>
+python scripts/run.py train    --config <longer.yaml> --continue-from runs/<src>/checkpoints/step<N>
+                                 a NEW run continuing a completed streaming run's checkpoint (trainer.continue_run)
 python scripts/run.py validate --run <run> [--step N]            held-out validation split -> runs/<run>/evaluation/step<N>/
 python scripts/run.py test     --run <run> [--step N]            test split (final report only)
 python scripts/run.py verify   --run <run> [--step N] [--control <lr0 run>]   -> runs/<run>/verification/step<N>/
@@ -229,6 +231,9 @@ def parse(argv=None):
         if name == "train":
             p.add_argument("--resume", type=Path, help="continue the run from this checkpoint of it, or 'latest': its "
                            "highest-step valid checkpoint (streaming runs, crash-consistent checkpoints)")
+            p.add_argument("--continue-from", type=Path, help="start the NEW run --config names from this checkpoint of "
+                           "another, completed streaming run (its config may differ in run.name and training.max_steps "
+                           "only); the source run is not modified")
             continue
         p.add_argument("--checkpoint", type=Path)
         p.add_argument("--run", help="a run under runs/ (instead of --config and --checkpoint)")
@@ -259,6 +264,11 @@ def main(argv=None):
 
         # a new run must use the current config schema; resuming accepts the historical one its run was saved with
         resume = "latest" if args.resume is not None and str(args.resume) == "latest" else args.resume
+        if args.continue_from is not None:
+            if resume is not None:
+                raise SystemExit("--continue-from starts a continuation run; --resume resumes one: give one of them")
+            from qwen_grpo.trainer import continue_run
+            return continue_run(load(args.config), args.continue_from)
         return train(load(args.config, historical=args.resume is not None), resume=resume)
     if args.run is not None:
         if args.command == "report":

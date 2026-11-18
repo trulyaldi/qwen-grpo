@@ -17,7 +17,7 @@ from qwen_grpo.budget import architecture, calculator  # noqa: E402
 
 
 def draft_bytes(cfg):
-    if not cfg["dflash"]["estimate"]:
+    if not (cfg["dflash"]["estimate"] or cfg["dflash"]["enabled"]):
         return None
     try:
         tensors, _, _ = architecture.checkpoint_tensors(cfg["dflash"]["draft_model_id"], None)
@@ -27,6 +27,21 @@ def draft_bytes(cfg):
     return sum(t.stored_bytes for t in tensors.values())
 
 
+def draft_architecture(cfg):
+    """The drafter's config.json (cached, else downloaded: a few KB) as calculator.DRAFT_KEYS; None if DFlash is off or
+    the file is unavailable (the DFlash rollout is then reported with critical unknowns)."""
+    if not cfg["dflash"]["enabled"]:
+        return None
+    import json
+    from huggingface_hub import hf_hub_download
+    try:
+        raw = json.loads(Path(hf_hub_download(cfg["dflash"]["draft_model_id"], "config.json")).read_text())
+    except Exception as e:  # noqa: BLE001 - reported, the prediction then says unknown
+        print(f"DFlash drafter config unavailable, its activations reported as unknown: {e}", file=sys.stderr)
+        return None
+    return calculator.draft_config(raw)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", required=True)
@@ -34,7 +49,7 @@ def main():
     args = ap.parse_args()
     cfg = calculator.load_config(args.config)
     arch, _ = architecture.load(cfg["model"]["id"], cfg["lora"]["targets"])
-    report = calculator.build_report(cfg, arch, draft_bytes(cfg))
+    report = calculator.build_report(cfg, arch, draft_bytes(cfg), draft_architecture(cfg))
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     report["provenance"] = {"created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                             "config": str(args.config),

@@ -72,13 +72,16 @@ does, for running a part by hand.
    ```bash
    python scripts/experiment.py run --entry H05.real_0.6b_bf16 H06.prefetch_timing H09.merge_qwen3_0.6b H08.resume_qwen3_0.6b
    ```
-6. **Qwen3-4B** (downloads ~8 GB): the guarded smoke run first (4 steps, the final batch shape), then the profile, the
-   DFlash benchmark, and only then the final run, its LR=0 control and the held-out evaluation:
+6. **Qwen3-4B** (downloads ~8 GB): the guarded plain smoke run first (4 steps, the final batch shape), then the
+   profile, the DFlash benchmark and the 10-step DFlash smoke, and only then the 60-step primary run, its LR=0 control
+   and the held-out evaluation:
    ```bash
    python scripts/experiment.py run --entry H11.smoke
-   python scripts/experiment.py run --entry H11.profile H10.dflash_bench
+   python scripts/experiment.py run --entry H11.profile H10.dflash_bench H10.smoke_dflash   # the final run uses DFlash
    python scripts/experiment.py run --entry H12.train_final       # hours; resumable
-   python scripts/experiment.py run --entry H12.final_eval
+   python scripts/experiment.py run --entry H12.final_eval H10.dflash_drift
+   # optional, opt-in only (hours): continue the primary run to 210 updates as the new run qwen3_4b_final_ext210
+   python scripts/experiment.py run --entry H12.train_extended H10.dflash_drift_extended
    ```
    Go on from the smoke run only if it completed (its memory guard stops it at the first nvidia-smi sample above
    8 GiB). On a guard failure, change one measurable setting (e.g. `training.micro_batch_size`) in a new config and

@@ -172,3 +172,46 @@ def test_the_final_report_records_how_old_its_evidence_is(monkeypatch, tmp_path)
     assert fresh["t03_forward_equivalence"]["commit"].startswith("c4b391b")
     assert "qwen_grpo/execution/layer_stream.py" in fresh["t03_forward_equivalence"]["engine_files_changed_since"]
     assert "## Evidence freshness" in (tmp_path / "final_report.md").read_text()
+
+
+def test_drift_checkpoints_must_be_saved_and_complete_before_the_drift_study_runs(sandbox, monkeypatch):
+    """H10.dflash_drift names step0/20/40/60 of the primary run: each must exist as a complete (COMMIT.json-verified)
+    adapter checkpoint, else the entry is BLOCKED, never run against a missing or torn checkpoint."""
+    from qwen_grpo.streaming import resume as R
+    monkeypatch.setattr(X, "run_state", lambda name: (True, "completed"))
+    drift = ENTRIES["H10.dflash_drift"]
+    assert any("step20 was not saved" in w for w in X.unmet_prerequisites(drift))
+    for step in (0, 20, 40, 60):
+        final = sandbox / "runs" / "qwen3_4b_final" / "checkpoints" / f"step{step}"
+        R.publish(final, lambda tmp: (tmp / "adapter_model.safetensors").write_bytes(b"adapter"), step)
+    assert X.unmet_prerequisites(drift) == []
+    (sandbox / "runs" / "qwen3_4b_final" / "checkpoints" / "step40" / "adapter_model.safetensors").write_bytes(b"torn")
+    assert any("step40 is not a valid adapter checkpoint" in w for w in X.unmet_prerequisites(drift))
+
+
+def test_opt_in_entries_run_only_when_named(monkeypatch):
+    """The 210-update continuation and its drift study are opt_in: `run --hypothesis H12` (or H10) never selects them,
+    `run --entry H12.train_extended` does."""
+    ran = []
+    monkeypatch.setattr(X, "probe", lambda: X.TARGETS["ampere"])
+    monkeypatch.setattr(X, "execute", lambda e, cap, **k: ran.append(e["id"]) or {"status": "PASS"})
+    X.cmd_run(type("A", (), {"study": X.STUDY, "entry": [], "hypothesis": ["H12", "H10"], "again": False,
+                             "dry_run": True})())
+    assert "H12.train_final" in ran and "H10.dflash_drift" in ran
+    assert "H12.train_extended" not in ran and "H10.dflash_drift_extended" not in ran
+    ran.clear()
+    X.cmd_run(type("A", (), {"study": X.STUDY, "entry": ["H12.train_extended"], "hypothesis": [], "again": False,
+                             "dry_run": True})())
+    assert ran == ["H12.train_extended"]
+    ext = ENTRIES["H12.train_extended"]
+    assert ext["steps"][0]["argv"][-2:] == ["--continue-from", "runs/qwen3_4b_final/checkpoints/step60"]
+    assert ext["prerequisites"]["checkpoints"] == ["runs/qwen3_4b_final/checkpoints/step60"]
+
+
+def test_the_assignment_stages_never_list_an_opt_in_entry():
+    A = script("assignment")
+    opt_in = {i for i, e in ENTRIES.items() if e.get("opt_in")}
+    assert opt_in == {"H12.train_extended", "H10.dflash_drift_extended"}
+    assert not opt_in & {i for ids in A.STAGE_ENTRIES.values() for i in ids}
+    with pytest.raises(SystemExit, match="opt-in"):
+        A.check_no_opt_in(ENTRIES, {"F": ["H12.train_final", "H12.train_extended"]})

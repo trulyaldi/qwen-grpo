@@ -21,7 +21,9 @@ in [`tolerances.yaml`](research/l2l/tolerances.yaml) and the method in [`protoco
 - **Qwen3-4B** is the assignment model; **Kaggle's T4** is preliminary hardware (no native bf16).
 - **Resident Qwen3-4B** is not expected to meet the strict 8 GB cap (estimated peak ~9.5 GiB, unmeasured); **L2L** is
   the memory-constrained strategy.
-- **DFlash** is an optional, separately tested rollout strategy (off in the final run until H10 is measured).
+- **DFlash** drafts the final run's rollouts (`dflash.enabled` in `qwen3_4b_final.yaml`, inherited by the LR=0 control):
+  the frozen drafter proposes, the current LoRA policy verifies through the L2L executor. The plain-L2L baseline at the
+  same batch shape is `qwen3_4b_smoke.yaml`. Not yet run on Qwen3-4B (H10 untested).
 
 ## Architecture
 
@@ -117,10 +119,16 @@ Stages:
 - **B correctness:** unit tests and the tiny-model equivalence and fault cases, run fresh on this GPU.
 - **C Qwen3-0.6B reference:** resident vs L2L sync/async, prefetch timing, resume, real-model merge.
 - **D Qwen3-4B memory:** the guarded smoke run, then the profiler.
-- **E DFlash:** the benchmark with repeats, and the smoke run with DFlash rollouts.
-- **F training:** the final run and the LR=0 control, resumed from valid checkpoints. Runs only if B, C's real-model
-  equivalence and D's 8 GB qualification pass.
-- **G evaluation:** held-out base / trained / merged / control, and DFlash acceptance on the final checkpoints.
+- **E DFlash:** the benchmark with repeats (4 and 32 new tokens), and the 10-step integration smoke with DFlash rollouts.
+- **F training:** the 60-step primary run and the 30-step LR=0 control, both with DFlash rollouts, resumed from valid
+  checkpoints. Runs
+  only if B, C's real-model equivalence, D's 8 GB qualification, E's DFlash benchmark (greedy DFlash == plain on
+  Qwen3-4B) and E's DFlash smoke run (memory PASS) pass. Requirement D0 passes only from the training logs' per-batch
+  DFlash records, never from the config.
+- **G evaluation:** held-out base / trained / merged / control, and DFlash acceptance on the primary run's checkpoints
+  step0/20/40/60.
+- **Not part of the protocol:** the 210-step continuation (`H12.train_extended`, opt-in):
+  `python scripts/run.py train --config configs/experiments/qwen3_4b_final_ext210.yaml --continue-from runs/qwen3_4b_final/checkpoints/step60`.
 - **H Soup checks:** run if Soup is installed, else NOT_TESTED.
 
 The report is always written, also after a failure or Ctrl-C. Every item runs in its own process group under 200 ms
@@ -244,7 +252,9 @@ Tests fail if they modify `runs/`, `results/` or `checkpoints/`.
 - **bf16 results depend on GPU and batch shape:** resident vs L2L identity is established per machine.
 - **The task is easy for the base model** (0.6B already scores ~0.73–0.75), which leaves less room to show learning;
   no forgetting benchmark is evaluated.
-- **DFlash in the final run is an open decision:** with 4-token rollouts at most 3 drafted tokens can be accepted.
+- **DFlash in the final run may not speed it up:** with 4-token rollouts at most 3 drafted tokens can be accepted per
+  call, and its prefill computes the LM head over every prompt position (budget: the rollout peak, ~6.8e9 bytes
+  predicted for the final shape, `results/budget/predictions/qwen3-4b-final-dflash_8gb.md`; unmeasured).
 
 History, per-ticket design notes and the correctness audit: [`docs/development_history.md`](docs/development_history.md),
 [`docs/l2l/`](docs/l2l/), [`docs/correctness_audit.md`](docs/correctness_audit.md). What this cleanup moved and why:

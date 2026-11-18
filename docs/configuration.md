@@ -59,9 +59,10 @@ where page-locking fails; it is slower for host-to-GPU copies, and must be recor
 | 0.6B on a T4, same path | `kaggle_06b_fp32_streaming.yaml` | `l2l_async` + streaming | float32 diagnostic |
 | H08 on the real model | `qwen3_0.6b_resume.yaml` | resident + streaming | `scripts/resume_experiment.py` |
 | Qwen3-4B smoke | `qwen3_4b_smoke.yaml` | `l2l_async` + streaming + guard | 4 steps, the final run's batch shape |
-| Qwen3-4B smoke with DFlash | `qwen3_4b_smoke_dflash.yaml` | + `dflash` | drafter `z-lab/Qwen3-4B-DFlash-b16` |
-| Qwen3-4B final | `qwen3_4b_final.yaml` | `l2l_async` + streaming + guard | 1024 prompts, 210 steps; DFlash off (open: H10) |
-| LR=0 negative control | `qwen3_4b_final_lr0.yaml` | as final | 30 steps, `learning_rate: 0.0` |
+| Qwen3-4B smoke with DFlash | `qwen3_4b_smoke_dflash.yaml` | + `dflash` | 10 steps (integration smoke), drafter `z-lab/Qwen3-4B-DFlash-b16` |
+| Qwen3-4B primary run | `qwen3_4b_final.yaml` | `l2l_async` + streaming + guard + `dflash` | 1024-prompt pool, 60 steps, evaluation and checkpoint every 10 |
+| LR=0 negative control | `qwen3_4b_final_lr0.yaml` | as primary (DFlash too) | 30 steps, `learning_rate: 0.0` |
+| Optional 210-step extension | `qwen3_4b_final_ext210.yaml` | as primary | opt-in only: `run.py train --continue-from runs/qwen3_4b_final/checkpoints/step60` (a new run; never started by `run_assignment.sh`) |
 | H10 benchmark | `qwen3_4b_l2l_dflash.yaml` | `l2l_async` + DFlash | `scripts/dflash_bench.py` |
 
 **From 0.6B to 4B** the profiles differ in `model.name`, the LoRA module selection (the preset `last2-attention` is

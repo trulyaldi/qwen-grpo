@@ -100,7 +100,13 @@ def make_backend(cfg, model, device):
             from qwen_grpo.execution.dflash import DFlashDrafter, DFlashGenerator
             dtype = next(p for p in model.parameters() if not p.requires_grad).dtype
             drafter = DFlashDrafter.from_pretrained(cfg.dflash.draft_model, dtype=dtype, device=device)
+            if any(p.requires_grad for p in drafter.parameters()) or drafter.training:
+                raise RuntimeError("the DFlash drafter must be frozen (eval mode, no trainable parameters)")
+            # only rollouts change: be.greedy (evaluation) stays plain greedy decoding, be.logprobs (old log-probs and
+            # the GRPO update) stays the teacher-forced policy, and the drafter is not part of `model`, so neither the
+            # optimizer nor the checkpoints ever see it
             be.sampler = DFlashGenerator(drafter, be.executor, kv)
+            be.drafter, be.draft_model = drafter, cfg.dflash.draft_model
             be.name += "+dflash"
         return be
     if cfg.dflash.enabled:

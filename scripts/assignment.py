@@ -20,11 +20,17 @@ Stages and gates (a gate that is not met records the stage's items as BLOCKED, w
   C reference      Qwen3-0.6B bf16: resident vs L2L sync/async, prefetch timing, resume, real-model merge      gate: GPU
   D memory         Qwen3-4B guarded smoke run, then the phase profiler                                        gate: GPU, host
   E dflash         DFlash benchmark, and the smoke run with DFlash rollouts (end-to-end GRPO steps)          gate: D smoke
-  F training       final run and LR=0 control (streaming runs: resumed from their latest crash-consistent checkpoint
-                   when interrupted; an interrupted non-streaming run, e.g. stage C's, is BLOCKED, never resumed)
-                   gate: B essential correctness, C real-model equivalence, D smoke and profile with PASS memory
-  G evaluation     held-out test evaluation (base / trained / merged / control), DFlash acceptance on the final
-                   checkpoints                                                                                gate: F
+  F training       final run and LR=0 control, both with DFlash rollouts (streaming runs: resumed from their latest
+                   crash-consistent checkpoint when interrupted; an interrupted non-streaming run, e.g. stage C's, is
+                   BLOCKED, never resumed)
+                   gate: B essential correctness, C real-model equivalence, D smoke and profile with PASS memory, and
+                   (the final config enables DFlash) E's benchmark (greedy DFlash == plain on Qwen3-4B) and DFlash smoke
+                   run with PASS memory
+  G evaluation     held-out test evaluation (base / trained / merged / control), DFlash acceptance on the primary
+                   run's checkpoints step0/20/40/60                                                            gate: F
+Primary run: qwen3_4b_final.yaml, 60 updates (checkpoints every 10); LR=0 control 30 updates; the DFlash smoke 10.
+Never run here: opt_in study entries (H12.train_extended = the 210-update continuation, H10.dflash_drift_extended);
+check_no_opt_in refuses a stage list naming one.
   H audit          Soup checks if Soup is installed (else NOT_TESTED); the silent-failure matrix is built by the report
 
 Statuses: PASS, FAIL, BLOCKED, INCONCLUSIVE, NOT_TESTED. An item's status is what its tool judged (never its exit code
@@ -96,7 +102,7 @@ ESSENTIAL_B = ["unit_tests_cpu", "H01.lab_sync", "H01.lab_async_cuda", "H01.faul
                "H05.lab_sync_cuda", "H05.lab_async_cuda", "H08.resume_tiny_cpu", "H09.merge_tiny_cpu"]
 PYTEST_CPU = ["tests/test_grpo.py", "tests/test_sentiment.py", "tests/test_policy.py", "tests/test_training_invariants.py",
               "tests/test_multistep.py", "tests/test_streaming.py", "tests/test_merge.py", "tests/test_profiler.py",
-              "tests/test_memory_guard.py", "tests/test_telemetry.py"]
+              "tests/test_memory_guard.py", "tests/test_telemetry.py", "tests/test_dflash_training.py"]
 PYTEST_SILENT = ["tests/silent_failures"]
 PYTEST_CUDA = ["tests/test_prefetch.py", "tests/test_backward.py", "tests/test_generator.py", "tests/test_layer_stream.py",
                "tests/test_backend.py", "tests/test_output_head.py", "tests/test_weight_store.py", "tests/test_dflash.py"]
@@ -159,7 +165,21 @@ def worst(statuses):
 
 def load_study():
     study = yaml.safe_load(STUDY.read_text())
-    return study, {e["id"]: e for e in study["entries"]}
+    entries = {e["id"]: e for e in study["entries"]}
+    check_no_opt_in(entries)
+    return study, entries
+
+
+def check_no_opt_in(entries, stage_entries=None):
+    """The default protocol never runs an opt_in entry (e.g. the 210-update extension H12.train_extended): a stage list
+    naming one, or an override (ASSIGNMENT_STAGE_ITEMS) doing so, is refused before anything runs."""
+    lists = dict(stage_entries or STAGE_ENTRIES)
+    if os.environ.get("ASSIGNMENT_STAGE_ITEMS"):
+        lists.update(json.loads(os.environ["ASSIGNMENT_STAGE_ITEMS"]))
+    bad = sorted({i for ids in lists.values() for i in ids if (entries.get(i) or {}).get("opt_in")})
+    if bad:
+        raise SystemExit(f"opt-in entries {bad} are never part of the default assignment protocol; run them with "
+                         f"`python scripts/experiment.py run --entry <id>`")
 
 
 def cap_bytes(study):
@@ -816,12 +836,21 @@ def assignment_config_check(configs):
         "L2L backend": c["execution"]["backend"] in ("l2l_sync", "l2l_async"),
         "disk streaming enabled": bool(c.get("streaming", {}).get("enabled")),
         "memory guard on": bool(c.get("memory", {}).get("guard")),
+        "DFlash rollouts (z-lab/Qwen3-4B-DFlash-b16)": (c.get("dflash") or {}).get("enabled") is True
+        and (c.get("dflash") or {}).get("draft_model") == "z-lab/Qwen3-4B-DFlash-b16",
     }
     lr0 = configs.get(FINAL_RUNS["qwen3_4b_final_lr0"], {}).get("resolved") or {}
+    checks["LR=0 control: learning_rate 0"] = (lr0.get("training") or {}).get("learning_rate") == 0
+    checks["LR=0 control: same rollout generator as the final run (dflash section)"] = lr0.get("dflash") == c.get("dflash")
+    checks["LR=0 control: same execution, batch shape and data as the final run"] = bool(lr0) and all(
+        lr0.get(k) == c.get(k) for k in ("model", "lora", "data", "execution", "streaming", "memory")) and all(
+        (lr0.get("training") or {}).get(k) == c["training"].get(k)
+        for k in ("batch_size", "group_size", "max_new_tokens", "micro_batch_size", "num_iterations", "seed"))
     notes = ["non-thinking template: sentiment.build_prompts appends the empty <think></think> block (asserted in code, "
              "tests/test_sentiment.py)", "no SFT stage: the pipeline has none (GRPO from the base model)",
              "reward: exact canonical label (sentiment.reward), verifiable, binary",
-             f"DFlash in the final run: {bool(c.get('dflash', {}).get('enabled'))}",
+             f"DFlash in the final run (config): {bool(c.get('dflash', {}).get('enabled'))}; that rollouts actually ran "
+             "through DFlash is judged from the training logs (requirement D0), not from this check",
              f"LR=0 control: {lr0.get('training', {}).get('max_steps')} steps vs {c['training']['max_steps']} trained steps "
              "(shorter schedule: matched in data, seed and batch shape, not in length)"]
     bad = [k for k, v in checks.items() if not v]
@@ -846,7 +875,10 @@ def predictions(run_dir, attempt_dir):
     log = git("log", "-1", "--format=%H %cI", "--", "results/budget/predictions")
     statuses, runs = [], []
     # the final configuration's budget first; the historical Step-0 budgets are recomputed only as a record
-    for cfg in ("configs/budget/qwen3-4b_final.yaml", "configs/budget/qwen3-4b.yaml", "configs/budget/qwen3-0.6b.yaml"):
+    # qwen3-4b_final_dflash: the final run as configured (DFlash rollouts); qwen3-4b_final: the same shape with plain
+    # rollouts (the plain-L2L baseline and the H11.profile run)
+    for cfg in ("configs/budget/qwen3-4b_final_dflash.yaml", "configs/budget/qwen3-4b_final.yaml",
+                "configs/budget/qwen3-4b.yaml", "configs/budget/qwen3-0.6b.yaml"):
         out = pred / "calculator"
         rec = run_item(Path(attempt_dir) / f"budget_{Path(cfg).stem}",
                        [*tool("budget", [sys.executable, str(ROOT / "scripts" / "budget.py")]), "--config", cfg,
@@ -897,11 +929,29 @@ def gate(stage, state):
             if not r or r["status"] != "PASS" or r.get("memory_status") != "PASS":
                 why.append(f"stage D: {i} is {r and r['status']}, nvidia-smi memory {r and r.get('memory_status')} "
                            "(the 8 GB qualification must PASS on per-process evidence)")
+        if final_uses_dflash():  # the final run's rollouts go through DFlash: its real-model checks must pass first
+            r = item(state, "E", "H10.dflash_bench")
+            if not r or r["status"] != "PASS":
+                why.append(f"stage E: H10.dflash_bench is {r and r['status']} (greedy DFlash must equal plain decoding "
+                           "on Qwen3-4B before the final run samples through DFlash)")
+            r = item(state, "E", "H10.smoke_dflash")
+            if not r or r["status"] != "PASS" or r.get("memory_status") != "PASS":
+                why.append(f"stage E: H10.smoke_dflash is {r and r['status']}, nvidia-smi memory "
+                           f"{r and r.get('memory_status')} (the final run's DFlash path must qualify under the cap)")
     if stage == "G":
         r = item(state, "F", "H12.train_final")
         if not r or r["status"] != "PASS":
             why.append(f"stage F: H12.train_final is {r and r['status']}")
     return why
+
+
+def final_uses_dflash():
+    """dflash.enabled of the resolved final config (True if it cannot be resolved: the stricter gate)."""
+    from qwen_grpo import config
+    try:
+        return bool(config.load(ROOT / FINAL_RUNS["qwen3_4b_final"]).dflash.enabled)
+    except (Exception, SystemExit):  # noqa: BLE001
+        return True
 
 
 def stage_ids(stage):

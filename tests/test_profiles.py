@@ -65,14 +65,85 @@ def test_shared_settings_live_in_one_place():
     assert (small["lora"]["rank"], small["lora"]["alpha"]) == (big["lora"]["rank"], big["lora"]["alpha"])
 
 
+SCALE = {"run.name", "data.train_samples", "data.val_subset", "training.max_steps", "evaluation.every"}
+DRAFTER = config.DFlash(enabled=True, draft_model="z-lab/Qwen3-4B-DFlash-b16")
+
+
 def test_smoke_runs_have_the_final_runs_batch_shape():
+    """qwen3_4b_smoke is the plain-L2L baseline, qwen3_4b_smoke_dflash the final run's exact configuration at smoke
+    scale (DFlash rollouts); they differ from each other only in the dflash section."""
     final, smoke = load("experiments/qwen3_4b_final.yaml"), load("experiments/qwen3_4b_smoke.yaml")
-    assert set(diff(final, smoke)) == {"run.name", "data.train_samples", "data.val_subset", "training.max_steps",
-                                       "evaluation.every"}
-    assert smoke.streaming.enabled and smoke.memory.guard and smoke.execution == final.execution
     dflash = load("experiments/qwen3_4b_smoke_dflash.yaml")
-    assert diff(smoke, dflash) == ["dflash.draft_model", "dflash.enabled", "run.name"]
-    assert not final.dflash.enabled  # the final run's DFlash decision is open (H10 untested)
+    assert set(diff(final, dflash)) == SCALE
+    assert set(diff(final, smoke)) == SCALE | {"dflash.enabled", "dflash.draft_model"}
+    assert smoke.streaming.enabled and smoke.memory.guard and smoke.execution == final.execution == dflash.execution
+    assert set(diff(smoke, dflash)) == {"dflash.draft_model", "dflash.enabled", "run.name", "training.max_steps"}
+
+
+def test_the_final_run_and_its_lr0_control_sample_through_dflash():
+    final, lr0 = load("experiments/qwen3_4b_final.yaml"), load("experiments/qwen3_4b_final_lr0.yaml")
+    assert final.dflash == lr0.dflash == DRAFTER
+    assert final.execution.backend == "l2l_async" and config.unimplemented(final) == config.unimplemented(lr0) == []
+    assert lr0.training.learning_rate == 0.0 and lr0.training.max_steps == 30
+    assert set(diff(final, lr0)) == {"run.name", "training.learning_rate", "training.max_steps"}
+    # untouched by enabling DFlash: objective, reward inputs, adapter, schedule, batch, sampling, data
+    t = final.training
+    assert (t.learning_rate, t.max_steps, t.batch_size, t.group_size, t.max_new_tokens, t.num_iterations, t.clip_eps,
+            final.lora.rank, final.lora.alpha, final.data.train_samples) == (5e-4, 60, 5, 6, 4, 1, 0.2, 32, 64, 1024)
+    assert (final.lora.targets.modules, final.lora.targets.num_layers) == (["q_proj", "v_proj", "o_proj"], 2)
+    assert (final.model.name, final.model.dtype, final.execution.weight_storage) == ("Qwen/Qwen3-4B", "bfloat16", "pinned")
+    assert final.streaming.enabled and final.memory.guard
+    assert (final.evaluation.every, final.evaluation.full_validation) == (10, False)
+
+
+def test_the_staged_schedule_smoke_10_primary_60_extension_210_opt_in():
+    final, ext = load("experiments/qwen3_4b_final.yaml"), load("experiments/qwen3_4b_final_ext210.yaml")
+    smoke, dsmoke = load("experiments/qwen3_4b_smoke.yaml"), load("experiments/qwen3_4b_smoke_dflash.yaml")
+    assert (dsmoke.training.max_steps, smoke.training.max_steps, final.training.max_steps) == (10, 4, 60)
+    assert set(diff(final, ext)) == {"run.name", "training.max_steps"} and ext.training.max_steps == 210
+    assert ext.dflash == DRAFTER
+    # the two smoke runs: same data, seed, batch, optimizer and sampling; they differ in rollout generator and length
+    assert set(diff(smoke, dsmoke)) == {"run.name", "dflash.enabled", "dflash.draft_model", "training.max_steps"}
+
+
+def test_the_drift_checkpoints_are_ones_the_primary_run_saves():
+    """The trainer saves a checkpoint at every multiple of evaluation.every and at max_steps (plus step0, the initial
+    adapter); H10.dflash_drift must name only those, ending at the final update."""
+    import yaml as _yaml
+    final = load("experiments/qwen3_4b_final.yaml")
+    t, every = final.training.max_steps, final.evaluation.every
+    saved = {0, t} | set(range(every, t + 1, every))
+    study = _yaml.safe_load((CONFIGS / "studies" / "assignment.yaml").read_text())
+    e = {x["id"]: x for x in study["entries"]}
+    drift = e["H10.dflash_drift"]
+    argv = drift["steps"][0]["argv"]
+    adapters = argv[argv.index("--adapters") + 1:argv.index("--max-new")]
+    steps = [int(a.rsplit("step", 1)[1]) for a in adapters]
+    assert steps == [0, 20, 40, 60] and set(steps) <= saved and steps[-1] == t
+    assert drift["prerequisites"]["checkpoints"] == adapters  # each one verified saved before the entry runs
+    assert all(a.startswith("runs/qwen3_4b_final/") for a in adapters)
+    ext = e["H10.dflash_drift_extended"]
+    assert ext.get("opt_in") is True and e["H12.train_extended"].get("opt_in") is True
+    eargv = ext["steps"][0]["argv"]
+    ext_steps = [int(a.rsplit("step", 1)[1]) for a in eargv[eargv.index("--adapters") + 1:eargv.index("--max-new")]]
+    assert ext_steps[-1] == load("experiments/qwen3_4b_final_ext210.yaml").training.max_steps
+
+
+# sha256 of the resolved plain-L2L / DFlash reference configs before the final run enabled DFlash (commit 8aa63ee):
+# enabling DFlash in qwen3_4b_final.yaml must not change any of them
+HASHES_BEFORE_DFLASH_FINAL = {
+    "experiments/qwen3_4b_smoke.yaml": "483f6ca97333a663ec8ed379246b2f5f13307c89a1d53710ae1f91d46f1c0fa0",
+    "experiments/qwen3_4b_l2l.yaml": "24d6ba78c6adb0246713fdc50f7d0b9e7b3dd6d776ff7a951ece3a39a195dc9e",
+    "experiments/qwen3_4b_l2l_dflash.yaml": "f1ea3ed565aec1e9757e451eb7acca62411950cd5b7cdffef2618e1ff79583f4",
+}
+
+
+@pytest.mark.parametrize("rel", sorted(HASHES_BEFORE_DFLASH_FINAL))
+def test_plain_and_dflash_reference_configs_are_unchanged(rel):
+    """(qwen3_4b_smoke_dflash.yaml changed on purpose: 4 -> 10 updates for the integration smoke.)"""
+    cfg = load(rel)
+    assert config.sha256(cfg) == HASHES_BEFORE_DFLASH_FINAL[rel]
+    assert cfg.dflash.enabled == ("dflash" in rel)
 
 
 def test_local_experiment_runs_the_l2l_path_on_the_small_model():
