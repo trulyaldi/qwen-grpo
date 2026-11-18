@@ -6,8 +6,9 @@
 # Supersedes, without replacing, the historical Step-0 budget configs/budget/qwen3-4b.yaml ->
 # results/budget/predictions/qwen3-4b_8gb.{json,md}, which is kept unchanged as a record of what was predicted first.
 # That historical prediction described another configuration and must not be compared with the final run:
-#   micro_batch_size 6 (the run uses null = 30 rows in one chunk: logits and recomputed-layer activations 5x larger),
-#   schedule layer_major (the engine is micro-batch-major; identical bytes with one micro-batch),
+#   micro_batch_size 6 (the final run now uses 6 too, since 2026-11-18; it used null = 30 rows in one chunk before),
+#   schedule layer_major (the engine is micro-batch-major: with 5 micro-batches every layer is streamed 5 times per
+#   pass, where layer-major would stream it once),
 #   merge on the GPU (export/merge.py merges on the CPU: no GPU memory, no PCIe traffic),
 #   512 evaluation examples (the run evaluates 128), cpu_ram_gib 6.7 of the WSL2 development laptop, and the cap as
 #   8 GiB. tests/test_assignment_provenance.py checks this file against the resolved final config.
@@ -36,7 +37,8 @@ grpo:                              # configs/default.yaml values, except micro_b
   prompt_batch_size: 5             # B
   group_size: 6                    # G
   rollout_batch_size: 30           # sequences per generate() call (B*G: one call per rollout batch)
-  micro_batch_size: 30             # qwen3_4b_final.yaml has training.micro_batch_size null = all B*G = 30 rows in one chunk
+  micro_batch_size: 6              # qwen3_4b_final.yaml training.micro_batch_size 6: B*G = 30 rows as 5 chunks of 6
+                                   # (was 30 = null, one chunk, before 2026-11-18)
   prompt_tokens: 100               # longest tokenized prompt over train/validation/test (data/sentiment.json)
   generation_tokens: 4             # max_new_tokens
   num_iterations: 1                # K updates per rollout batch
@@ -55,15 +57,15 @@ streaming:
   pinned_allocation: per_layer     # one pinned block per layer (per_layer) or per tensor (per_tensor)
   non_decoder_placement: gpu       # embedding (= tied LM head) and final norm stay on GPU
   loading_copy: shard              # tensor | shard | model: largest pageable copy alive while filling pinned memory
-  schedule: microbatch_major       # the engine streams every layer per micro-batch (docs/architecture.md); with one
-                                   # micro-batch both schedules move the same bytes
+  schedule: microbatch_major       # the engine streams every layer per micro-batch (docs/architecture.md): 5 x 6
+                                   # rows means 5 weight streams per old-log-prob and per update pass
   activation_checkpoints: gpu      # gpu | cpu
   kv_cache: gpu                    # gpu | cpu
   logits: response_only            # response_only (logits_to_keep = R+1) | full_sequence
 
 evaluation:
-  examples: 128                    # data.val_subset of qwen3_4b_final.yaml (subset evaluation every 30 steps)
-  batch_size: 32
+  examples: 128                    # data.val_subset of qwen3_4b_final.yaml (subset evaluation every 20 steps)
+  batch_size: 16                   # qwen3_4b_final.yaml evaluation.batch_size (was 32 before 2026-11-18)
   score_batch_size: 8
   generation_tokens: 4
   during_training: true            # AdamW state stays allocated

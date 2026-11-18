@@ -509,7 +509,8 @@ def test_experiment_dry_run_shows_the_4b_plan_and_writes_nothing(env):
     assert p.returncode == 0, p.stderr[-2000:]
     out = p.stdout
     assert "mode: experiment; stage order: A D B E F G H" in out and "8000000000 bytes" in out
-    assert "qwen3_4b_final: Qwen/Qwen3-4B bfloat16, 60 updates, B=5 G=6, 4 new tokens, lr 0.0005" in out
+    assert "qwen3_4b_final: Qwen/Qwen3-4B bfloat16, 60 updates, B=5 G=6, 4 new tokens, lr 0.0002" in out
+    assert "micro-batch 6, 1 iteration(s), eval every 20 on 128, pool 1024" in out
     assert "z-lab/Qwen3-4B-DFlash-b16" in out and "qwen3_4b_final_lr0" in out
     assert "unit_tests_cpu" not in out and "tests/test_grpo.py" not in out and "H05.real_0.6b_bf16" not in out
     assert "H12.final_eval" in out and "H10.dflash_bench" in out and "H11.smoke" in out

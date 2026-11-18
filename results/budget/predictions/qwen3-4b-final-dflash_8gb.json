@@ -24,7 +24,7 @@
       "prompt_batch_size": 5,
       "group_size": 6,
       "rollout_batch_size": 30,
-      "micro_batch_size": 30,
+      "micro_batch_size": 6,
       "prompt_tokens": 100,
       "generation_tokens": 4,
       "num_iterations": 1,
@@ -50,7 +50,7 @@
     },
     "evaluation": {
       "examples": 128,
-      "batch_size": 32,
+      "batch_size": 16,
       "score_batch_size": 8,
       "generation_tokens": 4,
       "during_training": true
@@ -151,8 +151,8 @@
     ],
     "decoder_bytes_total": 7267018752,
     "checkpoint_shards": {
-      "model-00003-of-00003.safetensors": 99630080,
       "model-00002-of-00003.safetensors": 3987425280,
+      "model-00003-of-00003.safetensors": 99630080,
       "model-00001-of-00003.safetensors": 3957880832
     },
     "checkpoint_bytes": 8044936192,
@@ -878,55 +878,55 @@
       "gpu_peak_moment": "backward: recompute + backward of the last decoder layer",
       "cpu_peak_moment": "old log-probs forward (no grad)",
       "gpu_peak": {
-        "gpu_exact": 2321770448,
-        "gpu_allocated": 3019452368,
-        "gpu_reserved": 3321397605,
-        "gpu_device": 3858268517,
+        "gpu_exact": 2283431888,
+        "gpu_allocated": 2422968272,
+        "gpu_reserved": 2665265099,
+        "gpu_device": 3202136011,
         "cpu": 11811160064,
         "critical_unknowns": []
       },
       "cpu_peak_bytes": 11811160064,
-      "gpu_headroom_bytes": 4141752317,
+      "gpu_headroom_bytes": 4797884823,
       "cpu_headroom_bytes": 20186346291,
       "gpu_verdict": "PASS",
       "cpu_verdict": "PASS",
       "verdict": "PASS",
       "moment_totals": [
         {
-          "gpu_exact": 2460961232,
-          "gpu_allocated": 2675018192,
-          "gpu_reserved": 2942520011,
-          "gpu_device": 3479390923,
+          "gpu_exact": 2307809744,
+          "gpu_allocated": 2350621136,
+          "gpu_reserved": 2585683250,
+          "gpu_device": 3122554162,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 2513209808,
-          "gpu_allocated": 2513209808,
-          "gpu_reserved": 2764530789,
-          "gpu_device": 3301401701,
+          "gpu_exact": 2321719760,
+          "gpu_allocated": 2321719760,
+          "gpu_reserved": 2553891736,
+          "gpu_device": 3090762648,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 2321770448,
-          "gpu_allocated": 2586139088,
-          "gpu_reserved": 2844752997,
-          "gpu_device": 3381623909,
+          "gpu_exact": 2283431888,
+          "gpu_allocated": 2336305616,
+          "gpu_reserved": 2569936178,
+          "gpu_device": 3106807090,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 2321770448,
-          "gpu_allocated": 3019452368,
-          "gpu_reserved": 3321397605,
-          "gpu_device": 3858268517,
+          "gpu_exact": 2283431888,
+          "gpu_allocated": 2422968272,
+          "gpu_reserved": 2665265099,
+          "gpu_device": 3202136011,
           "cpu": 11811160064,
           "critical_unknowns": []
         }
       ],
       "notes": [
-        "N = 30 sequences of T = 104 tokens, micro-batches of 30; schedule microbatch_major",
+        "N = 30 sequences of T = 104 tokens, micro-batches of 6; schedule microbatch_major",
         "layers 0..33 hold no LoRA targets: no-grad forward, no checkpoints, no backward sweep; layers 34..35 are checkpointed and swept backward",
         "no reference-model forward: the loss has beta = 0 (qwen_grpo/grpo.py)"
       ],
@@ -992,21 +992,21 @@
             },
             {
               "name": "hidden state in/out",
-              "bytes": 31948800,
+              "bytes": 6389760,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "layer intermediates (no grad)",
-              "bytes": 182108160,
+              "bytes": 36421632,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "logits + fp32 copy + log_softmax",
-              "bytes": 191439360,
+              "bytes": 38287872,
               "kind": "exact",
               "note": "response_only: [m, R+1, V=151936]",
               "critical": false
@@ -1096,15 +1096,15 @@
               "critical": false
             },
             {
-              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
-              "bytes": 47923200,
+              "name": "boundary checkpoints [3 x 6 seq x 104 tok]",
+              "bytes": 9584640,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "logits + fp32 copy + log_softmax",
-              "bytes": 191439360,
+              "bytes": 38287872,
               "kind": "exact",
               "note": "response_only: [m, R+1, V=151936]",
               "critical": false
@@ -1194,15 +1194,15 @@
               "critical": false
             },
             {
-              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
-              "bytes": 47923200,
+              "name": "boundary checkpoints [3 x 6 seq x 104 tok]",
+              "bytes": 9584640,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "log_softmax backward (saved out, grad out, grad in) + logits grad",
-              "bytes": 264368640,
+              "bytes": 52873728,
               "kind": "estimate",
               "note": "response_only: [m, R+1, V=151936]",
               "critical": false
@@ -1292,22 +1292,22 @@
               "critical": false
             },
             {
-              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
-              "bytes": 47923200,
+              "name": "boundary checkpoints [3 x 6 seq x 104 tok]",
+              "bytes": 9584640,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "recomputed layer activations (autograd-saved)",
-              "bytes": 544327680,
+              "bytes": 108865536,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "grad of hidden state in/out + MLP grads",
-              "bytes": 153354240,
+              "bytes": 30670848,
               "kind": "estimate",
               "note": "",
               "critical": false
@@ -1337,33 +1337,33 @@
       "gpu_peak_moment": "greedy generation: prefill, last layer",
       "cpu_peak_moment": "greedy generation: prefill, last layer",
       "gpu_peak": {
-        "gpu_exact": 2741383680,
-        "gpu_allocated": 2999824896,
-        "gpu_reserved": 3299807386,
-        "gpu_device": 3836678298,
+        "gpu_exact": 2505427456,
+        "gpu_allocated": 2634648064,
+        "gpu_reserved": 2898112870,
+        "gpu_device": 3434983782,
         "cpu": 11811160064,
         "critical_unknowns": []
       },
       "cpu_peak_bytes": 11811160064,
-      "gpu_headroom_bytes": 4163342536,
+      "gpu_headroom_bytes": 4565037052,
       "cpu_headroom_bytes": 20186346291,
       "gpu_verdict": "PASS",
       "cpu_verdict": "PASS",
       "verdict": "PASS",
       "moment_totals": [
         {
-          "gpu_exact": 2741383680,
-          "gpu_allocated": 2999824896,
-          "gpu_reserved": 3299807386,
-          "gpu_device": 3836678298,
+          "gpu_exact": 2505427456,
+          "gpu_allocated": 2634648064,
+          "gpu_reserved": 2898112870,
+          "gpu_device": 3434983782,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 2760258048,
-          "gpu_allocated": 2812785152,
-          "gpu_reserved": 3094063667,
-          "gpu_device": 3630934579,
+          "gpu_exact": 2514864640,
+          "gpu_allocated": 2541128192,
+          "gpu_reserved": 2795241011,
+          "gpu_device": 3332111923,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
@@ -1377,7 +1377,7 @@
         }
       ],
       "notes": [
-        "greedy, batches of 32, 4 new tokens; optimizer state kept"
+        "greedy, batches of 16, 4 new tokens; optimizer state kept"
       ],
       "moments": [
         {
@@ -1433,36 +1433,36 @@
               "critical": false
             },
             {
-              "name": "KV cache [32 seq x 100 tok x 36 layers]",
-              "bytes": 471859200,
+              "name": "KV cache [16 seq x 100 tok x 36 layers]",
+              "bytes": 235929600,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "token ids + attention mask (int64)",
-              "bytes": 53248,
+              "bytes": 26624,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "hidden state in/out",
-              "bytes": 32768000,
+              "bytes": 16384000,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "layer intermediates (no grad)",
-              "bytes": 186777600,
+              "bytes": 93388800,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "next-token logits + sampling probs (fp32)",
-              "bytes": 38895616,
+              "bytes": 19447808,
               "kind": "estimate",
               "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
               "critical": false
@@ -1538,29 +1538,29 @@
               "critical": false
             },
             {
-              "name": "KV cache [32 seq x 104 tok x 36 layers]",
-              "bytes": 490733568,
+              "name": "KV cache [16 seq x 104 tok x 36 layers]",
+              "bytes": 245366784,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "token ids + attention mask (int64)",
-              "bytes": 53248,
+              "bytes": 26624,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "KV append copy of one layer (DynamicCache torch.cat)",
-              "bytes": 13631488,
+              "bytes": 6815744,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "next-token logits + sampling probs (fp32)",
-              "bytes": 38895616,
+              "bytes": 19447808,
               "kind": "estimate",
               "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
               "critical": false
@@ -2114,51 +2114,51 @@
     },
     {
       "name": "old log-probs forward",
-      "sweeps": 1,
-      "weight_bytes": 7267018752,
+      "sweeps": 5,
+      "weight_bytes": 36335093760,
       "activation_bytes": 0,
-      "tokens_per_sweep": 3120,
+      "tokens_per_sweep": 624,
       "note": "",
-      "bytes": 7267018752,
-      "transfer_s": 0.605584896,
+      "bytes": 36335093760,
+      "transfer_s": 3.02792448,
       "compute_s": null,
-      "critical_path": ">= 0.606 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 3.028 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "training forward (x1 iterations)",
-      "sweeps": 1,
-      "weight_bytes": 7267018752,
+      "sweeps": 5,
+      "weight_bytes": 36335093760,
       "activation_bytes": 0,
-      "tokens_per_sweep": 3120,
+      "tokens_per_sweep": 624,
       "note": "",
-      "bytes": 7267018752,
-      "transfer_s": 0.605584896,
+      "bytes": 36335093760,
+      "transfer_s": 3.02792448,
       "compute_s": null,
-      "critical_path": ">= 0.606 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 3.028 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "backward recomputation (x1, layers >= 34)",
-      "sweeps": 1,
-      "weight_bytes": 403723264,
+      "sweeps": 5,
+      "weight_bytes": 2018616320,
       "activation_bytes": 0,
-      "tokens_per_sweep": 3120,
+      "tokens_per_sweep": 624,
       "note": "recompute and backward of a layer share one load",
-      "bytes": 403723264,
-      "transfer_s": 0.03364360533333333,
+      "bytes": 2018616320,
+      "transfer_s": 0.16821802666666666,
       "compute_s": null,
-      "critical_path": ">= 0.034 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 0.168 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "evaluation (128 examples)",
-      "sweeps": 32,
-      "weight_bytes": 232544600064,
+      "sweeps": 48,
+      "weight_bytes": 348816900096,
       "activation_bytes": 0,
-      "tokens_per_sweep": 32,
-      "note": "4 generate batches x 4 sweeps + 16 scoring passes",
-      "bytes": 232544600064,
-      "transfer_s": 19.378716672,
+      "tokens_per_sweep": 16,
+      "note": "8 generate batches x 4 sweeps + 16 scoring passes",
+      "bytes": 348816900096,
+      "transfer_s": 29.068075008,
       "compute_s": null,
-      "critical_path": ">= 19.379 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 29.068 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "merge (cpu)",
@@ -2174,8 +2174,8 @@
     }
   ],
   "transfers_per_grpo_step": {
-    "bytes": 44005835776,
-    "transfer_s": 3.6671529813333335
+    "bytes": 103756878848,
+    "transfer_s": 8.646406570666667
   },
   "uncertainties": [
     "PCIe bandwidth 12.0 GB/s: assumption, unmeasured: effective pinned host-to-device copy rate (PCIe 4.0 x16 peak is ~31.5 GB/s; laptop links and WSL2 are typically far lower)",
@@ -2190,10 +2190,10 @@
     "DFlash rollout: acceptance (verify passes per call) changes PCIe traffic, not peak memory; the transfer rows give the reject-everything upper bound"
   ],
   "provenance": {
-    "created": "2026-11-18T03:10:29+00:00",
+    "created": "2026-11-18T13:58:55+00:00",
     "config": "configs/budget/qwen3-4b_final_dflash.yaml",
-    "config_sha256": "97b86dfb5829df1ea778edaf00a1ecc3197e358abfbb09e9df6e028a0f32880f",
-    "git_commit": "8aa63eef89f1ba978e3ab5dd6985bedd7cd3d623",
+    "config_sha256": "760f0eef808812bfa779ccb622238d6f897e06acb862b8ca1476b721e722be76",
+    "git_commit": "e8440e41c84486e9a30cd1633ffc1029db5c190e",
     "kind": "theoretical prediction (no measurement)"
   }
 }

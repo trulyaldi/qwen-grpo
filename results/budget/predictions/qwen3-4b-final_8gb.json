@@ -24,7 +24,7 @@
       "prompt_batch_size": 5,
       "group_size": 6,
       "rollout_batch_size": 30,
-      "micro_batch_size": 30,
+      "micro_batch_size": 6,
       "prompt_tokens": 100,
       "generation_tokens": 4,
       "num_iterations": 1,
@@ -50,7 +50,7 @@
     },
     "evaluation": {
       "examples": 128,
-      "batch_size": 32,
+      "batch_size": 16,
       "score_batch_size": 8,
       "generation_tokens": 4,
       "during_training": true
@@ -66,6 +66,12 @@
     }
   },
   "overall_verdict": "PASS",
+  "dflash": {
+    "enabled": false,
+    "draft_model_id": "z-lab/Qwen3-4B-DFlash-b16",
+    "draft_bytes": 1074854400,
+    "draft_architecture": null
+  },
   "model": {
     "id": "Qwen/Qwen3-4B",
     "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
@@ -523,55 +529,55 @@
       "gpu_peak_moment": "backward: recompute + backward of the last decoder layer",
       "cpu_peak_moment": "old log-probs forward (no grad)",
       "gpu_peak": {
-        "gpu_exact": 1246916048,
-        "gpu_allocated": 1944597968,
-        "gpu_reserved": 2139057765,
-        "gpu_device": 2675928677,
+        "gpu_exact": 1208577488,
+        "gpu_allocated": 1348113872,
+        "gpu_reserved": 1482925259,
+        "gpu_device": 2019796171,
         "cpu": 11811160064,
         "critical_unknowns": []
       },
       "cpu_peak_bytes": 11811160064,
-      "gpu_headroom_bytes": 5324092157,
+      "gpu_headroom_bytes": 5980224663,
       "cpu_headroom_bytes": 20186346291,
       "gpu_verdict": "PASS",
       "cpu_verdict": "PASS",
       "verdict": "PASS",
       "moment_totals": [
         {
-          "gpu_exact": 1386106832,
-          "gpu_allocated": 1600163792,
-          "gpu_reserved": 1760180171,
-          "gpu_device": 2297051083,
+          "gpu_exact": 1232955344,
+          "gpu_allocated": 1275766736,
+          "gpu_reserved": 1403343410,
+          "gpu_device": 1940214322,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 1438355408,
-          "gpu_allocated": 1438355408,
-          "gpu_reserved": 1582190949,
-          "gpu_device": 2119061861,
+          "gpu_exact": 1246865360,
+          "gpu_allocated": 1246865360,
+          "gpu_reserved": 1371551896,
+          "gpu_device": 1908422808,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 1246916048,
-          "gpu_allocated": 1511284688,
-          "gpu_reserved": 1662413157,
-          "gpu_device": 2199284069,
+          "gpu_exact": 1208577488,
+          "gpu_allocated": 1261451216,
+          "gpu_reserved": 1387596338,
+          "gpu_device": 1924467250,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 1246916048,
-          "gpu_allocated": 1944597968,
-          "gpu_reserved": 2139057765,
-          "gpu_device": 2675928677,
+          "gpu_exact": 1208577488,
+          "gpu_allocated": 1348113872,
+          "gpu_reserved": 1482925259,
+          "gpu_device": 2019796171,
           "cpu": 11811160064,
           "critical_unknowns": []
         }
       ],
       "notes": [
-        "N = 30 sequences of T = 104 tokens, micro-batches of 30; schedule microbatch_major",
+        "N = 30 sequences of T = 104 tokens, micro-batches of 6; schedule microbatch_major",
         "layers 0..33 hold no LoRA targets: no-grad forward, no checkpoints, no backward sweep; layers 34..35 are checkpointed and swept backward",
         "no reference-model forward: the loss has beta = 0 (qwen_grpo/grpo.py)"
       ],
@@ -630,21 +636,21 @@
             },
             {
               "name": "hidden state in/out",
-              "bytes": 31948800,
+              "bytes": 6389760,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "layer intermediates (no grad)",
-              "bytes": 182108160,
+              "bytes": 36421632,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "logits + fp32 copy + log_softmax",
-              "bytes": 191439360,
+              "bytes": 38287872,
               "kind": "exact",
               "note": "response_only: [m, R+1, V=151936]",
               "critical": false
@@ -727,15 +733,15 @@
               "critical": false
             },
             {
-              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
-              "bytes": 47923200,
+              "name": "boundary checkpoints [3 x 6 seq x 104 tok]",
+              "bytes": 9584640,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "logits + fp32 copy + log_softmax",
-              "bytes": 191439360,
+              "bytes": 38287872,
               "kind": "exact",
               "note": "response_only: [m, R+1, V=151936]",
               "critical": false
@@ -818,15 +824,15 @@
               "critical": false
             },
             {
-              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
-              "bytes": 47923200,
+              "name": "boundary checkpoints [3 x 6 seq x 104 tok]",
+              "bytes": 9584640,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "log_softmax backward (saved out, grad out, grad in) + logits grad",
-              "bytes": 264368640,
+              "bytes": 52873728,
               "kind": "estimate",
               "note": "response_only: [m, R+1, V=151936]",
               "critical": false
@@ -909,22 +915,22 @@
               "critical": false
             },
             {
-              "name": "boundary checkpoints [3 x 30 seq x 104 tok]",
-              "bytes": 47923200,
+              "name": "boundary checkpoints [3 x 6 seq x 104 tok]",
+              "bytes": 9584640,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "recomputed layer activations (autograd-saved)",
-              "bytes": 544327680,
+              "bytes": 108865536,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "grad of hidden state in/out + MLP grads",
-              "bytes": 153354240,
+              "bytes": 30670848,
               "kind": "estimate",
               "note": "",
               "critical": false
@@ -954,33 +960,33 @@
       "gpu_peak_moment": "greedy generation: prefill, last layer",
       "cpu_peak_moment": "greedy generation: prefill, last layer",
       "gpu_peak": {
-        "gpu_exact": 1666529280,
-        "gpu_allocated": 1924970496,
-        "gpu_reserved": 2117467546,
-        "gpu_device": 2654338458,
+        "gpu_exact": 1430573056,
+        "gpu_allocated": 1559793664,
+        "gpu_reserved": 1715773030,
+        "gpu_device": 2252643942,
         "cpu": 11811160064,
         "critical_unknowns": []
       },
       "cpu_peak_bytes": 11811160064,
-      "gpu_headroom_bytes": 5345682376,
+      "gpu_headroom_bytes": 5747376892,
       "cpu_headroom_bytes": 20186346291,
       "gpu_verdict": "PASS",
       "cpu_verdict": "PASS",
       "verdict": "PASS",
       "moment_totals": [
         {
-          "gpu_exact": 1666529280,
-          "gpu_allocated": 1924970496,
-          "gpu_reserved": 2117467546,
-          "gpu_device": 2654338458,
+          "gpu_exact": 1430573056,
+          "gpu_allocated": 1559793664,
+          "gpu_reserved": 1715773030,
+          "gpu_device": 2252643942,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
         {
-          "gpu_exact": 1685403648,
-          "gpu_allocated": 1737930752,
-          "gpu_reserved": 1911723827,
-          "gpu_device": 2448594739,
+          "gpu_exact": 1440010240,
+          "gpu_allocated": 1466273792,
+          "gpu_reserved": 1612901171,
+          "gpu_device": 2149772083,
           "cpu": 11811160064,
           "critical_unknowns": []
         },
@@ -994,7 +1000,7 @@
         }
       ],
       "notes": [
-        "greedy, batches of 32, 4 new tokens; optimizer state kept"
+        "greedy, batches of 16, 4 new tokens; optimizer state kept"
       ],
       "moments": [
         {
@@ -1043,36 +1049,36 @@
               "critical": false
             },
             {
-              "name": "KV cache [32 seq x 100 tok x 36 layers]",
-              "bytes": 471859200,
+              "name": "KV cache [16 seq x 100 tok x 36 layers]",
+              "bytes": 235929600,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "token ids + attention mask (int64)",
-              "bytes": 53248,
+              "bytes": 26624,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "hidden state in/out",
-              "bytes": 32768000,
+              "bytes": 16384000,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "layer intermediates (no grad)",
-              "bytes": 186777600,
+              "bytes": 93388800,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "next-token logits + sampling probs (fp32)",
-              "bytes": 38895616,
+              "bytes": 19447808,
               "kind": "estimate",
               "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
               "critical": false
@@ -1141,29 +1147,29 @@
               "critical": false
             },
             {
-              "name": "KV cache [32 seq x 104 tok x 36 layers]",
-              "bytes": 490733568,
+              "name": "KV cache [16 seq x 104 tok x 36 layers]",
+              "bytes": 245366784,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "token ids + attention mask (int64)",
-              "bytes": 53248,
+              "bytes": 26624,
               "kind": "exact",
               "note": "",
               "critical": false
             },
             {
               "name": "KV append copy of one layer (DynamicCache torch.cat)",
-              "bytes": 13631488,
+              "bytes": 6815744,
               "kind": "estimate",
               "note": "",
               "critical": false
             },
             {
               "name": "next-token logits + sampling probs (fp32)",
-              "bytes": 38895616,
+              "bytes": 19447808,
               "kind": "estimate",
               "note": "generate() upcasts the last position's logits; logits processors/softmax copy them",
               "critical": false
@@ -1484,7 +1490,7 @@
       {
         "resident": 0,
         "streamed": 36,
-        "gpu_peak_bytes": 2675928677,
+        "gpu_peak_bytes": 2604126643,
         "cpu_peak_bytes": 15798585344,
         "sweep_bytes": 7267018752,
         "gpu_verdict": "PASS",
@@ -1493,7 +1499,7 @@
       {
         "resident": 1,
         "streamed": 35,
-        "gpu_peak_bytes": 2897976472,
+        "gpu_peak_bytes": 2826174438,
         "cpu_peak_bytes": 15530149888,
         "sweep_bytes": 7065157120,
         "gpu_verdict": "PASS",
@@ -1502,7 +1508,7 @@
       {
         "resident": 2,
         "streamed": 34,
-        "gpu_peak_bytes": 3120024267,
+        "gpu_peak_bytes": 3048222234,
         "cpu_peak_bytes": 15261714432,
         "sweep_bytes": 6863295488,
         "gpu_verdict": "PASS",
@@ -1511,7 +1517,7 @@
       {
         "resident": 3,
         "streamed": 33,
-        "gpu_peak_bytes": 3342072062,
+        "gpu_peak_bytes": 3270270029,
         "cpu_peak_bytes": 14993278976,
         "sweep_bytes": 6661433856,
         "gpu_verdict": "PASS",
@@ -1520,7 +1526,7 @@
       {
         "resident": 4,
         "streamed": 32,
-        "gpu_peak_bytes": 3564119858,
+        "gpu_peak_bytes": 3492317824,
         "cpu_peak_bytes": 14724843520,
         "sweep_bytes": 6459572224,
         "gpu_verdict": "PASS",
@@ -1529,7 +1535,7 @@
       {
         "resident": 5,
         "streamed": 31,
-        "gpu_peak_bytes": 3786167653,
+        "gpu_peak_bytes": 3714365619,
         "cpu_peak_bytes": 14456408064,
         "sweep_bytes": 6257710592,
         "gpu_verdict": "PASS",
@@ -1538,7 +1544,7 @@
       {
         "resident": 6,
         "streamed": 30,
-        "gpu_peak_bytes": 4008215448,
+        "gpu_peak_bytes": 3936413414,
         "cpu_peak_bytes": 14187972608,
         "sweep_bytes": 6055848960,
         "gpu_verdict": "PASS",
@@ -1547,7 +1553,7 @@
       {
         "resident": 7,
         "streamed": 29,
-        "gpu_peak_bytes": 4230263243,
+        "gpu_peak_bytes": 4158461210,
         "cpu_peak_bytes": 13919537152,
         "sweep_bytes": 5853987328,
         "gpu_verdict": "PASS",
@@ -1556,7 +1562,7 @@
       {
         "resident": 8,
         "streamed": 28,
-        "gpu_peak_bytes": 4452311038,
+        "gpu_peak_bytes": 4380509005,
         "cpu_peak_bytes": 13651101696,
         "sweep_bytes": 5652125696,
         "gpu_verdict": "PASS",
@@ -1565,7 +1571,7 @@
       {
         "resident": 9,
         "streamed": 27,
-        "gpu_peak_bytes": 4674358834,
+        "gpu_peak_bytes": 4602556800,
         "cpu_peak_bytes": 13382666240,
         "sweep_bytes": 5450264064,
         "gpu_verdict": "PASS",
@@ -1574,7 +1580,7 @@
       {
         "resident": 10,
         "streamed": 26,
-        "gpu_peak_bytes": 4896406629,
+        "gpu_peak_bytes": 4824604595,
         "cpu_peak_bytes": 13114230784,
         "sweep_bytes": 5248402432,
         "gpu_verdict": "PASS",
@@ -1583,7 +1589,7 @@
       {
         "resident": 11,
         "streamed": 25,
-        "gpu_peak_bytes": 5118454424,
+        "gpu_peak_bytes": 5046652390,
         "cpu_peak_bytes": 12845795328,
         "sweep_bytes": 5046540800,
         "gpu_verdict": "PASS",
@@ -1592,7 +1598,7 @@
       {
         "resident": 12,
         "streamed": 24,
-        "gpu_peak_bytes": 5340502219,
+        "gpu_peak_bytes": 5268700186,
         "cpu_peak_bytes": 12577359872,
         "sweep_bytes": 4844679168,
         "gpu_verdict": "PASS",
@@ -1601,7 +1607,7 @@
       {
         "resident": 13,
         "streamed": 23,
-        "gpu_peak_bytes": 5562550014,
+        "gpu_peak_bytes": 5490747981,
         "cpu_peak_bytes": 12308924416,
         "sweep_bytes": 4642817536,
         "gpu_verdict": "PASS",
@@ -1610,7 +1616,7 @@
       {
         "resident": 14,
         "streamed": 22,
-        "gpu_peak_bytes": 5784597810,
+        "gpu_peak_bytes": 5712795776,
         "cpu_peak_bytes": 12040488960,
         "sweep_bytes": 4440955904,
         "gpu_verdict": "PASS",
@@ -1619,7 +1625,7 @@
       {
         "resident": 15,
         "streamed": 21,
-        "gpu_peak_bytes": 6006645605,
+        "gpu_peak_bytes": 5934843571,
         "cpu_peak_bytes": 11772053504,
         "sweep_bytes": 4239094272,
         "gpu_verdict": "PASS",
@@ -1628,7 +1634,7 @@
       {
         "resident": 16,
         "streamed": 20,
-        "gpu_peak_bytes": 6228693400,
+        "gpu_peak_bytes": 6156891366,
         "cpu_peak_bytes": 11503618048,
         "sweep_bytes": 4037232640,
         "gpu_verdict": "PASS",
@@ -1637,7 +1643,7 @@
       {
         "resident": 17,
         "streamed": 19,
-        "gpu_peak_bytes": 6450741195,
+        "gpu_peak_bytes": 6378939162,
         "cpu_peak_bytes": 11235182592,
         "sweep_bytes": 3835371008,
         "gpu_verdict": "PASS",
@@ -1646,7 +1652,7 @@
       {
         "resident": 18,
         "streamed": 18,
-        "gpu_peak_bytes": 6672788990,
+        "gpu_peak_bytes": 6600986957,
         "cpu_peak_bytes": 10966747136,
         "sweep_bytes": 3633509376,
         "gpu_verdict": "PASS",
@@ -1655,7 +1661,7 @@
       {
         "resident": 19,
         "streamed": 17,
-        "gpu_peak_bytes": 6894836786,
+        "gpu_peak_bytes": 6823034752,
         "cpu_peak_bytes": 10698311680,
         "sweep_bytes": 3431647744,
         "gpu_verdict": "PASS",
@@ -1664,7 +1670,7 @@
       {
         "resident": 20,
         "streamed": 16,
-        "gpu_peak_bytes": 7116884581,
+        "gpu_peak_bytes": 7045082547,
         "cpu_peak_bytes": 10429876224,
         "sweep_bytes": 3229786112,
         "gpu_verdict": "PASS",
@@ -1673,7 +1679,7 @@
       {
         "resident": 21,
         "streamed": 15,
-        "gpu_peak_bytes": 7338932376,
+        "gpu_peak_bytes": 7267130342,
         "cpu_peak_bytes": 10161440768,
         "sweep_bytes": 3027924480,
         "gpu_verdict": "UNKNOWN",
@@ -1682,7 +1688,7 @@
       {
         "resident": 22,
         "streamed": 14,
-        "gpu_peak_bytes": 7560980171,
+        "gpu_peak_bytes": 7489178138,
         "cpu_peak_bytes": 9893005312,
         "sweep_bytes": 2826062848,
         "gpu_verdict": "UNKNOWN",
@@ -1691,7 +1697,7 @@
       {
         "resident": 23,
         "streamed": 13,
-        "gpu_peak_bytes": 7783027966,
+        "gpu_peak_bytes": 7711225933,
         "cpu_peak_bytes": 9624569856,
         "sweep_bytes": 2624201216,
         "gpu_verdict": "UNKNOWN",
@@ -1700,16 +1706,16 @@
       {
         "resident": 24,
         "streamed": 12,
-        "gpu_peak_bytes": 8005075762,
+        "gpu_peak_bytes": 7933273728,
         "cpu_peak_bytes": 9356134400,
         "sweep_bytes": 2422339584,
-        "gpu_verdict": "FAIL",
+        "gpu_verdict": "UNKNOWN",
         "cpu_verdict": "PASS"
       },
       {
         "resident": 25,
         "streamed": 11,
-        "gpu_peak_bytes": 8227123557,
+        "gpu_peak_bytes": 8155321523,
         "cpu_peak_bytes": 9087698944,
         "sweep_bytes": 2220477952,
         "gpu_verdict": "FAIL",
@@ -1718,7 +1724,7 @@
       {
         "resident": 26,
         "streamed": 10,
-        "gpu_peak_bytes": 8449171352,
+        "gpu_peak_bytes": 8377369318,
         "cpu_peak_bytes": 8819263488,
         "sweep_bytes": 2018616320,
         "gpu_verdict": "FAIL",
@@ -1727,7 +1733,7 @@
       {
         "resident": 27,
         "streamed": 9,
-        "gpu_peak_bytes": 8671219147,
+        "gpu_peak_bytes": 8599417114,
         "cpu_peak_bytes": 8550828032,
         "sweep_bytes": 1816754688,
         "gpu_verdict": "FAIL",
@@ -1736,7 +1742,7 @@
       {
         "resident": 28,
         "streamed": 8,
-        "gpu_peak_bytes": 8893266942,
+        "gpu_peak_bytes": 8821464909,
         "cpu_peak_bytes": 8282392576,
         "sweep_bytes": 1614893056,
         "gpu_verdict": "FAIL",
@@ -1745,7 +1751,7 @@
       {
         "resident": 29,
         "streamed": 7,
-        "gpu_peak_bytes": 9115314738,
+        "gpu_peak_bytes": 9043512704,
         "cpu_peak_bytes": 8013957120,
         "sweep_bytes": 1413031424,
         "gpu_verdict": "FAIL",
@@ -1754,7 +1760,7 @@
       {
         "resident": 30,
         "streamed": 6,
-        "gpu_peak_bytes": 9337362533,
+        "gpu_peak_bytes": 9265560499,
         "cpu_peak_bytes": 7745521664,
         "sweep_bytes": 1211169792,
         "gpu_verdict": "FAIL",
@@ -1763,7 +1769,7 @@
       {
         "resident": 31,
         "streamed": 5,
-        "gpu_peak_bytes": 9559410328,
+        "gpu_peak_bytes": 9487608294,
         "cpu_peak_bytes": 7477086208,
         "sweep_bytes": 1009308160,
         "gpu_verdict": "FAIL",
@@ -1772,7 +1778,7 @@
       {
         "resident": 32,
         "streamed": 4,
-        "gpu_peak_bytes": 9781458123,
+        "gpu_peak_bytes": 9709656090,
         "cpu_peak_bytes": 7208650752,
         "sweep_bytes": 807446528,
         "gpu_verdict": "FAIL",
@@ -1781,7 +1787,7 @@
       {
         "resident": 33,
         "streamed": 3,
-        "gpu_peak_bytes": 10003505918,
+        "gpu_peak_bytes": 9931703885,
         "cpu_peak_bytes": 6940215296,
         "sweep_bytes": 605584896,
         "gpu_verdict": "FAIL",
@@ -1790,7 +1796,7 @@
       {
         "resident": 34,
         "streamed": 2,
-        "gpu_peak_bytes": 10225553714,
+        "gpu_peak_bytes": 10153751680,
         "cpu_peak_bytes": 6671779840,
         "sweep_bytes": 403723264,
         "gpu_verdict": "FAIL",
@@ -1799,7 +1805,7 @@
       {
         "resident": 35,
         "streamed": 1,
-        "gpu_peak_bytes": 10447601509,
+        "gpu_peak_bytes": 10375799475,
         "cpu_peak_bytes": 6403344384,
         "sweep_bytes": 201861632,
         "gpu_verdict": "FAIL",
@@ -1808,7 +1814,7 @@
       {
         "resident": 36,
         "streamed": 0,
-        "gpu_peak_bytes": 10225553714,
+        "gpu_peak_bytes": 10153751680,
         "cpu_peak_bytes": 6134908928,
         "sweep_bytes": 0,
         "gpu_verdict": "FAIL",
@@ -1849,51 +1855,51 @@
     },
     {
       "name": "old log-probs forward",
-      "sweeps": 1,
-      "weight_bytes": 7267018752,
+      "sweeps": 5,
+      "weight_bytes": 36335093760,
       "activation_bytes": 0,
-      "tokens_per_sweep": 3120,
+      "tokens_per_sweep": 624,
       "note": "",
-      "bytes": 7267018752,
-      "transfer_s": 0.605584896,
+      "bytes": 36335093760,
+      "transfer_s": 3.02792448,
       "compute_s": null,
-      "critical_path": ">= 0.606 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 3.028 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "training forward (x1 iterations)",
-      "sweeps": 1,
-      "weight_bytes": 7267018752,
+      "sweeps": 5,
+      "weight_bytes": 36335093760,
       "activation_bytes": 0,
-      "tokens_per_sweep": 3120,
+      "tokens_per_sweep": 624,
       "note": "",
-      "bytes": 7267018752,
-      "transfer_s": 0.605584896,
+      "bytes": 36335093760,
+      "transfer_s": 3.02792448,
       "compute_s": null,
-      "critical_path": ">= 0.606 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 3.028 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "backward recomputation (x1, layers >= 34)",
-      "sweeps": 1,
-      "weight_bytes": 403723264,
+      "sweeps": 5,
+      "weight_bytes": 2018616320,
       "activation_bytes": 0,
-      "tokens_per_sweep": 3120,
+      "tokens_per_sweep": 624,
       "note": "recompute and backward of a layer share one load",
-      "bytes": 403723264,
-      "transfer_s": 0.03364360533333333,
+      "bytes": 2018616320,
+      "transfer_s": 0.16821802666666666,
       "compute_s": null,
-      "critical_path": ">= 0.034 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 0.168 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "evaluation (128 examples)",
-      "sweeps": 32,
-      "weight_bytes": 232544600064,
+      "sweeps": 48,
+      "weight_bytes": 348816900096,
       "activation_bytes": 0,
-      "tokens_per_sweep": 32,
-      "note": "4 generate batches x 4 sweeps + 16 scoring passes",
-      "bytes": 232544600064,
-      "transfer_s": 19.378716672,
+      "tokens_per_sweep": 16,
+      "note": "8 generate batches x 4 sweeps + 16 scoring passes",
+      "bytes": 348816900096,
+      "transfer_s": 29.068075008,
       "compute_s": null,
-      "critical_path": ">= 19.379 s (max(T_transfer, T_compute); compute unknown)"
+      "critical_path": ">= 29.068 s (max(T_transfer, T_compute); compute unknown)"
     },
     {
       "name": "merge (cpu)",
@@ -1909,8 +1915,8 @@
     }
   ],
   "transfers_per_grpo_step": {
-    "bytes": 44005835776,
-    "transfer_s": 3.6671529813333335
+    "bytes": 103756878848,
+    "transfer_s": 8.646406570666667
   },
   "uncertainties": [
     "PCIe bandwidth 12.0 GB/s: assumption, unmeasured: effective pinned host-to-device copy rate (PCIe 4.0 x16 peak is ~31.5 GB/s; laptop links and WSL2 are typically far lower)",
@@ -1924,10 +1930,10 @@
     "dflash (optional estimate) / rollout last decode step + draft: draft KV cache + target hidden-feature buffers unknown (depends on the DFlash implementation; not modelled)"
   ],
   "provenance": {
-    "created": "2026-11-17T21:17:16+00:00",
+    "created": "2026-11-18T13:58:44+00:00",
     "config": "configs/budget/qwen3-4b_final.yaml",
-    "config_sha256": "4a98e62ebcaa293a7afa64b18d5373583bf24951fd53ab668dedc00c2ff935c4",
-    "git_commit": "8859e53552ee4923ebee806b2436b513270c098c",
+    "config_sha256": "56a9c1f70c457e85a8ed4e63638b6192f40f8d3b320d6ff841dccf75d9e3a337",
+    "git_commit": "e8440e41c84486e9a30cd1633ffc1029db5c190e",
     "kind": "theoretical prediction (no measurement)"
   }
 }

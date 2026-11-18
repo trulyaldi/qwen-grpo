@@ -476,3 +476,60 @@ def test_micro_batches_cover_every_row_once_in_order():
         assert [c["input_ids"].shape[0] for _, c in chunks] == sizes and all(c["prompt_len"] == 1 for _, c in chunks)
         assert torch.equal(torch.cat([c["input_ids"] for _, c in chunks]), r["input_ids"])
         assert [rows.start for rows, _ in chunks] == [sum(sizes[:i]) for i in range(len(sizes))]
+
+
+def test_final_run_shape_30_completions_in_5_micro_batches_of_6_with_one_optimizer_step():
+    """The resolved qwen3_4b_final.yaml batch: B*G = 5*6 = 30 completions, training.micro_batch_size 6. prepare() and
+    grpo_update() each process exactly 5 chunks of 6 rows in order; each chunk's loss is scaled by 6/30 so the
+    accumulated gradient, the loss, the old log-probs and the AdamW update equal the single-chunk (null) run's in fp64;
+    exactly one optimizer step is taken. A model-free log-prob function keeps the check exact and fast."""
+    from qwen_grpo import config
+    cfg = config.load(Path(__file__).resolve().parents[1] / "configs" / "experiments" / "qwen3_4b_final.yaml")
+    t = cfg.training
+    B, G, mb = t.batch_size, t.group_size, t.micro_batch_size
+    N, R, H, V = B * G, t.max_new_tokens, 8, 13
+    assert (N, mb, t.num_iterations) == (30, 6, 1)
+
+    gen = torch.Generator().manual_seed(0)
+    feats = torch.randn(N, R, H, generator=gen, dtype=torch.float64)
+    response_ids = torch.randint(0, V, (N, R), generator=gen)
+    lengths = torch.randint(1, R + 1, (N,), generator=gen)                      # every completion has >= 1 token
+    mask = torch.arange(R)[None, :] < lengths[:, None]
+    rollouts = {"input_ids": torch.zeros(N, R + 1, dtype=torch.long), "feats": feats, "response_ids": response_ids,
+                "completion_mask": mask, "prompt_len": 1}
+    rewards = torch.tensor([[1.0, 0, 0, 1, 0, 1]] * (B - 1) + [[0.0] * G])     # mixed groups and one zero-signal group
+
+    class Steps(torch.optim.AdamW):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.steps = 0
+
+        def step(self, closure=None):
+            self.steps += 1
+            return super().step(closure)
+
+    def run(size):
+        W = torch.nn.Parameter(torch.randn(V, H, generator=torch.Generator().manual_seed(1), dtype=torch.float64))
+        model, chunks = SimpleNamespace(W=W), []
+
+        def logprobs(m, chunk):
+            chunks.append((torch.is_grad_enabled(), chunk["feats"].shape[0]))
+            logp = torch.log_softmax(chunk["feats"] @ m.W.T, dim=-1)                 # [n, R, V]
+            return logp.gather(-1, chunk["response_ids"].unsqueeze(-1)).squeeze(-1)  # [n, R]
+
+        opt = Steps([W], lr=t.learning_rate, weight_decay=0.0)
+        adv, old = training.prepare(model, rollouts, rewards, size, logprobs=logprobs)
+        out = training.grpo_update(model, {"W": W}, opt, rollouts, adv, old, t.clip_eps, 0, size, logprobs=logprobs)
+        return old, out, W.detach().clone(), opt.steps, chunks, W.grad
+
+    old_a, out_a, w_a, steps_a, chunks_a, _ = run(None)
+    old_b, out_b, w_b, steps_b, chunks_b, grad_b = run(mb)
+    assert chunks_a == [(False, N), (True, N)]
+    assert chunks_b == [(False, mb)] * 5 + [(True, mb)] * 5                   # 5 no-grad + 5 graph chunks of 6
+    assert steps_a == steps_b == 1 and grad_b is None                         # one AdamW step, gradients cleared after
+    assert out_b["init_diff"] == 0.0 and out_b["ratio_min"] == out_b["ratio_max"] == 1.0
+    torch.testing.assert_close(old_b, old_a, atol=1e-13, rtol=0)
+    assert out_b["loss"] == pytest.approx(out_a["loss"], rel=1e-12, abs=1e-14)  # sum of (6/30)-scaled chunk losses
+    assert out_b["grad_norm"] == pytest.approx(out_a["grad_norm"], rel=1e-12)  # accumulated = full-batch gradient
+    assert out_a["grad_norm"] > 0
+    torch.testing.assert_close(w_b, w_a, atol=1e-13, rtol=0)

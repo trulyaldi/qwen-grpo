@@ -371,7 +371,7 @@ entries:
       - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_smoke_dflash.yaml], creates: "run:qwen3_4b_smoke_dflash"}
     judge: exit_codes
   # Acceptance as the policy drifts from the base the drafter was trained on, at real checkpoints of the primary
-  # 60-update run (step 0 = the initial adapter, i.e. the base policy; qwen3_4b_final.yaml checkpoints every 10
+  # 60-update run (step 0 = the initial adapter, i.e. the base policy; qwen3_4b_final.yaml checkpoints every 20
   # updates, so step20/40/60 exist when the run completed, and the prerequisite checks each one was saved and is
   # complete). dflash_bench.py exits 0 iff greedy tokens equal plain decoding everywhere and no memory violation.
   - id: H10.dflash_drift
@@ -436,8 +436,8 @@ entries:
     min_vram_gib: 8
     prerequisites: {runs: [qwen3_4b_smoke]}
     configs: [configs/experiments/qwen3_4b_l2l.yaml]
-    steps:
-      - argv: [scripts/profile_run.py, --out, "{name}", --config, configs/experiments/qwen3_4b_l2l.yaml, --prediction, results/budget/predictions/qwen3-4b-final_8gb.json, --budget-gib, "8", --steps, "1", --eval-n, "16"]
+    steps:   # --micro-batch-size 6: profiled at the final run's micro-batch shape (qwen3_4b_final.yaml; the plain prediction)
+      - argv: [scripts/profile_run.py, --out, "{name}", --config, configs/experiments/qwen3_4b_l2l.yaml, --prediction, results/budget/predictions/qwen3-4b-final_8gb.json, --budget-gib, "8", --steps, "1", --eval-n, "16", --micro-batch-size, "6"]
         creates: research/l2l/experiments/{name}.json
     judge: {requirements: [R13], blocked_means: INCONCLUSIVE}   # criterion: diagnostic-only evidence is INCONCLUSIVE
 
@@ -451,7 +451,7 @@ entries:
     supplementary: true
     prerequisites: {runs: [qwen3_4b_smoke, qwen3_4b_smoke_dflash]}   # plain baseline, and the final's DFlash path
     # Both runs use DFlash rollouts (dflash.enabled in qwen3_4b_final.yaml, inherited by _lr0); evaluation is plain.
-    # The primary run has 60 updates (checkpoints every 10), the LR=0 control 30.
+    # The primary run has 60 updates (checkpoints every 20: step0/20/40/60), the LR=0 control 30 (step0/20/30).
     configs: [configs/experiments/qwen3_4b_final.yaml, configs/experiments/qwen3_4b_final_lr0.yaml]
     steps:
       - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final.yaml], creates: "run:qwen3_4b_final"}

@@ -201,7 +201,7 @@ def budget_mismatches(budget, cfg):
         "eval new tokens": (budget["evaluation"]["generation_tokens"], e.max_new_tokens),
         "DFlash rollouts": (budget["dflash"]["enabled"], cfg.dflash.enabled),
         # peaks are per phase and do not depend on the number of updates; what the schedule decides is whether the
-        # AdamW state is live during the subset evaluations (an evaluation every 10 of 60 updates: yes)
+        # AdamW state is live during the subset evaluations (an evaluation every 20 of 60 updates: yes)
         "eval during training": (budget["evaluation"]["during_training"],
                                  cfg.evaluation.every <= cfg.training.max_steps),
     }
@@ -250,6 +250,9 @@ def test_the_profiled_prediction_matches_the_plain_l2l_configurations_it_profile
     # budget sizes the final run's 128-example subset evaluation; every other field must match as it resolves
     assert not smoke.dflash.enabled and not (wrong := budget_mismatches(budget, smoke)), wrong
     assert config.load(ROOT / argv[argv.index("--config") + 1]).dflash.enabled is False
+    # the profiled config keeps micro_batch_size null; the profile runs at the predicted (final) micro-batch shape
+    assert int(argv[argv.index("--micro-batch-size") + 1]) == budget["grpo"]["micro_batch_size"] == \
+        smoke.training.micro_batch_size
 
 
 def test_the_historical_prediction_is_preserved_and_labelled():

@@ -78,6 +78,9 @@ def test_smoke_runs_have_the_final_runs_batch_shape():
     assert set(diff(final, smoke)) == SCALE | {"dflash.enabled", "dflash.draft_model"}
     assert smoke.streaming.enabled and smoke.memory.guard and smoke.execution == final.execution == dflash.execution
     assert set(diff(smoke, dflash)) == {"dflash.draft_model", "dflash.enabled", "run.name", "training.max_steps"}
+    # the final run's micro-batching and evaluation batch are inherited, not re-declared
+    assert smoke.training.micro_batch_size == dflash.training.micro_batch_size == final.training.micro_batch_size == 6
+    assert smoke.evaluation.batch_size == dflash.evaluation.batch_size == final.evaluation.batch_size == 16
 
 
 def test_the_final_run_and_its_lr0_control_sample_through_dflash():
@@ -89,11 +92,24 @@ def test_the_final_run_and_its_lr0_control_sample_through_dflash():
     # untouched by enabling DFlash: objective, reward inputs, adapter, schedule, batch, sampling, data
     t = final.training
     assert (t.learning_rate, t.max_steps, t.batch_size, t.group_size, t.max_new_tokens, t.num_iterations, t.clip_eps,
-            final.lora.rank, final.lora.alpha, final.data.train_samples) == (5e-4, 60, 5, 6, 4, 1, 0.2, 32, 64, 1024)
+            final.lora.rank, final.lora.alpha, final.data.train_samples) == (2e-4, 60, 5, 6, 4, 1, 0.2, 32, 64, 1024)
+    assert (t.micro_batch_size, t.max_attempts, t.seed, final.data.val_subset) == (6, 1000, 42, 128)
+    assert (t.batch_size * t.group_size) // t.micro_batch_size == 5 and (t.batch_size * t.group_size) % t.micro_batch_size == 0
     assert (final.lora.targets.modules, final.lora.targets.num_layers) == (["q_proj", "v_proj", "o_proj"], 2)
     assert (final.model.name, final.model.dtype, final.execution.weight_storage) == ("Qwen/Qwen3-4B", "bfloat16", "pinned")
     assert final.streaming.enabled and final.memory.guard
-    assert (final.evaluation.every, final.evaluation.full_validation) == (10, False)
+    e = final.evaluation
+    assert (e.every, e.full_validation, e.batch_size, e.score_batch_size) == (20, False, 16, 8)
+
+
+def test_the_lr0_control_keeps_a_valid_checkpoint_and_evaluation_schedule():
+    """30 updates with evaluation.every 20 (inherited): the trainer saves (and evaluates the subset) at step0, at every
+    multiple of `every` and at max_steps, so the control has step0/20/30, ending at its last update."""
+    lr0 = load("experiments/qwen3_4b_final_lr0.yaml")
+    t, every = lr0.training.max_steps, lr0.evaluation.every
+    assert (t, every) == (30, 20)
+    assert sorted({0, t} | set(range(every, t + 1, every))) == [0, 20, 30]
+    assert lr0.training.micro_batch_size == 6 and lr0.evaluation.every <= t
 
 
 def test_the_staged_schedule_smoke_10_primary_60_extension_210_opt_in():
@@ -130,9 +146,12 @@ def test_the_drift_checkpoints_are_ones_the_primary_run_saves():
 
 
 # sha256 of the resolved plain-L2L / DFlash reference configs before the final run enabled DFlash (commit 8aa63ee):
-# enabling DFlash in qwen3_4b_final.yaml must not change any of them
+# enabling DFlash in qwen3_4b_final.yaml must not change any of them. qwen3_4b_smoke.yaml extends the final run, so its
+# hash changed on purpose on 2026-11-18 when the final run's hyperparameters changed (micro_batch_size 6, learning rate
+# 2e-4, evaluation every 20 with batch 16); it was 483f6ca97333a663ec8ed379246b2f5f13307c89a1d53710ae1f91d46f1c0fa0.
+# DFlash stays disabled there (asserted below).
 HASHES_BEFORE_DFLASH_FINAL = {
-    "experiments/qwen3_4b_smoke.yaml": "483f6ca97333a663ec8ed379246b2f5f13307c89a1d53710ae1f91d46f1c0fa0",
+    "experiments/qwen3_4b_smoke.yaml": "9bc68ebcc4f1c07788f2183e77afcf18429a2d28e366bfa022ba67a5c1807b3a",
     "experiments/qwen3_4b_l2l.yaml": "24d6ba78c6adb0246713fdc50f7d0b9e7b3dd6d776ff7a951ece3a39a195dc9e",
     "experiments/qwen3_4b_l2l_dflash.yaml": "f1ea3ed565aec1e9757e451eb7acca62411950cd5b7cdffef2618e1ff79583f4",
 }

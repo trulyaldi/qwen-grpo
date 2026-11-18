@@ -4,7 +4,7 @@
 
 Theoretical prediction only: no memory or time below is measured.
 
-Provenance: {'created': '2026-11-17T21:17:16+00:00', 'config': 'configs/budget/qwen3-4b_final.yaml', 'config_sha256': '4a98e62ebcaa293a7afa64b18d5373583bf24951fd53ab668dedc00c2ff935c4', 'git_commit': '8859e53552ee4923ebee806b2436b513270c098c', 'kind': 'theoretical prediction (no measurement)'}
+Provenance: {'created': '2026-11-18T13:58:44+00:00', 'config': 'configs/budget/qwen3-4b_final.yaml', 'config_sha256': '56a9c1f70c457e85a8ed4e63638b6192f40f8d3b320d6ff841dccf75d9e3a337', 'git_commit': 'e8440e41c84486e9a30cd1633ffc1029db5c190e', 'kind': 'theoretical prediction (no measurement)'}
 
 ## Configuration and assumptions
 
@@ -32,7 +32,7 @@ grpo:
   prompt_batch_size: 5
   group_size: 6
   rollout_batch_size: 30
-  micro_batch_size: 30
+  micro_batch_size: 6
   prompt_tokens: 100
   generation_tokens: 4
   num_iterations: 1
@@ -55,7 +55,7 @@ streaming:
   logits: response_only
 evaluation:
   examples: 128
-  batch_size: 32
+  batch_size: 16
   score_batch_size: 8
   generation_tokens: 4
   during_training: true
@@ -85,8 +85,8 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 |---|---|---|---|---|---|---|---|---|---|---|
 | initialization | weights loaded, before the first forward | 1.105 GiB | 1.105 GiB | 1.215 GiB | 1.715 GiB | 5.736 GiB | 14.714 GiB | 15.086 GiB | PASS | PASS |
 | rollout | rollout: prefill, last layer | 1.525 GiB | 1.750 GiB | 1.925 GiB | 2.425 GiB | 5.025 GiB | 11.000 GiB | 18.800 GiB | PASS | PASS |
-| training | backward: recompute + backward of the last decoder layer | 1.161 GiB | 1.811 GiB | 1.992 GiB | 2.492 GiB | 4.958 GiB | 11.000 GiB | 18.800 GiB | PASS | PASS |
-| evaluation | greedy generation: prefill, last layer | 1.552 GiB | 1.793 GiB | 1.972 GiB | 2.472 GiB | 4.979 GiB | 11.000 GiB | 18.800 GiB | PASS | PASS |
+| training | backward: recompute + backward of the last decoder layer | 1.126 GiB | 1.256 GiB | 1.381 GiB | 1.881 GiB | 5.570 GiB | 11.000 GiB | 18.800 GiB | PASS | PASS |
+| evaluation | greedy generation: prefill, last layer | 1.332 GiB | 1.453 GiB | 1.598 GiB | 2.098 GiB | 5.353 GiB | 11.000 GiB | 18.800 GiB | PASS | PASS |
 | merge | tensorwise merge on cpu | 0.0 KiB | 0.0 KiB | 0.0 KiB | 0.0 KiB | 7.451 GiB | 2.141 GiB | 27.659 GiB | PASS | PASS |
 | dflash (optional estimate) | rollout last decode step + draft | 2.542 GiB | 2.588 GiB | 2.847 GiB | 3.347 GiB | 4.104 GiB | 11.000 GiB | 18.800 GiB | PASS | PASS |
 
@@ -149,11 +149,11 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 
 ### training
 
-- N = 30 sequences of T = 104 tokens, micro-batches of 30; schedule microbatch_major
+- N = 30 sequences of T = 104 tokens, micro-batches of 6; schedule microbatch_major
 - layers 0..33 hold no LoRA targets: no-grad forward, no checkpoints, no backward sweep; layers 34..35 are checkpointed and swept backward
 - no reference-model forward: the loss has beta = 0 (qwen_grpo/grpo.py)
 
-**old log-probs forward (no grad)**: GPU allocated 1.490 GiB, device 2.139 GiB; CPU 11.000 GiB
+**old log-probs forward (no grad)**: GPU allocated 1.188 GiB, device 1.807 GiB; CPU 11.000 GiB
 
 | device | item | size | kind | note |
 |---|---|---|---|---|
@@ -164,13 +164,13 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 | GPU | LoRA parameters (float32) | 4.1 MiB | exact |  |
 | GPU | rollout ids/masks + old log-probs + advantages | 49.5 KiB | exact |  |
 | GPU | AdamW exp_avg + exp_avg_sq | 8.2 MiB | exact |  |
-| GPU | hidden state in/out | 30.5 MiB | estimate |  |
-| GPU | layer intermediates (no grad) | 173.7 MiB | estimate |  |
-| GPU | logits + fp32 copy + log_softmax | 182.6 MiB | exact | response_only: [m, R+1, V=151936] |
+| GPU | hidden state in/out | 6.1 MiB | estimate |  |
+| GPU | layer intermediates (no grad) | 34.7 MiB | estimate |  |
+| GPU | logits + fp32 copy + log_softmax | 36.5 MiB | exact | response_only: [m, R+1, V=151936] |
 | CPU | frozen streamed layers x36 (pinned) | 6.768 GiB | exact |  |
 | CPU | pinned allocator power-of-two rounding | 2.232 GiB | estimate | torch CachingHostAllocator rounds each pin_memory() block (per_layer) |
 
-**forward: LM head of a micro-batch**: GPU allocated 1.340 GiB, device 1.974 GiB; CPU 11.000 GiB
+**forward: LM head of a micro-batch**: GPU allocated 1.161 GiB, device 1.777 GiB; CPU 11.000 GiB
 
 | device | item | size | kind | note |
 |---|---|---|---|---|
@@ -182,12 +182,12 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 | GPU | rollout ids/masks + old log-probs + advantages | 49.5 KiB | exact |  |
 | GPU | LoRA gradients | 4.1 MiB | exact |  |
 | GPU | AdamW exp_avg + exp_avg_sq | 8.2 MiB | exact |  |
-| GPU | boundary checkpoints [3 x 30 seq x 104 tok] | 45.7 MiB | exact |  |
-| GPU | logits + fp32 copy + log_softmax | 182.6 MiB | exact | response_only: [m, R+1, V=151936] |
+| GPU | boundary checkpoints [3 x 6 seq x 104 tok] | 9.1 MiB | exact |  |
+| GPU | logits + fp32 copy + log_softmax | 36.5 MiB | exact | response_only: [m, R+1, V=151936] |
 | CPU | frozen streamed layers x36 (pinned) | 6.768 GiB | exact |  |
 | CPU | pinned allocator power-of-two rounding | 2.232 GiB | estimate | torch CachingHostAllocator rounds each pin_memory() block (per_layer) |
 
-**backward: log_softmax / LM head**: GPU allocated 1.407 GiB, device 2.048 GiB; CPU 11.000 GiB
+**backward: log_softmax / LM head**: GPU allocated 1.175 GiB, device 1.792 GiB; CPU 11.000 GiB
 
 | device | item | size | kind | note |
 |---|---|---|---|---|
@@ -199,12 +199,12 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 | GPU | rollout ids/masks + old log-probs + advantages | 49.5 KiB | exact |  |
 | GPU | LoRA gradients | 4.1 MiB | exact |  |
 | GPU | AdamW exp_avg + exp_avg_sq | 8.2 MiB | exact |  |
-| GPU | boundary checkpoints [3 x 30 seq x 104 tok] | 45.7 MiB | exact |  |
-| GPU | log_softmax backward (saved out, grad out, grad in) + logits grad | 252.1 MiB | estimate | response_only: [m, R+1, V=151936] |
+| GPU | boundary checkpoints [3 x 6 seq x 104 tok] | 9.1 MiB | exact |  |
+| GPU | log_softmax backward (saved out, grad out, grad in) + logits grad | 50.4 MiB | estimate | response_only: [m, R+1, V=151936] |
 | CPU | frozen streamed layers x36 (pinned) | 6.768 GiB | exact |  |
 | CPU | pinned allocator power-of-two rounding | 2.232 GiB | estimate | torch CachingHostAllocator rounds each pin_memory() block (per_layer) |
 
-**backward: recompute + backward of the last decoder layer**: GPU allocated 1.811 GiB, device 2.492 GiB; CPU 11.000 GiB
+**backward: recompute + backward of the last decoder layer**: GPU allocated 1.256 GiB, device 1.881 GiB; CPU 11.000 GiB
 
 | device | item | size | kind | note |
 |---|---|---|---|---|
@@ -216,17 +216,17 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 | GPU | rollout ids/masks + old log-probs + advantages | 49.5 KiB | exact |  |
 | GPU | LoRA gradients | 4.1 MiB | exact |  |
 | GPU | AdamW exp_avg + exp_avg_sq | 8.2 MiB | exact |  |
-| GPU | boundary checkpoints [3 x 30 seq x 104 tok] | 45.7 MiB | exact |  |
-| GPU | recomputed layer activations (autograd-saved) | 519.1 MiB | estimate |  |
-| GPU | grad of hidden state in/out + MLP grads | 146.2 MiB | estimate |  |
+| GPU | boundary checkpoints [3 x 6 seq x 104 tok] | 9.1 MiB | exact |  |
+| GPU | recomputed layer activations (autograd-saved) | 103.8 MiB | estimate |  |
+| GPU | grad of hidden state in/out + MLP grads | 29.2 MiB | estimate |  |
 | CPU | frozen streamed layers x36 (pinned) | 6.768 GiB | exact |  |
 | CPU | pinned allocator power-of-two rounding | 2.232 GiB | estimate | torch CachingHostAllocator rounds each pin_memory() block (per_layer) |
 
 ### evaluation
 
-- greedy, batches of 32, 4 new tokens; optimizer state kept
+- greedy, batches of 16, 4 new tokens; optimizer state kept
 
-**greedy generation: prefill, last layer**: GPU allocated 1.793 GiB, device 2.472 GiB; CPU 11.000 GiB
+**greedy generation: prefill, last layer**: GPU allocated 1.453 GiB, device 2.098 GiB; CPU 11.000 GiB
 
 | device | item | size | kind | note |
 |---|---|---|---|---|
@@ -236,15 +236,15 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 | GPU | layer buffers x2 | 385.0 MiB | exact | each sized for the largest streamed layer |
 | GPU | LoRA parameters (float32) | 4.1 MiB | exact |  |
 | GPU | AdamW exp_avg + exp_avg_sq | 8.2 MiB | exact |  |
-| GPU | KV cache [32 seq x 100 tok x 36 layers] | 450.0 MiB | exact |  |
-| GPU | token ids + attention mask (int64) | 52.0 KiB | exact |  |
-| GPU | hidden state in/out | 31.2 MiB | estimate |  |
-| GPU | layer intermediates (no grad) | 178.1 MiB | estimate |  |
-| GPU | next-token logits + sampling probs (fp32) | 37.1 MiB | estimate | generate() upcasts the last position's logits; logits processors/softmax copy them |
+| GPU | KV cache [16 seq x 100 tok x 36 layers] | 225.0 MiB | exact |  |
+| GPU | token ids + attention mask (int64) | 26.0 KiB | exact |  |
+| GPU | hidden state in/out | 15.6 MiB | estimate |  |
+| GPU | layer intermediates (no grad) | 89.1 MiB | estimate |  |
+| GPU | next-token logits + sampling probs (fp32) | 18.5 MiB | estimate | generate() upcasts the last position's logits; logits processors/softmax copy them |
 | CPU | frozen streamed layers x36 (pinned) | 6.768 GiB | exact |  |
 | CPU | pinned allocator power-of-two rounding | 2.232 GiB | estimate | torch CachingHostAllocator rounds each pin_memory() block (per_layer) |
 
-**greedy generation: last decode step**: GPU allocated 1.619 GiB, device 2.280 GiB; CPU 11.000 GiB
+**greedy generation: last decode step**: GPU allocated 1.366 GiB, device 2.002 GiB; CPU 11.000 GiB
 
 | device | item | size | kind | note |
 |---|---|---|---|---|
@@ -254,10 +254,10 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 | GPU | layer buffers x2 | 385.0 MiB | exact | each sized for the largest streamed layer |
 | GPU | LoRA parameters (float32) | 4.1 MiB | exact |  |
 | GPU | AdamW exp_avg + exp_avg_sq | 8.2 MiB | exact |  |
-| GPU | KV cache [32 seq x 104 tok x 36 layers] | 468.0 MiB | exact |  |
-| GPU | token ids + attention mask (int64) | 52.0 KiB | exact |  |
-| GPU | KV append copy of one layer (DynamicCache torch.cat) | 13.0 MiB | estimate |  |
-| GPU | next-token logits + sampling probs (fp32) | 37.1 MiB | estimate | generate() upcasts the last position's logits; logits processors/softmax copy them |
+| GPU | KV cache [16 seq x 104 tok x 36 layers] | 234.0 MiB | exact |  |
+| GPU | token ids + attention mask (int64) | 26.0 KiB | exact |  |
+| GPU | KV append copy of one layer (DynamicCache torch.cat) | 6.5 MiB | estimate |  |
+| GPU | next-token logits + sampling probs (fp32) | 18.5 MiB | estimate | generate() upcasts the last position's logits; logits processors/softmax copy them |
 | CPU | frozen streamed layers x36 (pinned) | 6.768 GiB | exact |  |
 | CPU | pinned allocator power-of-two rounding | 2.232 GiB | estimate | torch CachingHostAllocator rounds each pin_memory() block (per_layer) |
 
@@ -320,14 +320,14 @@ Limits: GPU 7.4506 GiB, CPU 29.8 GiB. GPU device = allocated x (1 + 0.1) + CUDA 
 
 | resident | streamed | GPU peak (device) | CPU peak | bytes per sweep | GPU | CPU |
 |---|---|---|---|---|---|---|
-| 0 | 36 | 2.492 GiB | 14.714 GiB | 7.267 GB | PASS | PASS |
-| 6 | 30 | 3.733 GiB | 13.214 GiB | 6.056 GB | PASS | PASS |
-| 12 | 24 | 4.974 GiB | 11.714 GiB | 4.845 GB | PASS | PASS |
-| 18 | 18 | 6.215 GiB | 10.214 GiB | 3.634 GB | PASS | PASS |
-| 20 | 16 | 6.628 GiB | 9.714 GiB | 3.230 GB | PASS | PASS |
-| 24 | 12 | 7.455 GiB | 8.714 GiB | 2.422 GB | FAIL | PASS |
-| 30 | 6 | 8.696 GiB | 7.214 GiB | 1.211 GB | FAIL | PASS |
-| 36 | 0 | 9.523 GiB | 5.714 GiB | 0.000 GB | FAIL | PASS |
+| 0 | 36 | 2.425 GiB | 14.714 GiB | 7.267 GB | PASS | PASS |
+| 6 | 30 | 3.666 GiB | 13.214 GiB | 6.056 GB | PASS | PASS |
+| 12 | 24 | 4.907 GiB | 11.714 GiB | 4.845 GB | PASS | PASS |
+| 18 | 18 | 6.148 GiB | 10.214 GiB | 3.634 GB | PASS | PASS |
+| 20 | 16 | 6.561 GiB | 9.714 GiB | 3.230 GB | PASS | PASS |
+| 24 | 12 | 7.388 GiB | 8.714 GiB | 2.422 GB | UNKNOWN | PASS |
+| 30 | 6 | 8.629 GiB | 7.214 GiB | 1.211 GB | FAIL | PASS |
+| 36 | 0 | 9.456 GiB | 5.714 GiB | 0.000 GB | FAIL | PASS |
 
 ## PCIe transfers (configured residency)
 
@@ -337,13 +337,13 @@ T_transfer = bytes / 12.0 GB/s (assumption, unmeasured: effective pinned host-to
 |---|---|---|---|---|---|---|---|---|
 | rollout prefill | 1 | 7.267 GB | 0.000 GB | 7.267 GB | 0.606 s | 3000 | >= 0.606 s (max(T_transfer, T_compute); compute unknown) |  |
 | rollout decode | 3 | 21.801 GB | 0.000 GB | 21.801 GB | 1.817 s | 30 | >= 1.817 s (max(T_transfer, T_compute); compute unknown) | one weight sweep per generated token after the first |
-| old log-probs forward | 1 | 7.267 GB | 0.000 GB | 7.267 GB | 0.606 s | 3120 | >= 0.606 s (max(T_transfer, T_compute); compute unknown) |  |
-| training forward (x1 iterations) | 1 | 7.267 GB | 0.000 GB | 7.267 GB | 0.606 s | 3120 | >= 0.606 s (max(T_transfer, T_compute); compute unknown) |  |
-| backward recomputation (x1, layers >= 34) | 1 | 0.404 GB | 0.000 GB | 0.404 GB | 0.034 s | 3120 | >= 0.034 s (max(T_transfer, T_compute); compute unknown) | recompute and backward of a layer share one load |
-| evaluation (128 examples) | 32 | 232.545 GB | 0.000 GB | 232.545 GB | 19.379 s | 32 | >= 19.379 s (max(T_transfer, T_compute); compute unknown) | 4 generate batches x 4 sweeps + 16 scoring passes |
+| old log-probs forward | 5 | 36.335 GB | 0.000 GB | 36.335 GB | 3.028 s | 624 | >= 3.028 s (max(T_transfer, T_compute); compute unknown) |  |
+| training forward (x1 iterations) | 5 | 36.335 GB | 0.000 GB | 36.335 GB | 3.028 s | 624 | >= 3.028 s (max(T_transfer, T_compute); compute unknown) |  |
+| backward recomputation (x1, layers >= 34) | 5 | 2.019 GB | 0.000 GB | 2.019 GB | 0.168 s | 624 | >= 0.168 s (max(T_transfer, T_compute); compute unknown) | recompute and backward of a layer share one load |
+| evaluation (128 examples) | 48 | 348.817 GB | 0.000 GB | 348.817 GB | 29.068 s | 16 | >= 29.068 s (max(T_transfer, T_compute); compute unknown) | 8 generate batches x 4 sweeps + 16 scoring passes |
 | merge (cpu) | 0 | 0.000 GB | 0.000 GB | 0.000 GB | 0.000 s | 0 | >= 0.000 s (max(T_transfer, T_compute); compute unknown) | no PCIe traffic on CPU |
 
-Per GRPO step (rollout + old log-probs + training): 44.006 GB, >= 3.67 s of transfer.
+Per GRPO step (rollout + old log-probs + training): 103.757 GB, >= 8.65 s of transfer.
 
 ## Uncertainties
 
