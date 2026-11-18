@@ -130,6 +130,9 @@ def main(argv=None):
     ap.add_argument("--fixed-rewards", action="store_true", help="alternate 1/0 rewards instead of the real reward")
     ap.add_argument("--no-compare", action="store_true", help="skip the resident side")
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--require-equal", action="store_true",
+                    help="exit 1 unless the resident comparison ran and rollouts, old log-probs, every loss, LoRA "
+                         "gradient and update are bitwise equal (the verdict a stage gate needs)")
     args = ap.parse_args(argv)
 
     cfg = config.load(args.config)
@@ -261,8 +264,22 @@ def main(argv=None):
                   f"logp max abs {it['logp']['max_abs']:.2e}, all grads equal {it['all_grads_equal']} "
                   f"(worst rel {it['worst_grad_rel']:.2e}), all updates equal {it['all_updates_equal']}, "
                   f"clip_frac equal {it['clip_frac_equal']}, zero-gradient tensors {len(it['zero_grads'])}")
-    print(f"written: {out}")
+    report["all_equal"] = all_equal(report)
+    out.write_text(json.dumps(report, indent=1, default=str) + "\n")
+    print(f"written: {out}; resident == L2L bitwise: {report['all_equal']}")
+    if args.require_equal and not report["all_equal"]:
+        sys.exit(1)
     return report
+
+
+def all_equal(report):
+    """True iff the resident comparison ran and everything compared is bitwise equal."""
+    c = report.get("comparison")
+    if not c or not c.get("iterations"):
+        return False
+    return bool(report.get("rollouts_equal")) and c["old_logp"]["equal"] and all(
+        it["loss"]["equal"] and it["all_grads_equal"] and it["all_updates_equal"] and it["clip_frac_equal"]
+        for it in c["iterations"])
 
 
 if __name__ == "__main__":

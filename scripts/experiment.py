@@ -105,6 +105,12 @@ def load_study(path=STUDY):
     """The study manifest, checked: unique ids, known capabilities and judges, hypotheses that exist, and no key that
     could redefine a criterion or a threshold."""
     study = yaml.safe_load(Path(path).read_text())
+    if inc := study.get("include"):  # entries reused verbatim from another study (e.g. the local laptop study)
+        other = yaml.safe_load((Path(path).parent / inc["study"]).read_text())
+        by_id = {e["id"]: e for e in other["entries"]}
+        if missing := [i for i in inc["entries"] if i not in by_id]:
+            raise SystemExit(f"invalid study manifest: included entries {missing} are not in {inc['study']}")
+        study["entries"] = [by_id[i] for i in inc["entries"]] + list(study.get("entries") or [])
     hyps = yaml.safe_load((ROOT / study["hypotheses"]).read_text())
     seen, errors = set(), []
     for e in study["entries"]:

@@ -383,7 +383,8 @@ def train(cfg: Config, resume=None, device="cuda"):
             while _HELD:  # the L2L weight store unregisters its pinned memory (GBs for Qwen3-4B)
                 _HELD.pop().close()
             if guard is not None and cfg.memory.allocator_cap:
-                torch.cuda.set_per_process_memory_fraction(1.0, torch.device(device))
+                idx = torch.device(device).index
+                torch.cuda.set_per_process_memory_fraction(1.0, torch.cuda.current_device() if idx is None else idx)
         save_memory(cfg, guard)
         runs.set_status(name, "completed")
     report = update_run(name)
@@ -406,6 +407,8 @@ def memory_guard(cfg, device):
     from qwen_grpo.execution.profiler import Profiler
     budget = int(cfg.run.gpu_budget_gib * 2**30)
     dev = torch.device(device)
+    if dev.index is None:  # set_per_process_memory_fraction needs an index: "cuda" means the current device
+        dev = torch.device("cuda", torch.cuda.current_device())
     if cfg.memory.allocator_cap:
         total = torch.cuda.get_device_properties(dev).total_memory
         torch.cuda.set_per_process_memory_fraction(min(1.0, budget / total), dev)

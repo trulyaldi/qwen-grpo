@@ -43,7 +43,7 @@ def sha256_bytes(data):
 # summarised, never the evidence (report_code_sha256 identifies it separately).
 EXPERIMENT_PATHS = ("qwen_grpo", "scripts", "configs", "data", "tests", "research/l2l/hypotheses.yaml",
                     "research/l2l/tolerances.yaml", "requirements.txt", "pyproject.toml")
-REPORT_PATHS = ("scripts/assignment_report.py",)
+REPORT_PATHS = ("scripts/assignment_report.py", "scripts/assignment_local_report.py")
 
 
 def file_sha256(path):

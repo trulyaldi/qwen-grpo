@@ -15,7 +15,7 @@ lora:
 
 data:
   train_samples: 512           # balanced subsets of data/sentiment.json (Rotten Tomatoes)
-  val_subset: 512
+  val_subset: 256
   subset_seed: 42              # selects both subsets; independent of training.seed
 
 training:                      # GRPO: B prompts x G completions, clipped surrogate, beta = 0 (no reference model)

@@ -139,6 +139,36 @@ sample above **8 GB = 8e9 bytes**, the conservative reading of the cap (`configs
 this run's files only and derives SHIP / DON'T SHIP. Output layout, requirements matrix and gaps:
 [`docs/assignment_matrix.md`](docs/assignment_matrix.md). `scripts/final_run.sh` is deprecated and forwards here.
 
+## Local laptop validation (Qwen3-0.6B, 4 GB GPU)
+
+A lightweight version of the protocol on the development laptop (RTX 3050 Ti), exercising the engineering the Qwen3-4B
+run reuses. It does **not** test DFlash (the only supported drafter, `z-lab/Qwen3-4B-DFlash-b16`, is for Qwen3-4B) and
+does not verify the Qwen3-4B assignment.
+
+```bash
+bash scripts/run_assignment_local.sh --dry-run      # the plan; writes and runs nothing
+bash scripts/run_assignment_local.sh                # default: the real training -> assignment_results_local/<run>/reports/local_report.md
+bash scripts/run_assignment_local.sh --full-tests   # the full correctness protocol (stages A B C D F below)
+bash scripts/run_assignment_local.sh --status       # stage table, active item, trainer step
+bash scripts/run_assignment_local.sh --resume       # continues the latest run in the mode it was started in
+```
+
+Default mode: **A** preflight (CUDA, bf16, streams, resolved configs, model and dataset cached; earlier `--full-tests`
+evidence recorded only with an identical code identity, else NOT_TESTED / STALE), then **F**: the 2-step smoke and, if it
+passes, the 10-step async L2L + disk-streaming run. Item output is streamed live with a heartbeat every 30 s
+(`ASSIGNMENT_HEARTBEAT_S`). Verdict `LOCAL TRAINING PASS / FAIL / INCOMPLETE`. With `--full-tests`:
+
+- **A preflight**, **B correctness:** unit tests and the tiny-model resident-vs-L2L and fault-injection cases.
+- **C equivalence:** Qwen3-0.6B resident vs async L2L. One real GRPO step (`l2l_real_step.py --require-equal`), then the
+  10-step runs compared bitwise. Gated on B.
+- **D profiling:** per-phase allocated, reserved and device memory, per-process nvidia-smi where available (not
+  WSL2), pinned bytes, transfer bytes and times, against `results/budget/predictions/qwen3-0.6b-local_4gb.json`.
+- **F training:** the 2-step smoke, then the 10-step async L2L + disk-streaming run (compared bitwise with the in-memory
+  run), then deterministic resume under six injected crashes. Gated on B and C.
+
+Configs: `configs/experiments/qwen3_0.6b_local_{resident,l2l_async,streaming,smoke,resume}.yaml`; study:
+`configs/studies/assignment_local.yaml`. Every local run name starts with `local_`.
+
 ## Running
 
 ```bash

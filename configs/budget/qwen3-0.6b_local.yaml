@@ -1,0 +1,69 @@
+# Budget of the LOCAL laptop validation (scripts/run_assignment_local.sh): Qwen3-0.6B, async L2L, pinned store,
+# 2 buffers, B=5 x G=6, 4 new tokens, one micro-batch, CPU merge, 32-example subset evaluation, on a 4 GB GPU. Copied
+# from the Step-0 configs/budget/qwen3-0.6b.yaml (kept unchanged as a record) with the local configs' shape:
+# micro_batch_size 30 (null), micro-batch-major schedule, CPU merge, 32 evaluation examples, ~14 GB host RAM.
+# Theoretical only; scripts/profile_run.py compares the local profile with it. DFlash: not part of the local run.
+run_name: qwen3-0.6b-local_4gb
+
+model:
+  id: Qwen/Qwen3-0.6B
+  weight_dtype: bfloat16
+
+hardware:
+  gpu_vram_gib: 4.0                # nvidia-smi: 4096 MiB
+  cpu_ram_gib: 14.0                # the laptop's usable host RAM (configs/profiles/qwen3_0_6b.yaml)
+  cpu_ram_source: "assumption: ~14 GB usable host RAM of the RTX 3050 Ti laptop (profile comment); the run records MemTotal in environment/host.json"
+  pcie_gb_per_s: 12.0
+  pcie_source: "assumption, unmeasured: effective pinned host-to-device copy rate (PCIe 4.0 x16 peak is ~31.5 GB/s;
+    laptop links and WSL2 are typically far lower)"
+  copy_compute_overlap: true       # copy stream prefetches layer i+1 while layer i computes (2 buffers)
+
+runtime:
+  cuda_context_gib: 0.5            # estimate: CUDA context + cuBLAS workspace, outside the PyTorch allocator
+  allocator_overhead: 0.10         # estimate: max_memory_reserved / max_memory_allocated - 1
+  cpu_process_gib: 2.0             # estimate: Python + torch/CUDA host libraries + transformers + tokenizer + data
+  safety_margin: 0.10              # fraction of each limit kept for unquantified allocations
+
+grpo:                              # configs/default.yaml values, except micro_batch_size
+  prompt_batch_size: 5             # B
+  group_size: 6                    # G
+  rollout_batch_size: 30           # sequences per generate() call (B*G: one call per rollout batch)
+  micro_batch_size: 30             # the local configs keep training.micro_batch_size null = all B*G = 30 rows
+  prompt_tokens: 100               # longest tokenized prompt over train/validation/test (data/sentiment.json)
+  generation_tokens: 4             # max_new_tokens
+  num_iterations: 1                # K updates per rollout batch
+  reference_logprobs: false        # beta = 0: no reference-model forward
+
+lora:
+  rank: 32
+  targets: last2-attention         # resolved with qwen_grpo.model.target_modules on a meta-device skeleton
+  dtype: float32
+  optimizer: adamw
+
+streaming:
+  resident_decoder_layers: 0       # baseline: everything streamed
+  gpu_layer_buffers: 2             # current + prefetched layer
+  weight_placement: pinned_cpu     # pinned_cpu | pageable_cpu
+  pinned_allocation: per_layer     # one pinned block per layer (per_layer) or per tensor (per_tensor)
+  non_decoder_placement: gpu       # embedding (= tied LM head) and final norm stay on GPU
+  loading_copy: shard              # tensor | shard | model: largest pageable copy alive while filling pinned memory
+  schedule: microbatch_major       # the engine is micro-batch-major (identical bytes with one micro-batch)
+  activation_checkpoints: gpu      # gpu | cpu
+  kv_cache: gpu                    # gpu | cpu
+  logits: response_only            # response_only (logits_to_keep = R+1) | full_sequence
+
+evaluation:
+  examples: 32                     # data.val_subset of the local configs
+  batch_size: 32
+  score_batch_size: 8
+  generation_tokens: 4
+  during_training: true            # AdamW state stays allocated
+
+merge:
+  strategy: tensorwise             # tensorwise | shardwise
+  device: cpu                      # qwen_grpo/export/merge.py merges on the CPU
+
+dflash:
+  enabled: false                   # not implemented
+  estimate: false
+  draft_model_id: none
