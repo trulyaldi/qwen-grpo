@@ -456,10 +456,46 @@ def test_gradient_equivalence_under_l2l_async_passes_and_unsafe_reuse_is_caught(
     assert r["status"] == "PASS" and all(c["max_abs"] == 0 for c in r["comparisons"]), r["reasons"][:5]
     assert {c["model"].rsplit(".b", 1)[1] for c in r["comparisons"]} == {"2", "3"}  # depth + 1, depth + 2 buffers
     f = lab.run("gradient_equivalence", ASYNC_CPU, "fault", root=tmp_path, perturbation="unsafe_reuse=2", device="cpu")
-    assert f["status"] == "FAIL"
-    assert any(not c["pass"] for c in f["comparisons"]) or any("candidate refused" in e for e in f["errors"])
+    # every configuration (shape x attention x dtype x placement x buffers) is refused by the production ownership
+    # check: a detection (status FAIL, execution PASS), with no other error and no silently wrong result
+    assert f["status"] == "FAIL" and f["execution_status"] == "PASS", f["execution_reasons"][:5]
+    assert f["errors"] == [] and not any(not c["pass"] for c in f["comparisons"])
+    assert len(f["detections"]) == 80 and {d["error"] for d in f["detections"]} == {"BufferReuseError"}
+    assert {d["config"].split(".")[-3] for d in f["detections"]} == {"final", "last2", "middle", "first_last",
+                                                                     "distributed"}
     bad = lab.run("gradient_equivalence", ASYNC_CPU, "bad", root=tmp_path, perturbation="detach_boundary=2", device="cpu")
     assert any("not 'detach_boundary=2' under l2l_async" in e for e in bad["errors"])
+
+
+def _fault_result(**kw):
+    return {"kind": "correctness", "fault_injection": True, "errors": [], "comparisons": [], "reference_integrity": [],
+            **kw}
+
+
+def test_fault_judging_counts_only_the_expected_refusal_as_a_detection():
+    from qwen_grpo.execution.prefetch import BufferReuseError
+    ok_row, bad_row = {"name": "x", "pass": True, "reason": ""}, {"name": "y", "pass": False, "reason": "too big"}
+    r = _fault_result()
+    lab.record_refusal(r, "unsafe_reuse=2", "unsafe_reuse", "m.b2.mb1", BufferReuseError("in use"))
+    assert lab.decide(r)[0] == "FAIL" and lab.execution_check(r)[0] == "PASS"            # detected
+    r = _fault_result()
+    lab.record_refusal(r, None, "unsafe_reuse", "m.b2.mb1", BufferReuseError("in use"))  # a normal run: an error
+    assert r["errors"] and "detections" not in r and lab.execution_check(r)[0] == "FAIL"
+    r = _fault_result(detections=[{"config": "m", "error": "BufferReuseError", "message": ""}], fault_injection=False)
+    assert lab.execution_check(r)[0] == "FAIL"                                          # forged outside a fault run
+    r = _fault_result(comparisons=[ok_row])
+    lab.check_fault_detected(r, "unsafe_reuse=2", "unsafe_reuse", "m.b2", [ok_row], injected=1)
+    assert "undetected corruption" in r["errors"][0] and lab.execution_check(r)[0] == "FAIL"
+    r = _fault_result(comparisons=[ok_row])
+    lab.check_fault_detected(r, "unsafe_reuse=3", "unsafe_reuse", "m.b2", [ok_row], injected=0)
+    assert "never injected" in r["errors"][0]
+    r = _fault_result(comparisons=[bad_row])
+    lab.check_fault_detected(r, "unsafe_reuse=2", "unsafe_reuse", "m.b2", [bad_row], injected=1)
+    assert r["errors"] == [] and lab.decide(r)[0] == "FAIL"                             # caught by the comparisons
+    r = _fault_result(comparisons=[ok_row], detections=[{"config": "m.b2.mb1", "error": "BufferReuseError",
+                                                         "message": ""}])
+    lab.check_fault_detected(r, "unsafe_reuse=2", "unsafe_reuse", "m.b2", [ok_row], injected=1)
+    assert r["errors"] == []                                                            # refused: no coverage error
 
 
 def test_merge_equivalence_passes_on_the_tiny_models(tmp_path):

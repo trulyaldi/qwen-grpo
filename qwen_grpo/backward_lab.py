@@ -22,6 +22,10 @@ references, a store that changed, a saved autograd tensor that lives in a weight
 their slabs, backward weight loads for the wrong layers.
 Fault injection (perturbation "detach_boundary=<i>"): the boundary activation saved for layer i is detached, so no
 gradient reaches anything below layer i. Only the comparisons catch it.
+Fault injection (perturbation "unsafe_reuse=<i>", l2l_async): prefetch.UnsafeReuse targets the buffer of layer i while
+it is in use. The production ownership check must refuse it (prefetch.BufferReuseError, recorded under "detections",
+not "errors"); any other exception stays an error, and a configuration where the fault was neither refused nor caught
+by a comparison is an error ("not detected"), so undetected corruption can never pass as a detection.
 """
 import contextlib
 
@@ -33,7 +37,7 @@ from qwen_grpo import lab
 from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution.backward import CheckpointedLayerExecutor
 from qwen_grpo.execution.layer_stream import _inside, place_resident
-from qwen_grpo.execution.prefetch import UnsafeReuse, buffer_counts, is_async, make_executor
+from qwen_grpo.execution.prefetch import BufferReuseError, UnsafeReuse, buffer_counts, is_async, make_executor
 from qwen_grpo.execution.qwen3_forward import explicit_forward
 from qwen_grpo.execution.weight_store import WeightStore, gpu_buffers
 from qwen_grpo.grpo import grpo_loss, response_logprobs
@@ -130,7 +134,8 @@ class DetachBoundary(CheckpointedLayerExecutor):
 
 def executor(store, buffers, perturbation, cfg):
     """l2l_sync: CheckpointedLayerExecutor (fault detach_boundary=<i>); l2l_async: the prefetching checkpointed executor
-    with verify mode (fault unsafe_reuse=<i>, without verify so that only the comparisons can catch it)."""
+    with verify mode (fault unsafe_reuse=<i>, without verify: the diagnostic checksum is off, so only the production
+    ownership check or the comparisons can catch it)."""
     if perturbation is None:
         return make_executor(cfg.execution, store, buffers, checkpointed=True, verify=is_async(cfg.execution))
     kind, value = perturbation.split("=")
@@ -199,7 +204,10 @@ def run_model(cfg, result, shape, attn, dt, placement, layers, device, perturbat
                 try:
                     with F.isolated():
                         loss, logits, hidden = step(cand, ex, mb, saved)
-                except RuntimeError as e:  # a refusal of the candidate (e.g. the recomputation checksum): a detection
+                except BufferReuseError as e:  # the ownership check: the expected detection of unsafe_reuse only
+                    lab.record_refusal(result, perturbation, "unsafe_reuse", f"{tag}.{mbk}", e)
+                    break
+                except RuntimeError as e:  # any other refusal (e.g. the recomputation checksum) is not the expected one
                     result["errors"].append(f"{tag}.{mbk}: candidate refused: {e}")
                     break
                 loads = [t["layer"] for t in ex.trace if t["phase"] == "backward"]
@@ -221,7 +229,9 @@ def run_model(cfg, result, shape, attn, dt, placement, layers, device, perturbat
             result["measurements"]["saved_bytes"][tag] = saved.bytes
             if saved.in_buffer:
                 result["errors"].append(f"{tag}: {saved.in_buffer} saved autograd tensors live in a weight buffer")
-            result["comparisons"] += [{"model": tag, **row} for row in lab.compare_all(ref_t, got_t, tol)]
+            rows = [{"model": tag, **row} for row in lab.compare_all(ref_t, got_t, tol)]
+            result["comparisons"] += rows
+            lab.check_fault_detected(result, perturbation, "unsafe_reuse", tag, rows, getattr(ex, "injected", None))
             del buffers, ex
         if {n: id(p) for n, p in cand.named_parameters() if p.requires_grad} != ids_before:
             result["errors"].append(f"{tag0}: LoRA Parameter identities changed")
@@ -243,8 +253,10 @@ def gradient_equivalence(cfg, result, perturbation=None, device="cpu", **_):
     result.update(comparisons=[], reference_integrity=[], device=str(device),
                   measurements={"saved_bytes": {}, "resident_saved_bytes": {}})
     if perturbation:
-        result["perturbation"] = {"spec": perturbation,
-                                  "effect": "the activation saved for layer i is detached: no gradient below layer i"}
+        result["perturbation"] = {"spec": perturbation, "effect": (
+            "the buffer of layer i is targeted by a prefetch while in use (R1, R3 broken)"
+            if perturbation.startswith("unsafe_reuse") else
+            "the activation saved for layer i is detached: no gradient below layer i")}
     tolerances = {dt: lab.tolerances_for("gradient_equivalence", cfg, dt) for dt in DTYPES}
     for shape in F.SHAPES:
         for attn in ATTN:

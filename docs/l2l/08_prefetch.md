@@ -30,6 +30,11 @@ Each pool buffer is a slot with three properties:
 | R3: the slot in use, and slots holding layers about to be needed, are never copy targets | the next layers are not evicted by their own prefetch |
 | R4: `free` is recorded after all of the block's kernels are enqueued, including the backward recomputation and its `autograd.grad` | R1 covers backward too |
 
+**Enforcement (since 2026-11-18).** R1 and R3 are validated on every copy, not only implied by the victim policy.
+`PrefetchMixin._claim` raises `BufferReuseError` before a copy into the slot in use, into a slot of the prefetch
+window, or (CUDA) into a used slot without a readers' `free` event. It is always on, independently of `verify`, and
+host-only, with no synchronization. See `research/l2l/corrections/h02_unsafe_reuse_20261118/`.
+
 **No global synchronization.** The pipeline never calls `torch.cuda.synchronize()` or `stream.synchronize()`. Only
 verify mode and timeline reports synchronize, and they are diagnostics.
 
@@ -58,7 +63,9 @@ into the least recently used eligible slots:
 - **A complete training step:** prepare plus 4 GRPO updates in micro-batches of 2, at depth 0, 1 and 2, gives equal
   losses and parameters (stress of buffer reuse).
 - **Unsafe reuse:** caught by verify mode ("buffer … does not hold layer 2"). Without verify mode it produces wrong
-  outputs, and the store stays intact.
+  outputs, and the store stays intact. *(Historical. Since the 2026-11-18 correction it is refused by
+  `BufferReuseError` with or without verify mode, for every placement, in forward and backward, and when a prefetch
+  targets the protected window.)*
 
 **Real trainer** (`tests/test_backend.py`): an `l2l_async` run equals the resident run bitwise in rollouts, losses,
 evaluations, adapters and AdamW state. `model.generate` is rigged to fail during it.
@@ -70,7 +77,8 @@ evaluations, adapters and AdamW state. `model.generate` is rigged to fail during
 | `gradient_equivalence` | PASS, 5,296 comparisons |
 | `generation_equivalence` | PASS, 950 comparisons |
 | `update_equivalence` | PASS, 6,528 comparisons |
-| `unsafe_reuse=2` fault | FAIL: 1,360 comparisons fail, and the checkpointed backward's recomputation checksum refuses |
+| `unsafe_reuse=2` fault | FAIL: 1,360 comparisons fail, and the checkpointed backward's recomputation checksum refuses (historical, before the correction; the `lab_fault` judge scored it "not detected") |
+| `unsafe_reuse=2` fault, after the 2026-11-18 correction | FAIL with execution PASS: 80/80 configurations refused at runtime by `BufferReuseError`, no silently wrong result |
 
 **Tolerances.** `forward_equivalence`, `gradient_equivalence`, `generation_equivalence` and `update_equivalence`
 carry an `l2l_async` entry with `same_as: l2l_sync` and its own justification: streams and events change when bytes

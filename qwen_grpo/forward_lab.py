@@ -9,7 +9,10 @@ layer_stream.place_resident) run the same inputs, for 1 and 2 weight buffers:
                     models must reproduce the saved fixture logits (ties this case to the frozen reference).
 Residency is checked, not logged: forward pre-hooks on every module that owns frozen decoder weights record where the
 weights are when the kernels run; violations are errors (execution FAIL). Faults (perturbation "wrong_layer=<i>") load
-layer i+1's slab for layer i, after the store's verify(): only the comparisons can catch it.
+layer i+1's slab for layer i, after the store's verify(): only the comparisons can catch it. Under l2l_async the fault
+"unsafe_reuse=<i>" (prefetch.UnsafeReuse) must be refused by the production ownership check (BufferReuseError,
+recorded under "detections"); other exceptions stay errors, and a configuration where the fault was neither refused
+nor caught by a comparison is an error ("not detected").
 """
 import torch
 from peft import get_peft_model
@@ -18,7 +21,7 @@ from transformers import Qwen3Config, Qwen3ForCausalLM
 from qwen_grpo import lab
 from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution.layer_stream import StreamingLayerExecutor, place_resident
-from qwen_grpo.execution.prefetch import UnsafeReuse, buffer_counts, is_async, make_executor
+from qwen_grpo.execution.prefetch import BufferReuseError, UnsafeReuse, buffer_counts, is_async, make_executor
 from qwen_grpo.execution.qwen3_forward import explicit_forward
 from qwen_grpo.execution.weight_store import WeightStore, decoder_layers, gpu_buffers
 from qwen_grpo.model import PRESETS, lora_config, lora_modules, target_modules
@@ -111,7 +114,8 @@ def _in(t, buffer):
 
 def executor(store, buffers, perturbation, cfg):
     """l2l_sync: StreamingLayerExecutor (fault wrong_layer=<i>); l2l_async: the prefetching executor with verify mode
-    (fault unsafe_reuse=<i>, without verify so that only the comparisons can catch it)."""
+    (fault unsafe_reuse=<i>, without verify: the diagnostic checksum is off, so only the production ownership check
+    or the comparisons can catch it)."""
     if perturbation is None:
         return make_executor(cfg.execution, store, buffers, checkpointed=False, verify=is_async(cfg.execution))
     kind, value = perturbation.split("=")
@@ -168,43 +172,12 @@ def run_model(cfg, result, shape, attn, dt, lora, device, perturbation, tol):
             residency = Residency(cand, store, buffers)
             ex = executor(store, buffers, perturbation, cfg)
             tag = f"{shape}.{attn}.{dt}.{lora}.b{n_buf}"
-            ref_t, got_t = {}, {}
-            with torch.no_grad(), off(ref), off(cand):
-                for kind, T, lengths in INPUTS:
-                    ids, mask, pos = inputs(kind, T, lengths, device)
-                    for keep in [0] + KEEPS.get((kind, T), []):
-                        k = torch.tensor(keep, device=device) if isinstance(keep, list) else keep
-                        key = f"{tag}.{kind}{T}.k{keep if isinstance(keep, int) else 'idx'}"
-                        hf = ref(input_ids=ids, attention_mask=mask, position_ids=pos, use_cache=False,
-                                 logits_to_keep=k).logits
-                        ref_layers, got_layers = [], []
-                        explicit = explicit_forward(ref, ids, mask, pos, k,
-                                                    layer_callback=lambda i, h: ref_layers.append(h.clone()))
-                        if not torch.equal(explicit, hf):
-                            result["reference_integrity"].append(f"{key}: explicit resident != HF")
-                        got = l2l(cand, store, ex, residency, ids, mask, pos, k, got_layers)
-                        ref_t[f"logits.{key}"], got_t[f"logits.{key}"] = hf, got
-                        for i, (r, g) in enumerate(zip(ref_layers, got_layers)):
-                            ref_t[f"layers.{key}.{i}"], got_t[f"layers.{key}.{i}"] = r, g
-                        if len(got_layers) != len(ref_layers):
-                            result["errors"].append(f"{key}: {len(got_layers)} L2L layer outputs, {len(ref_layers)} resident")
-                if device.type == "cuda" and n_buf == BUFFERS[-1]:
-                    trace, problems = memory_trace(cand, store, ex, residency, device)
-                    result["measurements"]["residency"][f"{shape}.{attn}.{dt}.{lora}"] = trace
-                    result["errors"] += [f"{tag}: {p}" for p in problems]
-            if lora in ("last2-attention", "all"):  # power: the adapters change the L2L output
-                ids, mask, pos = inputs("left", 9, [9, 5, 9, 2], device)
-                with torch.no_grad():
-                    with_lora = l2l(cand, store, ex, residency, ids, mask, pos, 0)
-                    with cand.disable_adapter():
-                        without = l2l(cand, store, ex, residency, ids, mask, pos, 0)
-                effect = (with_lora.double() - without.double()).abs().max().item()
-                result["measurements"]["lora_effect"][tag] = effect
-                if effect <= 1e-2:
-                    result["errors"].append(f"{tag}: LoRA changes L2L logits by only {effect:.2e}: no power")
-            result["errors"] += [f"{tag}: {v}" for v in residency.violations[:5]] + [f"{tag}: {u}" for u in residency.unseen()[:5]]
+            try:
+                run_buffers(result, ref, cand, store, ex, residency, off, tag, shape, attn, dt, lora, n_buf, device,
+                            perturbation, tol)
+            except BufferReuseError as e:  # the ownership check: the expected detection of unsafe_reuse only
+                lab.record_refusal(result, perturbation, "unsafe_reuse", tag, e)
             residency.remove()
-            result["comparisons"] += [{"model": tag, **row} for row in lab.compare_all(ref_t, got_t, tol)]
             del buffers, ex, residency
         if {n: id(p) for n, p in cand.named_parameters() if p.requires_grad} != lora_ids:
             result["errors"].append(f"{shape}.{attn}.{dt}.{lora}: LoRA Parameter identities changed")
@@ -212,6 +185,49 @@ def run_model(cfg, result, shape, attn, dt, lora, device, perturbation, tol):
             result["errors"] += [f"{shape}.{attn}.{dt}.{lora}: store: {p}" for p in problems[:5]]
     finally:
         store.close()
+
+
+def run_buffers(result, ref, cand, store, ex, residency, off, tag, shape, attn, dt, lora, n_buf, device, perturbation,
+                tol):
+    """One model and pool size: the comparisons, residency checks, memory trace and LoRA-power check."""
+    ref_t, got_t = {}, {}
+    with torch.no_grad(), off(ref), off(cand):
+        for kind, T, lengths in INPUTS:
+            ids, mask, pos = inputs(kind, T, lengths, device)
+            for keep in [0] + KEEPS.get((kind, T), []):
+                k = torch.tensor(keep, device=device) if isinstance(keep, list) else keep
+                key = f"{tag}.{kind}{T}.k{keep if isinstance(keep, int) else 'idx'}"
+                hf = ref(input_ids=ids, attention_mask=mask, position_ids=pos, use_cache=False,
+                         logits_to_keep=k).logits
+                ref_layers, got_layers = [], []
+                explicit = explicit_forward(ref, ids, mask, pos, k,
+                                            layer_callback=lambda i, h: ref_layers.append(h.clone()))
+                if not torch.equal(explicit, hf):
+                    result["reference_integrity"].append(f"{key}: explicit resident != HF")
+                got = l2l(cand, store, ex, residency, ids, mask, pos, k, got_layers)
+                ref_t[f"logits.{key}"], got_t[f"logits.{key}"] = hf, got
+                for i, (r, g) in enumerate(zip(ref_layers, got_layers)):
+                    ref_t[f"layers.{key}.{i}"], got_t[f"layers.{key}.{i}"] = r, g
+                if len(got_layers) != len(ref_layers):
+                    result["errors"].append(f"{key}: {len(got_layers)} L2L layer outputs, {len(ref_layers)} resident")
+        if device.type == "cuda" and n_buf == BUFFERS[-1]:
+            trace, problems = memory_trace(cand, store, ex, residency, device)
+            result["measurements"]["residency"][f"{shape}.{attn}.{dt}.{lora}"] = trace
+            result["errors"] += [f"{tag}: {p}" for p in problems]
+    if lora in ("last2-attention", "all"):  # power: the adapters change the L2L output
+        ids, mask, pos = inputs("left", 9, [9, 5, 9, 2], device)
+        with torch.no_grad():
+            with_lora = l2l(cand, store, ex, residency, ids, mask, pos, 0)
+            with cand.disable_adapter():
+                without = l2l(cand, store, ex, residency, ids, mask, pos, 0)
+        effect = (with_lora.double() - without.double()).abs().max().item()
+        result["measurements"]["lora_effect"][tag] = effect
+        if effect <= 1e-2:
+            result["errors"].append(f"{tag}: LoRA changes L2L logits by only {effect:.2e}: no power")
+    result["errors"] += [f"{tag}: {v}" for v in residency.violations[:5]] + [f"{tag}: {u}" for u in residency.unseen()[:5]]
+    rows = [{"model": tag, **row} for row in lab.compare_all(ref_t, got_t, tol)]
+    result["comparisons"] += rows
+    lab.check_fault_detected(result, perturbation, "unsafe_reuse", tag, rows, getattr(ex, "injected", None))
 
 
 def fixture_tie_back(cfg, result, perturbation, tol):
@@ -225,11 +241,19 @@ def fixture_tie_back(cfg, result, perturbation, tol):
             ex, residency = executor(store, buffers, perturbation, cfg), Residency(model, store, buffers)
             r = fixture["rollouts"]
             pos = (r["attention_mask"].cumsum(1) - 1).clamp(min=0)
-            with F.isolated(), torch.no_grad():
-                got = l2l(model, store, ex, residency, r["input_ids"], r["attention_mask"], pos, 0)
+            try:
+                with F.isolated(), torch.no_grad():
+                    got = l2l(model, store, ex, residency, r["input_ids"], r["attention_mask"], pos, 0)
+            except BufferReuseError as e:  # the ownership check: the expected detection of unsafe_reuse only
+                lab.record_refusal(result, perturbation, "unsafe_reuse", f"fixture.{shape}", e)
+                residency.remove()
+                continue
             key = f"logits.fixture.{shape}.cpu"
-            result["comparisons"] += [{"model": f"fixture.{shape}", **row}
-                                      for row in lab.compare_all({key: fixture["reference"]["logits"]}, {key: got}, tol)]
+            rows = [{"model": f"fixture.{shape}", **row}
+                    for row in lab.compare_all({key: fixture["reference"]["logits"]}, {key: got}, tol)]
+            result["comparisons"] += rows
+            lab.check_fault_detected(result, perturbation, "unsafe_reuse", f"fixture.{shape}", rows,
+                                     getattr(ex, "injected", None))
             result["errors"] += [f"fixture {shape}: {v}" for v in residency.violations[:5] + residency.unseen()[:5]]
             residency.remove()
         finally:
@@ -242,7 +266,9 @@ def forward_equivalence(cfg, result, perturbation=None, device="cuda", **_):
     device = torch.empty(0, device=device).device
     result.update(comparisons=[], reference_integrity=[], measurements={"residency": {}, "lora_effect": {}})
     if perturbation:
-        result["perturbation"] = {"spec": perturbation, "effect": "layer i runs on slab i+1 (loaded after verify())"}
+        result["perturbation"] = {"spec": perturbation, "effect": (
+            "the buffer of layer i is targeted by a prefetch while in use (R1, R3 broken)"
+            if perturbation.startswith("unsafe_reuse") else "layer i runs on slab i+1 (loaded after verify())")}
     tolerances = {dt: lab.tolerances_for("forward_equivalence", cfg, dt) for dt in DTYPES}
     fixture_tie_back(cfg, result, perturbation, tolerances["float32"])
     for shape in F.SHAPES:

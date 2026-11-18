@@ -229,6 +229,35 @@ def ratio_ci(a, b):
     return {"ratio": _median(a) / _median(b), "ci95": [rs[int(0.025 * BOOTSTRAP)], rs[int(0.975 * BOOTSTRAP) - 1]]}
 
 
+# --- fault detection ---------------------------------------------------------------------------------------------------
+
+def record_refusal(result, perturbation, fault, config, error):
+    """A candidate refused to run `config` with `error`, a specific safety exception (e.g. prefetch.BufferReuseError)
+    that is the expected response to the fault `fault`. Under that fault (perturbation "<fault>=<i>") it is a
+    detection: result["detections"], which makes the status FAIL (decide) without making the execution FAIL. Anywhere
+    else (a normal run, another fault) it is an error. Call it only for that exception type: generic exceptions are
+    never detections."""
+    if perturbation and perturbation.split("=")[0] == fault:
+        result.setdefault("detections", []).append({"config": config, "error": type(error).__name__,
+                                                    "message": str(error)})
+    else:
+        result["errors"].append(f"{config}: candidate refused: {type(error).__name__}: {error}")
+
+
+def check_fault_detected(result, perturbation, fault, config, rows, injected=None):
+    """Under fault `fault`, a configuration that ran to completion must have at least one comparison outside its
+    threshold; otherwise it is an error (execution FAIL), never a detection: undetected corruption, or, when the
+    executor reports `injected` == 0, a configuration the fault never reached (the run has no power there)."""
+    if not perturbation or perturbation.split("=")[0] != fault:
+        return
+    if any(d["config"] == config or d["config"].startswith(config + ".") for d in result.get("detections", [])):
+        return
+    if not any(not r["pass"] for r in rows):
+        why = "the fault was never injected (no power)" if injected == 0 else \
+            f"no refusal and all {len(rows)} comparisons within thresholds (undetected corruption)"
+        result["errors"].append(f"{config}: fault {perturbation} not detected: {why}")
+
+
 # --- status ----------------------------------------------------------------------------------------------------------
 
 def execution_check(result):
@@ -240,8 +269,10 @@ def execution_check(result):
     for req in result.get("required_measurements", []):
         if req == "gpu_memory" and not gpu_memory_complete(result.get("memory")):
             reasons.append("required measurement missing: gpu_memory")
+    if result.get("detections") and not result.get("fault_injection"):
+        reasons.append(f"{len(result['detections'])} safety refusals recorded as detections outside a fault run")
     if result["kind"] == "correctness":
-        if not result.get("comparisons"):
+        if not result.get("comparisons") and not result.get("detections"):
             reasons.append("no comparisons were produced")
         if result.get("reference_integrity") is None:
             reasons.append("reference integrity was not checked")
@@ -269,9 +300,13 @@ def decide(result):
     if execution == "BLOCKED":
         return execution, reasons
     failed = [f"{r['name']}: {r['reason']}" for r in result.get("comparisons", []) if not r["pass"]]
+    # a safety refusal (fault runs only: record_refusal) means the candidate produced no result: never a PASS
+    refused = [f"{d['config']}: refused by {d['error']}: {d['message']}" for d in result.get("detections", [])]
     if result["kind"] == "correctness":  # the Ticket 01 reason order: errors, measurements, data, comparisons, integrity
         integrity = [x for x in reasons if x.startswith(("reference integrity", "fresh reference"))]
-        reasons = [x for x in reasons if x not in integrity] + failed + integrity
+        reasons = [x for x in reasons if x not in integrity] + refused + failed + integrity
+    else:
+        reasons = reasons + refused
     return ("FAIL" if reasons else "PASS"), reasons
 
 
@@ -611,6 +646,11 @@ def markdown(r):
     lines = []
     if r.get("fault_injection"):
         lines.append(f"**FAULT INJECTION RUN** ({r.get('perturbation', {}).get('spec')}): a FAIL is the expected outcome.\n")
+        if "detections" in r:
+            caught = {c.get("fixture") or c.get("model") for c in r.get("comparisons", []) if not c["pass"]}
+            lines.append(f"Detected: {len(r['detections'])} configurations refused at runtime "
+                         f"({', '.join(sorted({d['error'] for d in r['detections']}))}), {len(caught)} caught by "
+                         "the comparisons only.\n")
     ident = r["identity"]
     lines += [f"# {r['name']}: {r['case']} ({r['kind']})", "",
               f"**Status: {r['status']}**" + (f" (execution {r['execution_status']}; hypothesis "

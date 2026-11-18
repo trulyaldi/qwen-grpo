@@ -13,6 +13,11 @@ block that read it). Rules, which together are the only synchronization in the p
   R3  the slot in use is never chosen as a copy target, nor is a slot holding a layer of the upcoming window;
   R4  slot.free is recorded at _release, after the block's kernels (the layer call, or the backward recomputation and
       its autograd.grad) were all enqueued on the compute stream.
+R1 and R3 are enforced structurally, always (not only in verify mode): every copy is validated against the slot
+ownership state before it is enqueued (_claim) and an illegal target raises BufferReuseError without touching the
+buffer. The check is host-side bookkeeping only (no synchronization). It is what catches an overwrite of a layer that
+is never recomputed in backward (e.g. any layer below the lowest LoRA layer), where the recomputation checksum of
+backward.py has nothing to compare.
 No torch.cuda.synchronize() / stream.synchronize() is called in the pipeline (verify mode and timeline reports
 synchronize, outside the timed pipeline; they are diagnostics).
 
@@ -41,6 +46,10 @@ from qwen_grpo.execution.backward import CheckpointedLayerExecutor
 from qwen_grpo.execution.layer_stream import StreamingLayerExecutor
 
 
+class BufferReuseError(RuntimeError):
+    """A copy would overwrite a weight buffer that is in use or protected (R1/R3): refused before it is enqueued."""
+
+
 @dataclass(eq=False)  # slots are compared by identity (they hold a tensor)
 class Slot:
     buffer: torch.Tensor
@@ -62,7 +71,7 @@ class PrefetchMixin:
         self.slots = [Slot(b) for b in self.buffers]
         self.stats = {"uses": 0, "hits": 0, "on_demand_copies": 0, "prefetch_copies": 0, "bytes_copied": 0}
         self._events = [] if (timeline and self.cuda) else None
-        self._clock, self._in_use = 0, None
+        self._clock, self._in_use, self._phase = 0, None, None
         self.copy_log = []  # (layer, kind, phase of the use that issued it), in issue order
         self._graph_pass, self._graph_floor = False, None
         self._checksums = {}
@@ -77,8 +86,28 @@ class PrefetchMixin:
         free = [s for s in self.slots if all(s is not x for x in exclude)]
         return min(free, key=lambda s: s.last_use) if free else None
 
+    def _claim(self, index, slot, protected=()):
+        """Ownership validation before any copy of layer `index` into `slot` (production; no synchronization):
+          - the slot bound to the layer that is running (its forward, or its backward recomputation and autograd.grad)
+            is never a target (R3);
+          - nor is a slot in `protected`: the prefetch window being filled (R3);
+          - on CUDA a slot that has had readers must carry their completion event, or the copy could not wait for them
+            (R1).
+        Raises BufferReuseError; the slot is left unchanged."""
+        k = self.slots.index(slot)
+        if slot is self._in_use:
+            raise BufferReuseError(f"copy of layer {index} into buffer {k}, which is bound to layer {slot.index} "
+                                   f"in use ({self._phase}): its weights would be overwritten while read (R3)")
+        if any(slot is p for p in protected):
+            raise BufferReuseError(f"copy of layer {index} into buffer {k}, which holds layer {slot.index} of the "
+                                   f"prefetch window (R3)")
+        if self.cuda and slot.last_use >= 0 and slot.free is None:
+            raise BufferReuseError(f"copy of layer {index} into buffer {k}: the completion event of layer "
+                                   f"{slot.index}'s readers is missing, the copy cannot wait for them (R1)")
+
     def _copy(self, index, slot, kind):
         """Copy layer `index` into `slot` on the transfer stream, after the slot's previous readers (R1)."""
+        self._claim(index, slot)
         nbytes = self.store.slabs[index].nbytes
         if self.cuda:
             if slot.free is not None:
@@ -129,6 +158,7 @@ class PrefetchMixin:
             victim = self._target(j, exclude)
             if victim is None:
                 break
+            self._claim(j, victim, exclude)
             self._copy(j, victim, "prefetch")
             exclude.append(victim)
 
@@ -150,7 +180,11 @@ class PrefetchMixin:
         self.stats["uses"] += 1
         self.stats["hits"] += hit
         self._in_use = slot
-        self._prefetch(index, phase, slot)
+        try:
+            self._prefetch(index, phase, slot)
+        except BaseException:  # a refused prefetch (BufferReuseError): bound() never enters its block, so no _release
+            self._in_use = None
+            raise
         if self.cuda and slot.ready is not None:
             torch.cuda.current_stream().wait_event(slot.ready)                     # R2
         if self.verify:
@@ -253,17 +287,19 @@ class PrefetchingCheckpointedExecutor(PrefetchMixin, CheckpointedLayerExecutor):
 
 
 class UnsafeReuse(PrefetchingCheckpointedExecutor):
-    """Fault injection: when layer `at` is acquired, the next layer's prefetch targets the slot in use and skips the
-    wait for its readers (R1, R3 broken), and the compute stream waits for that copy, so the overwrite always happens
-    before layer `at` reads its weights (deterministic, unlike a real race)."""
+    """Fault injection: when layer `at` is acquired, the next layer's prefetch targets the slot in use and drops the
+    event of its readers (R1, R3 broken). Without protection the compute stream would wait for that copy, so the
+    overwrite would always happen before layer `at` reads its weights (deterministic, unlike a real race). The
+    ownership check (_claim) refuses the copy with BufferReuseError before it is enqueued."""
 
     def __init__(self, store, buffers, at, depth=1, verify=False, timeline=False):
         super().__init__(store, buffers, depth, verify, timeline)
-        self.at = at
+        self.at, self.injected = at, 0  # injected: how often the fault fired (0: this run never exercised it)
 
     def _target(self, index, exclude):
         current = exclude[0]
         if current is not None and current.index == self.at:
+            self.injected += 1
             current.free = None                                                     # forget its readers (R1 broken)
             return current                                                          # the slot in use (R3 broken)
         return self._victim(exclude)

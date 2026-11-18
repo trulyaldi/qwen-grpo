@@ -142,6 +142,9 @@ PYTEST_DFLASH = ["tests/test_dflash.py", "tests/test_dflash_training.py"]
 # H02.fault_unsafe_reuse stays FAIL (its lab_fault judge counts a refusal by the backward checksum as "not detected";
 # 32 of 80 injected configurations ran to wrong results caught only by the offline resident comparison). It is the
 # only item experiment mode does not require for F: recorded in state["waivers"] and the report, never as PASS.
+# Corrected 2026-11-18 (research/l2l/corrections/h02_unsafe_reuse_20261118): prefetch.BufferReuseError now refuses
+# the unsafe copy at runtime and the lab records it as a detection. The waiver and the recorded FAILs are unchanged;
+# a new run records whatever status it gets.
 WAIVED = {"H02.fault_unsafe_reuse": "historical fault-injection FAIL (runtime protection against async buffer "
                                     "corruption is incomplete); experiment mode trains without it, the report lists it "
                                     "as a known limitation, and no qualification claim depends on it"}

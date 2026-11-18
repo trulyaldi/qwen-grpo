@@ -13,8 +13,8 @@ from qwen_grpo.execution import fixtures as F
 from qwen_grpo.execution.backward import CheckpointedLayerExecutor
 from qwen_grpo.execution.generator import generate
 from qwen_grpo.execution.layer_stream import StreamingLayerExecutor, place_resident
-from qwen_grpo.execution.prefetch import (PrefetchingCheckpointedExecutor, PrefetchingLayerExecutor, UnsafeReuse,
-                                          _union)
+from qwen_grpo.execution.prefetch import (BufferReuseError, PrefetchingCheckpointedExecutor, PrefetchingLayerExecutor,
+                                          UnsafeReuse, _union)
 from qwen_grpo.execution.qwen3_forward import explicit_forward
 from qwen_grpo.execution.weight_store import WeightStore, gpu_buffers
 from qwen_grpo.forward_lab import inputs
@@ -132,19 +132,67 @@ def test_a_complete_training_step_through_the_backend_is_bitwise_and_stress_repe
 
 # --- fault injection ----------------------------------------------------------------------------------------------
 
-def test_unsafe_buffer_reuse_is_caught_by_verify_and_by_the_comparison():
+def test_unsafe_buffer_reuse_is_refused_by_the_ownership_check_with_and_without_verify():
     _, cand, store = l2l_model()
     ids, mask, pos = inputs("left", 9, [9, 5, 9, 2], "cpu")
-    with torch.no_grad():
-        want = explicit_forward(cand, ids, mask, pos, layer_executor=CheckpointedLayerExecutor(
-            store, gpu_buffers(2, store.max_slab_bytes, "cpu")))
-        with pytest.raises(RuntimeError, match="does not hold layer 2"):
-            explicit_forward(cand, ids, mask, pos, layer_executor=UnsafeReuse(
-                store, gpu_buffers(2, store.max_slab_bytes, "cpu"), at=2, verify=True))
-        got = explicit_forward(cand, ids, mask, pos, layer_executor=UnsafeReuse(
-            store, gpu_buffers(2, store.max_slab_bytes, "cpu"), at=2))
-    assert not torch.equal(got, want)
+    for verify in (True, False):  # the protection does not depend on the diagnostic verify mode
+        buffers = gpu_buffers(2, store.max_slab_bytes, "cpu")
+        ex = UnsafeReuse(store, buffers, at=2, verify=verify)
+        with torch.no_grad(), pytest.raises(BufferReuseError, match="bound to layer 2 in use"):
+            explicit_forward(cand, ids, mask, pos, layer_executor=ex)
+        assert ex.injected == 1 and ex._in_use is None  # refused at the first injection; the binding was released
+        slot = ex._slot_of(2)
+        assert slot is not None and torch.equal(slot.buffer[: store.slabs[2].nbytes], store.slabs[2].data)  # untouched
     assert store.verify() == []  # the CPU-owned weights are never touched, whatever happens to a buffer
+
+
+class BackwardUnsafeReuse(UnsafeReuse):
+    """The fault only in the backward recomputation (forward is clean): the overwrite would hit the buffer while the
+    recomputation and its autograd.grad read it."""
+
+    def _target(self, index, exclude):
+        return super()._target(index, exclude) if self._phase == "backward" else self._victim(exclude)
+
+
+class WindowReuse(PrefetchingCheckpointedExecutor):
+    """Fault: the second prefetch of a window overwrites the slot the first one just filled (R3, protected window)."""
+
+    def _target(self, index, exclude):
+        return exclude[-1] if len(exclude) > 1 and exclude[-1] is not exclude[0] else self._victim(exclude)
+
+
+@pytest.mark.parametrize("placement", ["final", "last2", "middle", "first_last", "distributed"])
+@pytest.mark.parametrize("depth, n_buf", [(1, 2), (1, 3), (2, 3)])
+@pytest.mark.parametrize("phase", ["any", "backward"])
+def test_unsafe_reuse_is_refused_for_every_lora_placement_in_forward_and_backward(placement, depth, n_buf, phase):
+    """Every layer the fault can target (phase any: the first use that prefetches, forward or backward; backward:
+    only the recomputation, so the recomputed layers): whenever it fires, the copy is refused; where it never fires
+    (the window was already resident) nothing was corrupted."""
+    layers = placements(6)[placement]
+    _, cand, store = l2l_model(layers=layers)
+    mb = microbatches("cpu")[0]
+    cls = UnsafeReuse if phase == "any" else BackwardUnsafeReuse
+    fired = []
+    for at in (range(min(layers), 6) if phase == "backward" else range(6)):
+        ex = cls(store, gpu_buffers(n_buf, store.max_slab_bytes, "cpu"), at=at, depth=depth)
+        try:
+            step(cand, ex, mb)
+        except BufferReuseError as e:
+            assert f"bound to layer {at} in use ({'backward' if phase == 'backward' else ''}" in str(e)
+            assert ex.injected == 1
+            fired.append(at)
+        else:
+            assert ex.injected == 0, f"layer {at}: the fault fired and was not refused"
+        assert store.verify() == []
+    assert fired, "the fault never fired: the test has no power for this configuration"
+
+
+def test_a_prefetch_into_the_protected_window_is_refused():
+    _, cand, store = l2l_model()
+    ids, mask, pos = inputs("left", 9, [9, 5, 9, 2], "cpu")
+    ex = WindowReuse(store, gpu_buffers(3, store.max_slab_bytes, "cpu"), depth=2)
+    with torch.no_grad(), pytest.raises(BufferReuseError, match="prefetch window"):
+        explicit_forward(cand, ids, mask, pos, layer_executor=ex)
 
 
 def test_refuses_too_few_buffers_and_depth_0():
@@ -207,3 +255,16 @@ def test_prefetch_timing_code_paths_run_end_to_end_on_cpu_with_fake_events(tmp_p
     assert len(m["parts"]["candidate"]["step"]) == 5 and set(m["parts_ratio_ci"]) == set(prefetch_lab.PARTS)
     assert m["timeline_median"]["reference"]["step"]["copies"] > 0  # the synchronous side's (fake) timeline
     assert r["conclusion"]["what"].startswith("whole GRPO step")
+
+
+@CUDA
+def test_cuda_copy_into_a_slot_whose_readers_event_was_dropped_is_refused():
+    _, cand, store = l2l_model(device="cuda")
+    ids, mask, pos = inputs("left", 9, [9, 5, 9, 2], "cuda")
+    ex = PrefetchingLayerExecutor(store, gpu_buffers(2, store.max_slab_bytes, "cuda"), 1)
+    with torch.no_grad():
+        explicit_forward(cand, ids, mask, pos, layer_executor=ex)
+    victim = next(s for s in ex.slots if s.last_use >= 0)
+    victim.free = None  # R1 broken: the copy could not wait for the readers
+    with pytest.raises(BufferReuseError, match="R1"):
+        ex._copy(0, victim, "prefetch")
