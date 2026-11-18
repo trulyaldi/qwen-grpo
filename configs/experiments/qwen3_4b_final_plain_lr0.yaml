@@ -1,0 +1,11 @@
+# Experiment mode negative control: qwen3_4b_final_plain.yaml with learning_rate 0 and the same 30-update schedule as
+# qwen3_4b_final_lr0.yaml (subset evaluations and checkpoints at step0/20/30). It inherits the plain-L2L rollout path
+# (dflash disabled), so the control samples through exactly the same generator as the trained run.
+extends: qwen3_4b_final_plain.yaml
+
+run:
+  name: qwen3_4b_final_plain_lr0
+
+training:
+  learning_rate: 0.0
+  max_steps: 30

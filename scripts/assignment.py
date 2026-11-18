@@ -28,19 +28,23 @@ Stages and gates (a gate that is not met records the stage's items as BLOCKED, w
                    run with PASS memory
   G evaluation     held-out test evaluation (base / trained / merged / control), DFlash acceptance on the primary
                    run's checkpoints step0/20/40/60                                                            gate: F
-Primary run: qwen3_4b_final.yaml, 60 updates (checkpoints every 10); LR=0 control 30 updates; the DFlash smoke 10.
+Primary run: qwen3_4b_final.yaml, 60 updates (checkpoints every 20); LR=0 control 30 updates; the DFlash smoke 10.
 Never run here: opt_in study entries (H12.train_extended = the 210-update continuation, H10.dflash_drift_extended);
 check_no_opt_in refuses a stage list naming one.
   H audit          Soup checks if Soup is installed (else NOT_TESTED); the silent-failure matrix is built by the report
 
 Two modes, recorded per run in state.json (`mode`; runs made before it existed are "full"):
   full        (default; --full-tests is an alias) everything above. The only mode that can produce SHIP.
-  experiment  --experiment: the stages run in the order A D B E F G H; C (Qwen3-0.6B reference) is not run and its
-              requirements are NOT_TESTED. B is reduced to the async-L2L lab cases the final run depends on (forward,
-              gradient, generation, update; this GPU), the two unsafe-reuse fault controls, tiny resume and merge, and
-              the DFlash unit tests - no full pytest suites, no sync / CPU lab matrix. F's gate: those B items PASS
-              except H02.fault_unsafe_reuse (a known FAIL, recorded as a waived limitation, never as PASS); D and E's
-              memory and DFlash gates are unchanged. The report never gives SHIP for an experiment run.
+  experiment  --experiment: the stages run in the order A D B F G H, without DFlash: C (Qwen3-0.6B reference) and
+              E (DFlash) are not run and their requirements are NOT_TESTED. F trains qwen3_4b_final_plain.yaml and its
+              LR=0 control (qwen3_4b_final*.yaml with dflash disabled: plain L2L rollouts, own run names, every other
+              setting inherited) and G evaluates them (H12.train_final_plain, H12.final_eval_plain; no DFlash drift).
+              B is reduced to the async-L2L lab cases the final run depends on (forward, gradient, generation, update;
+              this GPU), the two unsafe-reuse fault controls, and tiny resume and merge - no pytest suites, no sync /
+              CPU lab matrix. F's gate: those B items PASS except H02.fault_unsafe_reuse (a known FAIL, recorded as a
+              waived limitation, never as PASS), D's smoke and profile with PASS memory, and the primary config's
+              DFlash disabled. Stage A predicts the plain configuration only (no drafter metadata is fetched). The
+              report never gives SHIP for an experiment run.
 --resume continues the latest run of the requested mode only; --fresh (new runs only) moves the fixed-name training
 runs and Qwen3-4B results of the mode's stages aside to <path>.archived-<UTC> (never deleted) so they are re-run.
 Every item's stdout/stderr is streamed live with a heartbeat every ASSIGNMENT_HEARTBEAT_S seconds (default 30).
@@ -128,17 +132,23 @@ BUDGET_CONFIGS = ("configs/budget/qwen3-4b_final_dflash.yaml", "configs/budget/q
                   "configs/budget/qwen3-4b.yaml", "configs/budget/qwen3-0.6b.yaml")
 FINAL_RUNS = {"qwen3_4b_final": "configs/experiments/qwen3_4b_final.yaml",
               "qwen3_4b_final_lr0": "configs/experiments/qwen3_4b_final_lr0.yaml"}
+PRIMARY, CONTROL = list(FINAL_RUNS)               # the trained run and its LR=0 control (install_experiment rebinds)
+TRAIN_ID, EVAL_ID = "H12.train_final", "H12.final_eval"
 
 # --experiment: prioritise the Qwen3-4B experiments; the full qualification protocol above is unchanged
 MODE, MODE_KEY = "full", "mode"  # the active mode, and its key in state.json (scripts/assignment_local.py: local_mode)
 MODES = ("full", "experiment")
-EXPERIMENT_STAGES = "ADBEFGH"
+# Experiment mode runs no DFlash at all: no stage E, the plain-L2L final configs (dflash disabled, nothing else
+# changed, own run names so their checkpoints never mix with a DFlash-trained qwen3_4b_final), no DFlash tests or drift.
+EXPERIMENT_STAGES = "ADBFGH"
+EXPERIMENT_FINAL_RUNS = {"qwen3_4b_final_plain": "configs/experiments/qwen3_4b_final_plain.yaml",
+                         "qwen3_4b_final_plain_lr0": "configs/experiments/qwen3_4b_final_plain_lr0.yaml"}
+EXPERIMENT_TRAIN_ID, EXPERIMENT_EVAL_ID = "H12.train_final_plain", "H12.final_eval_plain"
 EXPERIMENT_STAGE_ENTRIES = {
     "B": ["H01.lab_async_cuda", "H01.fault_unsafe_reuse", "H02.lab_async_cuda", "H02.fault_unsafe_reuse",
           "H04.lab_async_cuda", "H05.lab_async_cuda", "H08.resume_tiny_cpu", "H09.merge_tiny_cpu"],
-    **{s: STAGE_ENTRIES[s] for s in "DEFG"},
+    "D": STAGE_ENTRIES["D"], "F": [EXPERIMENT_TRAIN_ID], "G": [EXPERIMENT_EVAL_ID],
 }
-PYTEST_DFLASH = ["tests/test_dflash.py", "tests/test_dflash_training.py"]
 # H02.fault_unsafe_reuse stays FAIL (its lab_fault judge counts a refusal by the backward checksum as "not detected";
 # 32 of 80 injected configurations ran to wrong results caught only by the offline resident comparison). It is the
 # only item experiment mode does not require for F: recorded in state["waivers"] and the report, never as PASS.
@@ -148,8 +158,9 @@ PYTEST_DFLASH = ["tests/test_dflash.py", "tests/test_dflash_training.py"]
 WAIVED = {"H02.fault_unsafe_reuse": "historical fault-injection FAIL (runtime protection against async buffer "
                                     "corruption is incomplete); experiment mode trains without it, the report lists it "
                                     "as a known limitation, and no qualification claim depends on it"}
-EXPERIMENT_ESSENTIAL_B = ["dflash_tests"] + [i for i in EXPERIMENT_STAGE_ENTRIES["B"] if i not in WAIVED]
-EXPERIMENT_BUDGET_CONFIGS = BUDGET_CONFIGS[:2]  # the final configuration's budgets; the Step-0 ones are history
+EXPERIMENT_ESSENTIAL_B = [i for i in EXPERIMENT_STAGE_ENTRIES["B"] if i not in WAIVED]
+# the plain final configuration's budget only, recomputed with --no-dflash-estimate (no drafter metadata fetched)
+EXPERIMENT_BUDGET_CONFIGS = ("configs/budget/qwen3-4b_final.yaml",)
 
 STOP = {"signal": None}  # set by SIGINT/SIGTERM: finish the current item gracefully, then stop
 
@@ -222,7 +233,8 @@ def check_no_opt_in(entries, stage_entries=None):
     lists = dict(stage_entries or STAGE_ENTRIES)
     if os.environ.get("ASSIGNMENT_STAGE_ITEMS"):
         lists.update(json.loads(os.environ["ASSIGNMENT_STAGE_ITEMS"]))
-    bad = sorted({i for ids in lists.values() for i in ids if (entries.get(i) or {}).get("opt_in")})
+    bad = sorted({i for ids in lists.values() for i in ids if (entries.get(i) or {}).get("opt_in")
+                  and (entries.get(i) or {}).get("protocol") != MODE})
     if bad:
         raise SystemExit(f"opt-in entries {bad} are never part of the default assignment protocol; run them with "
                          f"`python scripts/experiment.py run --entry <id>`")
@@ -241,6 +253,15 @@ def tool(name, default):
 def dispatcher():
     cmd = os.environ.get("ASSIGNMENT_DISPATCHER")
     return cmd.split() if cmd else [sys.executable, str(ROOT / "scripts" / "experiment.py"), "--study", str(STUDY)]
+
+
+def mode_entries(entries):
+    """The study entries this mode can run (experiment mode: its own stage lists only, so stage A resolves no DFlash
+    config and records no drafter); full mode: every entry, as before."""
+    if MODE == "full":
+        return entries
+    ids = {i for s in STAGES for i in stage_ids(s)}
+    return {k: v for k, v in entries.items() if k in ids}
 
 
 def config_paths(entries):
@@ -685,14 +706,14 @@ def heldout_identity_expected():
     from qwen_grpo.evidence import code_sha256, file_sha256
     from qwen_grpo.sentiment import SPLITS_PATH, load_splits
     from qwen_grpo import trainer
-    cfg = config.load(ROOT / FINAL_RUNS["qwen3_4b_final"])
+    cfg = config.load(ROOT / FINAL_RUNS[PRIMARY])
     sha = {}
     for name in FINAL_RUNS:
         ck = latest_checkpoint_dir(name)
         f = ck / "adapter_model.safetensors" if ck else None
         sha[name] = file_sha256(f) if f and f.exists() else None
-    return {"run": "qwen3_4b_final", "control": "qwen3_4b_final_lr0",
-            "checkpoint_adapter_sha256": sha["qwen3_4b_final"], "control_adapter_sha256": sha["qwen3_4b_final_lr0"],
+    return {"run": PRIMARY, "control": CONTROL,
+            "checkpoint_adapter_sha256": sha[PRIMARY], "control_adapter_sha256": sha[CONTROL],
             "config_sha256": config.sha256(cfg), "dataset_sha256": file_sha256(SPLITS_PATH), "split": "test",
             "n_test": len(load_splits()["test"]), "code_sha256": code_sha256(ROOT),
             "model_revisions": {m: trainer.model_revision(m) for m in trainer.models(cfg)},
@@ -748,7 +769,7 @@ def foreign_check(entry, cap_facts):
             problems.append(f"{o}: records no GPU")
         elif gpu is None or name != gpu.split(" (")[0]:
             problems.append(f"{o}: produced on {name}, this host has {gpu}")
-        if entry["id"] == "H12.final_eval":
+        if entry["id"] == EVAL_ID:
             problems += [f"{o}: {p_}" for p_ in heldout_problems(data)]
         else:
             ev_code = _find(data, "code_sha256")
@@ -953,7 +974,7 @@ def stage_A(run_dir, state, attempt_dir, study, entries):
     # resolved configs, seeds, models, dataset
     rc_dir = Path(run_dir) / "resolved_configs"
     rc_dir.mkdir(exist_ok=True)
-    configs = resolved_configs(config_paths(entries))
+    configs = resolved_configs(config_paths(mode_entries(entries)))
     for p, c in configs.items():
         (rc_dir / (p.replace("/", "__"))).write_text(
             f"# {p} sha256 {c.get('sha256') or c.get('file_sha256')}\n"
@@ -1004,7 +1025,7 @@ def stage_A(run_dir, state, attempt_dir, study, entries):
 
 def assignment_config_check(configs):
     """The assignment's fixed choices, read from the resolved final config (not from documentation)."""
-    c = configs.get(FINAL_RUNS["qwen3_4b_final"], {}).get("resolved")
+    c = configs.get(FINAL_RUNS[PRIMARY], {}).get("resolved")
     if c is None:
         return {"id": "assignment_config", "kind": "check", "status": "FAIL", "detail": "final config does not resolve"}
     checks = {
@@ -1016,10 +1037,15 @@ def assignment_config_check(configs):
         "L2L backend": c["execution"]["backend"] in ("l2l_sync", "l2l_async"),
         "disk streaming enabled": bool(c.get("streaming", {}).get("enabled")),
         "memory guard on": bool(c.get("memory", {}).get("guard")),
-        "DFlash rollouts (z-lab/Qwen3-4B-DFlash-b16)": (c.get("dflash") or {}).get("enabled") is True
-        and (c.get("dflash") or {}).get("draft_model") == "z-lab/Qwen3-4B-DFlash-b16",
     }
-    lr0 = configs.get(FINAL_RUNS["qwen3_4b_final_lr0"], {}).get("resolved") or {}
+    if MODE == "experiment":  # plain L2L rollouts by design; everything else is the full mode's final configuration
+        checks["plain L2L rollouts (dflash disabled, no drafter)"] = (c.get("dflash") or {}).get("enabled") is False \
+            and not (c.get("dflash") or {}).get("draft_model")
+        checks.update(experiment_consistency(c))
+    else:
+        checks["DFlash rollouts (z-lab/Qwen3-4B-DFlash-b16)"] = (c.get("dflash") or {}).get("enabled") is True \
+            and (c.get("dflash") or {}).get("draft_model") == "z-lab/Qwen3-4B-DFlash-b16"
+    lr0 = configs.get(FINAL_RUNS[CONTROL], {}).get("resolved") or {}
     checks["LR=0 control: learning_rate 0"] = (lr0.get("training") or {}).get("learning_rate") == 0
     checks["LR=0 control: same rollout generator as the final run (dflash section)"] = lr0.get("dflash") == c.get("dflash")
     checks["LR=0 control: same execution, batch shape and data as the final run"] = bool(lr0) and all(
@@ -1029,14 +1055,34 @@ def assignment_config_check(configs):
     notes = ["non-thinking template: sentiment.build_prompts appends the empty <think></think> block (asserted in code, "
              "tests/test_sentiment.py)", "no SFT stage: the pipeline has none (GRPO from the base model)",
              "reward: exact canonical label (sentiment.reward), verifiable, binary",
-             f"DFlash in the final run (config): {bool(c.get('dflash', {}).get('enabled'))}; that rollouts actually ran "
-             "through DFlash is judged from the training logs (requirement D0), not from this check",
+             f"DFlash in the final run (config): {bool(c.get('dflash', {}).get('enabled'))}; " + (
+                 "experiment mode: plain L2L rollouts (StreamedGenerator), DFlash intentionally excluded; that the "
+                 "rollouts were plain is judged from the training logs (requirement T3)" if MODE == "experiment" else
+                 "that rollouts actually ran through DFlash is judged from the training logs (requirement D0), not "
+                 "from this check"),
              f"LR=0 control: {lr0.get('training', {}).get('max_steps')} steps vs {c['training']['max_steps']} trained steps "
              "(shorter schedule: matched in data, seed and batch shape, not in length)"]
     bad = [k for k, v in checks.items() if not v]
     return {"id": "assignment_config", "kind": "check", "status": "FAIL" if bad else "PASS",
             "detail": ("violated: " + ", ".join(bad)) if bad else "all fixed assignment choices hold",
             "checks": checks, "notes": notes}
+
+
+def experiment_consistency(c):
+    """Experiment mode: the plain primary config is the full mode's final config except run name and dflash, and the
+    plain-L2L smoke (H11.smoke, qwen3_4b_smoke.yaml) runs the same training tensor shapes."""
+    from qwen_grpo import config
+    full = config.as_dict(config.load(ROOT / "configs" / "experiments" / "qwen3_4b_final.yaml"))
+    smoke = config.as_dict(config.load(ROOT / "configs" / "experiments" / "qwen3_4b_smoke.yaml"))
+    shape = ("batch_size", "group_size", "micro_batch_size", "max_new_tokens", "num_iterations")
+    return {
+        "plain primary = qwen3_4b_final.yaml except run name and dflash": all(
+            c.get(k) == v for k, v in full.items() if k not in ("run", "dflash")),
+        "plain-L2L smoke (qwen3_4b_smoke.yaml) has the final run's model, LoRA, execution, memory guard and batch "
+        "shape (B, G, micro-batch, new tokens, iterations), plain rollouts": all(
+            smoke[k] == c.get(k) for k in ("model", "lora", "execution", "streaming", "memory", "dflash")) and all(
+            smoke["training"][k] == c["training"][k] for k in shape),
+    }
 
 
 def predictions(run_dir, attempt_dir):
@@ -1059,7 +1105,7 @@ def predictions(run_dir, attempt_dir):
         out = pred / "calculator"
         rec = run_item(Path(attempt_dir) / f"budget_{Path(cfg).stem}",
                        [*tool("budget", [sys.executable, str(ROOT / "scripts" / "budget.py")]), "--config", cfg,
-                        "--out-dir", str(out)],
+                        "--out-dir", str(out)] + (["--no-dflash-estimate"] if MODE == "experiment" else []),
                        telemetry_on=False)
         runs.append({"config": cfg, "exit": rec["exit"], "stdout": rec["stdout"], "stderr": rec["stderr"]})
         statuses.append(rec["exit"] == 0)
@@ -1106,7 +1152,10 @@ def gate(stage, state):
             if not r or r["status"] != "PASS" or r.get("memory_status") != "PASS":
                 why.append(f"stage D: {i} is {r and r['status']}, nvidia-smi memory {r and r.get('memory_status')} "
                            "(the 8 GB qualification must PASS on per-process evidence)")
-        if final_uses_dflash():  # the final run's rollouts go through DFlash: its real-model checks must pass first
+        if "E" not in STAGES and final_uses_dflash():  # experiment mode has no stage E: plain rollouts only
+            why.append(f"{FINAL_RUNS[PRIMARY]} enables DFlash, but this mode runs no DFlash checks (stage E); its "
+                       "final run must use plain L2L rollouts")
+        elif final_uses_dflash():  # the final run's rollouts go through DFlash: its real-model checks must pass first
             r = item(state, "E", "H10.dflash_bench")
             if not r or r["status"] != "PASS":
                 why.append(f"stage E: H10.dflash_bench is {r and r['status']} (greedy DFlash must equal plain decoding "
@@ -1116,9 +1165,9 @@ def gate(stage, state):
                 why.append(f"stage E: H10.smoke_dflash is {r and r['status']}, nvidia-smi memory "
                            f"{r and r.get('memory_status')} (the final run's DFlash path must qualify under the cap)")
     if stage == "G":
-        r = item(state, "F", "H12.train_final")
+        r = item(state, "F", TRAIN_ID)
         if not r or r["status"] != "PASS":
-            why.append(f"stage F: H12.train_final is {r and r['status']}")
+            why.append(f"stage F: {TRAIN_ID} is {r and r['status']}")
     return why
 
 
@@ -1126,7 +1175,7 @@ def final_uses_dflash():
     """dflash.enabled of the resolved final config (True if it cannot be resolved: the stricter gate)."""
     from qwen_grpo import config
     try:
-        return bool(config.load(ROOT / FINAL_RUNS["qwen3_4b_final"]).dflash.enabled)
+        return bool(config.load(ROOT / FINAL_RUNS[PRIMARY]).dflash.enabled)
     except (Exception, SystemExit):  # noqa: BLE001
         return True
 
@@ -1173,7 +1222,7 @@ def stage_entries(stage, run_dir, state, attempt_dir, study, entries):
 
 def stage_B(run_dir, state, attempt_dir, study, entries, suites=None):
     items = []
-    for item_id, paths, cuda in suites or (("unit_tests_cpu", PYTEST_CPU, False),
+    for item_id, paths, cuda in suites if suites is not None else (("unit_tests_cpu", PYTEST_CPU, False),
                                            ("silent_failure_tests", PYTEST_SILENT, False),
                                            ("unit_tests_cuda", PYTEST_CUDA, True)):
         prev = carried(state, "B", item_id)
@@ -1191,8 +1240,8 @@ def stage_B(run_dir, state, attempt_dir, study, entries, suites=None):
 
 
 def stage_B_experiment(run_dir, state, attempt_dir, study, entries):
-    """The DFlash unit tests and the reduced lab list; the waived item's outcome is recorded as it is."""
-    items = stage_B(run_dir, state, attempt_dir, study, entries, suites=(("dflash_tests", PYTEST_DFLASH, True),))
+    """The reduced lab list only (no pytest suites, no DFlash tests); the waived item's outcome is recorded as it is."""
+    items = stage_B(run_dir, state, attempt_dir, study, entries, suites=())
     state["waivers"] = [{"item": i["id"], "stage": "B", "status": i["status"], "detail": i.get("detail"),
                          "evidence_dir": i.get("evidence_dir"), "waiver": WAIVED[i["id"]]}
                         for i in items if i["id"] in WAIVED]
@@ -1220,7 +1269,7 @@ def stage_C(run_dir, state, attempt_dir, study, entries):
 
 
 def stage_G(run_dir, state, attempt_dir, study, entries):
-    ev = entries.get("H12.final_eval")
+    ev = entries.get(EVAL_ID)
     out = ev and entry_outputs(ev)
     if out and not all(output_exists(o) for o in out):
         state.setdefault("test_set_evaluations", []).append({"utc": utc(), "attempt_dir": rel(attempt_dir)})
@@ -1258,8 +1307,8 @@ def stage_H(run_dir, state, attempt_dir, study, entries):
                                            "-o", rel(Path(attempt_dir) / "data_doctor_report.json")], ok_codes=(0, 1, 2)))
     from qwen_grpo import runs
     for tag, step in (("trained", None), ("step0", 0)):
-        ckpt = (runs.latest_checkpoint("qwen3_4b_final") if step is None else runs.checkpoint_path("qwen3_4b_final", 0)) \
-            if (RUNS_DIR / "qwen3_4b_final").exists() else None
+        ckpt = (runs.latest_checkpoint(PRIMARY) if step is None else runs.checkpoint_path(PRIMARY, 0)) \
+            if (RUNS_DIR / PRIMARY).exists() else None
         if ckpt and Path(ckpt).exists():
             items.append(call(f"soup_adapters_check_{tag}", ["adapters", "check", rel(ckpt), "--json"], ok_codes=(0, 1, 2)))
         else:
@@ -1333,9 +1382,12 @@ def cmd_stage(args):
 
 def install_experiment():
     """Point this module at the experiment protocol (module globals are read at call time)."""
-    global MODE, STAGES, STAGE_ENTRIES, ESSENTIAL_B, FRESH, BUDGET_CONFIGS
+    global MODE, STAGES, STAGE_ENTRIES, ESSENTIAL_B, FRESH, BUDGET_CONFIGS, FINAL_RUNS, PRIMARY, CONTROL, TRAIN_ID, \
+        EVAL_ID
     MODE, STAGES, STAGE_ENTRIES = "experiment", EXPERIMENT_STAGES, EXPERIMENT_STAGE_ENTRIES
     ESSENTIAL_B, FRESH, BUDGET_CONFIGS = EXPERIMENT_ESSENTIAL_B, {"B"}, EXPERIMENT_BUDGET_CONFIGS
+    FINAL_RUNS, TRAIN_ID, EVAL_ID = EXPERIMENT_FINAL_RUNS, EXPERIMENT_TRAIN_ID, EXPERIMENT_EVAL_ID
+    PRIMARY, CONTROL = list(FINAL_RUNS)
     RUNNERS["B"] = stage_B_experiment
 
 
@@ -1479,7 +1531,7 @@ def cmd_dry_run(args):
     print("A preflight: provenance, capabilities, CUDA streams/events under nvidia-smi, resolved configs, study plan, "
           f"budget predictions {', '.join(BUDGET_CONFIGS)} -> predictions/ (read-only)")
     if MODE == "experiment":
-        print(f"B essential correctness: pytest {' '.join(PYTEST_DFLASH)} (CUDA); no full pytest suites")
+        print("B essential correctness: the async-L2L lab cases below; no pytest suites (no DFlash tests)")
     else:
         print(f"B correctness: pytest {' '.join(PYTEST_CPU + PYTEST_SILENT)} (CPU); {' '.join(PYTEST_CUDA)} (CUDA)")
     for s in [x for x in STAGES if x in "BCDEFG"]:
@@ -1508,15 +1560,19 @@ def print_experiment_plan():
         c = config.load(ROOT / path)
         print(f"{name}: {c.model.name} {c.model.dtype}, {c.training.max_steps} updates, B={c.training.batch_size} "
               f"G={c.training.group_size}, {c.training.max_new_tokens} new tokens, lr {c.training.learning_rate}, clip "
-              f"{c.training.clip_eps}, LoRA r{c.lora.rank}/a{c.lora.alpha} {c.lora.targets}, {c.execution.backend}, "
+              f"{c.training.clip_eps}, micro-batch {c.training.micro_batch_size}, {c.training.num_iterations} "
+              f"iteration(s), eval every {c.evaluation.every} on {c.data.val_subset}, pool {c.data.train_samples}, "
+              f"LoRA r{c.lora.rank}/a{c.lora.alpha} {c.lora.targets}, {c.execution.backend}, "
               f"disk streaming {c.streaming.enabled}, DFlash {c.dflash.enabled} ({c.dflash.draft_model}), memory guard "
               f"{c.memory.guard}")
     print(f"B: {', '.join(STAGE_ENTRIES['B'])}; waived for the F gate (recorded, stays FAIL if it fails): "
           f"{', '.join(WAIVED)}")
     print(f"F gate (experiment): B {', '.join(ESSENTIAL_B)} PASS; D H11.smoke and H11.profile PASS with per-process "
-          "nvidia-smi memory PASS; E H10.dflash_bench PASS and H10.smoke_dflash PASS with memory PASS")
-    print("not run in this mode: stage C (Qwen3-0.6B reference), the CPU / silent-failure / CUDA pytest suites, the "
-          "sync / CPU lab cases and their fault controls (NOT_TESTED in the report; --full-tests runs them)")
+          f"nvidia-smi memory PASS; {FINAL_RUNS[PRIMARY]} has DFlash disabled (plain L2L rollouts)")
+    print("not run in this mode: stage C (Qwen3-0.6B reference), stage E and every DFlash item (benchmark, DFlash "
+          "smoke, drift, DFlash tests; DFlash requirements are NOT_TESTED, intentionally excluded), the CPU / "
+          "silent-failure / CUDA pytest suites, the sync / CPU lab cases and their fault controls (--full-tests runs "
+          "them)")
 
 
 def main(argv=None):

@@ -164,6 +164,7 @@ class Run:
 
 ENTRY_NAMES = {"H11.profile": "t11_profile_qwen3_4b_async", "H10.dflash_bench": "t12_dflash_bench",
                "H10.dflash_drift": "t12_dflash_drift_final", "H12.final_eval": "t13_final_eval_qwen3_4b_final",
+               "H12.final_eval_plain": "t13_final_eval_qwen3_4b_final_plain",
                "H08.resume_tiny_cpu": "t09_resume_tiny_cpu", "H08.resume_qwen3_0.6b": "t09_resume_qwen_stream"}
 
 
@@ -233,7 +234,7 @@ def memory_rows(run):
                 rows.append(["D", "H11.profile", p["phase"], q, "theoretical" if p.get(k) is not None else "unavailable",
                              p.get(k), prof["prediction"]["file"], f"budget phase {p['predicted_phase']}"])
     for name, stage, iid in (("qwen3_4b_smoke", "D", "H11.smoke"), ("qwen3_4b_smoke_dflash", "E", "H10.smoke_dflash"),
-                             ("qwen3_4b_final", "F", "H12.train_final"), ("qwen3_4b_final_lr0", "F", "H12.train_final")):
+                             (PRIMARY, "F", TRAIN_ID), (CONTROL, "F", TRAIN_ID)):
         log = run.run_log(name, stage, iid)
         if not log:
             continue
@@ -264,11 +265,31 @@ def memory_rows(run):
 
 FINAL_PREDICTION = "qwen3-4b-final-dflash_8gb.json"  # configs/budget/qwen3-4b_final_dflash.yaml: the final run as it runs
 
+# The final training and evaluation of the run's mode. Full mode: qwen3_4b_final.yaml (DFlash rollouts). Experiment
+# mode (configure): its plain-L2L variant qwen3_4b_final_plain.yaml, DFlash intentionally excluded (PLAIN).
+PRIMARY, CONTROL, TRAIN_ID, EVAL_ID, PLAIN = "qwen3_4b_final", "qwen3_4b_final_lr0", "H12.train_final", \
+    "H12.final_eval", False
+EXCLUDED = ("intentionally excluded: experiment mode trains with plain L2L rollouts (dflash disabled by configuration) "
+            "and runs no DFlash item (no stage E, no drift study, no DFlash tests); no DFlash result exists in this run")
+
+
+def configure(run):
+    """Point the report at the run's mode (scripts/assignment.py install_experiment does the same for the runner)."""
+    global PRIMARY, CONTROL, TRAIN_ID, EVAL_ID, PLAIN, FINAL_PREDICTION, DFLASH_RUNS
+    if run.mode != "experiment":
+        return
+    PRIMARY, CONTROL, TRAIN_ID, EVAL_ID, PLAIN = "qwen3_4b_final_plain", "qwen3_4b_final_plain_lr0", \
+        "H12.train_final_plain", "H12.final_eval_plain", True
+    FINAL_PREDICTION = "qwen3-4b-final_8gb.json"  # configs/budget/qwen3-4b_final.yaml: plain rollouts, no drafter
+    DFLASH_RUNS = (DFLASH_RUNS[0], (PRIMARY, "F", TRAIN_ID, "plain-L2L primary training (experiment mode)"),
+                   (CONTROL, "F", TRAIN_ID, "LR=0 control with plain L2L rollouts (experiment mode)"))
+
 
 def predictions(run):
-    """The prediction of the final configuration only (DFlash rollouts, drafter resident). qwen3-4b-final_8gb.json is the
-    same shape with plain rollouts (H11.profile compares against it); the historical Step-0 prediction (qwen3-4b_8gb.json)
-    describes another configuration (micro-batch 6, GPU merge). Neither is used for the final run's comparison."""
+    """The prediction of the final configuration only: full mode DFlash rollouts with the drafter resident
+    (qwen3-4b-final-dflash_8gb.json); experiment mode the same shape with plain rollouts (qwen3-4b-final_8gb.json, which
+    H11.profile compares against in both modes). The historical Step-0 prediction (qwen3-4b_8gb.json) describes another
+    configuration (micro-batch 6, GPU merge) and is never used for the final run's comparison."""
     for sub in ("calculator", "committed"):
         d = read_json(run.dir / "predictions" / sub / FINAL_PREDICTION)
         if d:
@@ -279,7 +300,7 @@ def predictions(run):
 def timing_rows(run):
     rows = []
     for name, stage, iid in (("qwen3_4b_smoke", "D", "H11.smoke"), ("qwen3_4b_smoke_dflash", "E", "H10.smoke_dflash"),
-                             ("qwen3_4b_final", "F", "H12.train_final"), ("qwen3_4b_final_lr0", "F", "H12.train_final")):
+                             (PRIMARY, "F", TRAIN_ID), (CONTROL, "F", TRAIN_ID)):
         log = run.run_log(name, stage, iid)
         for t in (log or {}).get("timings", []):
             rows.append([name, t.get("step"), t.get("rollout_s"), t.get("prepare_s"), t.get("update_s"), t.get("step_s"),
@@ -443,15 +464,15 @@ def dflash(run):
 
 
 def learning(run):
-    ev = run.output("G", "H12.final_eval")
-    log = run.run_log("qwen3_4b_final", "F", "H12.train_final")
-    ctl = run.run_log("qwen3_4b_final_lr0", "F", "H12.train_final")
+    ev = run.output("G", EVAL_ID)
+    log = run.run_log(PRIMARY, "F", TRAIN_ID)
+    ctl = run.run_log(CONTROL, "F", TRAIN_ID)
     out = {"evaluation": None, "training": None, "control_training": None}
     if ev:
         sc = ev.get("label_scores", {})
         diffs = [abs(a - b) for a, b in zip(sc.get("trained", []), sc.get("merged", []))] if sc.get("merged") else []
         out["evaluation"] = {
-            "file": str(EXP / "t13_final_eval_qwen3_4b_final.json"), "n_test": ev.get("n_test"), "split": ev.get("split"),
+            "file": str(EXP / f"{ENTRY_NAMES[EVAL_ID]}.json"), "n_test": ev.get("n_test"), "split": ev.get("split"),
             "checkpoint": ev.get("checkpoint"), "models": ev.get("models"), "paired": ev.get("paired"),
             "paired_auc": ev.get("paired_auc"), "data_separation": ev.get("data_separation"), "merge": ev.get("merge"),
             "merged_vs_trained_prediction_agreement": ev.get("merged_vs_trained_prediction_agreement"),
@@ -459,7 +480,7 @@ def learning(run):
                                                        "mean": statistics.mean(diffs) if diffs else None, "n": len(diffs)},
             "lora_change": ev.get("lora_change"), "control_log": ev.get("control_log"),
             "test_set_evaluation_attempts": len(run.state.get("test_set_evaluations", []))}
-    for key, lg, name in (("training", log, "qwen3_4b_final"), ("control_training", ctl, "qwen3_4b_final_lr0")):
+    for key, lg, name in (("training", log, PRIMARY), ("control_training", ctl, CONTROL)):
         if not lg:
             continue
         rows = lg.get("training", [])
@@ -547,13 +568,13 @@ def d0_status(run, name, tr):
         return "NOT_TESTED", f"{name}: config not resolved (stage A did not run)", []
     if not cfg.get("enabled"):
         return "FAIL", f"{name}: the resolved config has dflash.enabled false (plain rollouts by configuration)", [rc]
-    it = run.item("F", "H12.train_final")
+    it = run.item("F", TRAIN_ID)
     ev = tr.get("evidence")
     ev_files = [rc] + ([tr["file"]] if ev else [])
     if ev is None:
         st = missing(it)
         return st, (f"{name}: dflash.enabled in the config, but no training log of this run to show that DFlash "
-                    f"executed; " + why(it, "H12.train_final")), ev_files
+                    f"executed; " + why(it, TRAIN_ID)), ev_files
     facts_ = (f"{ev['dflash_batches']}/{ev['rollout_batches']} rollout batches by DFlash "
               f"(plain {ev['plain_batches']}, unrecorded {ev['unrecorded_batches']}); drafter {ev['draft_models']}; "
               f"accepted drafts/pass {fmt(ev['accepted_per_pass_mean'], '', 2)}; target passes/token "
@@ -595,7 +616,7 @@ def requirements(run, m):
         ["resolved_configs/"])
     lt0 = m["learning"].get("training") or {}
     cov = lt0.get("coverage")
-    tit = run.item("F", "H12.train_final")
+    tit = run.item("F", TRAIN_ID)
     if cov:
         complete = cov["attempts_with_records"] == cov["rollout_attempts"] and cov["unique_prompts_visited"] is not None
         add("T2", "training coverage of the prompt pool measured (no epoch claimed without evidence)", False,
@@ -605,10 +626,27 @@ def requirements(run, m):
             f"selections, {cov['unique_prompts_visited']}/{cov['train_pool_prompts']} unique prompts visited "
             f"({fmt(cov['coverage_fraction'], '', 3)}), {cov['generated_completions']} completions; full pass over the "
             f"pool: {cov['full_pass_over_pool']}" + ("" if complete else "; some attempts have no prompt record"),
-            [str(RUNS / "qwen3_4b_final" / "training" / "training.json")], cov)
+            [str(RUNS / PRIMARY / "training" / "training.json")], cov)
     else:
         add("T2", "training coverage of the prompt pool measured (no epoch claimed without evidence)", False,
-            missing(tit), why(tit, "H12.train_final") + " (no training log)")
+            missing(tit), why(tit, TRAIN_ID) + " (no training log)")
+    if PLAIN:  # experiment mode: the rollouts of both training runs must have been plain L2L, from their own logs
+        for name in (PRIMARY, CONTROL):
+            ev = rollout_evidence(run.run_log(name, "F", TRAIN_ID))
+            if ev is None:
+                st, d = missing(tit), why(tit, TRAIN_ID) + f" (no training log of {name})"
+            elif ev["dflash_batches"] or ev["rollout_backend"].get("draft_model"):
+                st, d = "FAIL", f"{name}: {ev['dflash_batches']} rollout batches by DFlash in a plain-L2L run"
+            elif not ev["rollout_batches"] or ev["unrecorded_batches"]:
+                st, d = "INCONCLUSIVE", (f"{name}: rollout generator not recorded for every batch "
+                                         f"({ev['unrecorded_batches']} of {ev['rollout_batches']} unrecorded)")
+            else:
+                st, d = "PASS", (f"{name}: {ev['plain_batches']}/{ev['rollout_batches']} rollout batches by "
+                                 f"{(ev['rollout_backend'] or {}).get('generator')} (backend "
+                                 f"{(ev['rollout_backend'] or {}).get('backend')}), none by DFlash, no drafter")
+            add("T3" if name == PRIMARY else "T3c", f"{'primary run' if name == PRIMARY else 'LR=0 control'}: "
+                "rollouts generated by plain L2L (StreamedGenerator), no DFlash", False, st, d,
+                [str(RUNS / name / "training" / "training.json")])
 
     # memory
     def mem(rid, clause, pairs, phases=()):
@@ -641,14 +679,18 @@ def requirements(run, m):
         add(rid, clause, True, st, detail, [(it.get("telemetry") or {}).get("raw_files", {}).get("apps") for _, _, it in ran],
             {"process_peak_mib": peaks, "profile_phase_process_peak_bytes": dict(phase_vals)})
 
-    train_pairs = [("D", "H11.smoke"), ("F", "H12.train_final")] + \
+    train_pairs = [("D", "H11.smoke"), ("F", TRAIN_ID)] + \
         [("F", i["id"]) for i in run.items("F") if i["id"].startswith("resume:")]
     mem("M1", "training within 8 GB (nvidia-smi, CUDA context included)", train_pairs,
         ("old_logp", "forward", "backward", "optimizer"))
-    mem("M2", "rollout generation within 8 GB (plain and DFlash)",
-        [("D", "H11.profile"), ("E", "H10.dflash_bench"), ("E", "H10.smoke_dflash")], ("rollout",))
-    mem("M3", "streamed merge within 8 GB", [("D", "H11.profile"), ("G", "H12.final_eval")], ("merge",))
-    mem("M4", "evaluation of the merged model within 8 GB", [("G", "H12.final_eval")], ("evaluation",))
+    if PLAIN:  # experiment mode: no DFlash rollout exists; plain rollouts are profiled (H11.profile) and run in F
+        mem("M2", "rollout generation within 8 GB (plain L2L; DFlash intentionally excluded)",
+            [("D", "H11.profile")], ("rollout",))
+    else:
+        mem("M2", "rollout generation within 8 GB (plain and DFlash)",
+            [("D", "H11.profile"), ("E", "H10.dflash_bench"), ("E", "H10.smoke_dflash")], ("rollout",))
+    mem("M3", "streamed merge within 8 GB", [("D", "H11.profile"), ("G", EVAL_ID)], ("merge",))
+    mem("M4", "evaluation of the merged model within 8 GB", [("G", EVAL_ID)], ("evaluation",))
 
     # budget
     pit = run.item("A", "budget_predictions")
@@ -697,7 +739,7 @@ def requirements(run, m):
         [("B", "H04.lab_sync_cuda"), ("B", "H04.lab_async_cuda"), ("B", "H04.fault_stale_position")])
     lab("L5", "complete GRPO optimizer step equal (tiny models; real Qwen3-0.6B runs bitwise)", True,
         [("B", "H05.lab_sync_cuda"), ("B", "H05.lab_async_cuda"), ("B", "H05.fault_advantage"), ("C", "H05.real_0.6b_bf16")])
-    tl = [r for r in m["timing"] if r[0] in ("qwen3_4b_smoke", "qwen3_4b_final") and r[2] is not None]
+    tl = [r for r in m["timing"] if r[0] in ("qwen3_4b_smoke", PRIMARY) and r[2] is not None]
     if tl:
         ro, pp, up = median([r[2] for r in tl]), median([r[3] for r in tl]), median([r[4] for r in tl])
         tot = sum(x for x in (ro, pp, up) if x)
@@ -732,10 +774,11 @@ def requirements(run, m):
     add("S2", "merge tensor by tensor, never the full model on the GPU; peak shown", True, st, d, ev)
 
     # DFlash
+    n_before_dflash = len(R)
     dfl = m["dflash"]
-    for rid, name, clause in (("D0", "qwen3_4b_final", "the final GRPO run uses DFlash-accelerated rollouts (executed, "
-                                                       "not only configured)"),
-                              ("D0c", "qwen3_4b_final_lr0", "the LR=0 control samples through the same DFlash path")):
+    for rid, name, clause in (("D0", PRIMARY, "the final GRPO run uses DFlash-accelerated rollouts (executed, "
+                                              "not only configured)"),
+                              ("D0c", CONTROL, "the LR=0 control samples through the same DFlash path")):
         st, detail, ev = d0_status(run, name, dfl["training_runs"].get(name) or {})
         add(rid, clause, False, st, detail, ev)
     bench = dfl["benchmarks"].get("H10.dflash_bench")
@@ -804,9 +847,12 @@ def requirements(run, m):
             f"{p_['policy']}: " + ", ".join(fmt(r["accepted_per_pass_mean"], "", 2) for r in p_["runs"]) for p_ in drift["policies"])
         if drift else ("synthetic drift only (LoRA B scales in the benchmark); " + why(dit, "H10.dflash_drift")
                        if bench else why(dit, "H10.dflash_drift")), ["measurements/dflash.json"])
+    if PLAIN:  # nothing above was run in experiment mode: every DFlash requirement is NOT_TESTED, never FAIL or PASS
+        for r in R[n_before_dflash:]:
+            r.update(status="NOT_TESTED", detail=EXCLUDED, evidence=[], measured=None)
 
     # learning
-    git_ = run.item("G", "H12.final_eval")
+    git_ = run.item("G", EVAL_ID)
     if e and e.get("paired"):
         tb = e["paired"].get("trained_minus_base", {})
         sep = (e.get("data_separation") or {}).get("test_texts_in_train")
@@ -853,7 +899,7 @@ def requirements(run, m):
                         ("V2", "merged model matches the adapter-attached policy up to numerical noise"),
                         ("V3", "negative control (lr = 0) behaves as no learning"),
                         ("V4", "learning, not reward gaming: invalid rate does not rise, no collapse to one label")):
-            add(rid, cl, True, missing(git_), why(git_, "H12.final_eval") + " (no evaluation result)")
+            add(rid, cl, True, missing(git_), why(git_, EVAL_ID) + " (no evaluation result)")
 
     # silent failures, Soup, telemetry, logs
     faults = [(s, i["id"]) for s in "B" for i in run.items(s) if ".fault_" in i["id"]]
@@ -972,14 +1018,14 @@ def conclusions(run, reqs, verdict):
     def w(ids):
         return worst(Q[i]["status"] for i in ids if i in Q), "; ".join(f"{i} {Q[i]['status']}" for i in ids if i in Q)
     out = []
-    it = run.item("F", "H12.train_final")
-    logs = {n: run.run_log(n, "F", "H12.train_final") for n in ("qwen3_4b_final", "qwen3_4b_final_lr0")}
+    it = run.item("F", TRAIN_ID)
+    logs = {n: run.run_log(n, "F", TRAIN_ID) for n in (PRIMARY, CONTROL)}
     done = {n: (lg or {}).get("successful_steps") for n, lg in logs.items()}
     want = {n: configured_steps(run, n) for n in logs}
     complete = all(done[n] is not None and done[n] == want[n] for n in logs)
     out.append(("training completed (final run and LR=0 control, every configured update)",
                 ("PASS" if complete else "INCONCLUSIVE") if status_of(it) == "PASS" else status_of(it),
-                f"{why(it, 'H12.train_final')}; updates {done} of {want}"
+                f"{why(it, TRAIN_ID)}; updates {done} of {want}"
                 + (f"; {REUSE_BANNER}" if (it or {}).get("prior_evidence") else "")))
     frozen = {n: (lg or {}).get("frozen_changed") for n, lg in logs.items() if lg}
     if experiment:
@@ -1009,8 +1055,8 @@ def conclusions(run, reqs, verdict):
                 st, d))
     st, d = w(["D1", "D2", "D3"])
     out.append(("DFlash validity established (official drafter; greedy == plain decoding; sampling-law check)", st,
-                d + ". D2 is deterministic greedy equality; D3 is statistical evidence about the sampling law, not "
-                "proof that real-model sampling is exact"))
+                d + (". DFlash " + EXCLUDED if PLAIN else ". D2 is deterministic greedy equality; D3 is statistical "
+                     "evidence about the sampling law, not proof that real-model sampling is exact")))
     if experiment:
         out.append(("full assignment qualification established", "NOT_TESTED",
                     "experiment mode: requirements intentionally omitted are NOT_TESTED and the run cannot qualify; only "
@@ -1153,7 +1199,9 @@ def summary_md(run, reqs, verdict, must, m):
            "## L2L, streaming, merge", ""]
     md += [f"- {r['id']} {r['clause']}: **{r['status']}** - {r['detail'][:260]}"
            for r in reqs if r["id"] in ("L2", "L3", "L4", "L5", "L6", "S1", "S2")]
-    md += ["", "## DFlash", "", "Rollout generator per experiment (from each run's own training.json; a batch counts as "
+    md += ["", "## DFlash", ""] + ([f"**NOT_TESTED: {EXCLUDED}.** The table shows the rollout generator each run "
+                                     "actually used (requirements T3 / T3c).", ""] if PLAIN else []) + [
+           "Rollout generator per experiment (from each run's own training.json; a batch counts as "
            "DFlash only with recorded DFlash statistics):", ""]
     tr = m["dflash"].get("training_runs", {})
     rows_ = []
@@ -1164,8 +1212,9 @@ def summary_md(run, reqs, verdict, must, m):
                       f"{ev.get('dflash_batches')}/{ev.get('rollout_batches')}" if ev else "MISSING",
                       fmt(ev.get("accepted_per_pass_mean"), "", 2) if ev else "MISSING",
                       fmt(ev.get("target_passes_per_token"), "", 2) if ev else "MISSING"])
-    for iid, role in (("H10.dflash_bench", "DFlash acceptance and speed benchmark (plain vs DFlash, repeats)"),
-                      ("H10.dflash_drift", "DFlash acceptance across real checkpoints of the final run")):
+    for iid, role in () if PLAIN else (
+            ("H10.dflash_bench", "DFlash acceptance and speed benchmark (plain vs DFlash, repeats)"),
+            ("H10.dflash_drift", "DFlash acceptance across real checkpoints of the final run")):
         b = m["dflash"]["benchmarks"].get(iid)
         stage = "E" if iid == "H10.dflash_bench" else "G"
         rows_.append([role, f"{iid}: {status_of(run.item(stage, iid))}", "plain and DFlash", "n/a",
@@ -1228,16 +1277,19 @@ def limitations_md(run, reqs, m):
            "- nvidia-smi is sampled every 200 ms: a measured peak is a lower bound; shorter spikes are invisible.",
            "- The cap is judged on the process group's per-process readings. Where nvidia-smi does not list our PIDs (containers), "
            "memory requirements are INCONCLUSIVE, never PASS.",
-           f"- The LR=0 control runs {configured_steps(run, 'qwen3_4b_final_lr0')} updates against "
-           f"{configured_steps(run, 'qwen3_4b_final')} for the primary run: it is matched in data order, seed, batch "
+           f"- The LR=0 control runs {configured_steps(run, CONTROL)} updates against "
+           f"{configured_steps(run, PRIMARY)} for the primary run: it is matched in data order, seed, batch "
            "shape and code path, not in length.",
-           f"- The primary run's {configured_steps(run, 'qwen3_4b_final')} updates draw "
-           f"{(configured_steps(run, 'qwen3_4b_final') or 0) * 5} or more prompt selections from a 1024-prompt pool: "
+           f"- The primary run's {configured_steps(run, PRIMARY)} updates draw "
+           f"{(configured_steps(run, PRIMARY) or 0) * 5} or more prompt selections from a 1024-prompt pool: "
            "not one epoch; the prompts actually visited are measured (requirement T2). The optional 210-update "
            "continuation (qwen3_4b_final_ext210) is not part of this protocol.",
-           "- The primary run and the LR=0 control sample through DFlash; the plain-L2L baseline at the same batch shape "
-           "is only the smoke run (H11.smoke), so plain vs DFlash GRPO step time is compared on the two smoke runs and "
-           "the benchmark, not on the primary run.",
+           ("- Experiment mode: the primary run and the LR=0 control sample with plain L2L rollouts; DFlash is "
+            "intentionally excluded and every DFlash requirement is NOT_TESTED (no DFlash result exists in this run)."
+            if PLAIN else
+            "- The primary run and the LR=0 control sample through DFlash; the plain-L2L baseline at the same batch shape "
+            "is only the smoke run (H11.smoke), so plain vs DFlash GRPO step time is compared on the two smoke runs and "
+            "the benchmark, not on the primary run."),
            "- DFlash on-policy correctness on Qwen3-4B rests on greedy token identity (benchmark, real adapters) and a "
            "two-sample test of sampled responses; the exact-law sampling test runs on tiny models only.",
            "- The 4B sampling-distribution check is a two-sample test of a few hundred samples; only the tiny-model test is "
@@ -1275,6 +1327,7 @@ def experimental_md(run, m):
 
 def main(run_dir):
     run = Run(run_dir)
+    configure(run)
     d = run.dir
     for sub in ("measurements", "comparisons", "reports"):
         (d / sub).mkdir(exist_ok=True)
@@ -1306,7 +1359,7 @@ def main(run_dir):
         verdict = "NO SHIP VERDICT (experiment mode)"
     must = [f"{r['id']} {r['clause']}: {r['status']} - {r['detail'][:200]}" for r in ess_bad]
     cons = conclusions(run, reqs, verdict)
-    banner = REUSE_BANNER if (run.item("F", "H12.train_final") or {}).get("prior_evidence") else None
+    banner = REUSE_BANNER if (run.item("F", TRAIN_ID) or {}).get("prior_evidence") else None
     reused = prior_evidence(run)
     waivers = run.state.get("waivers", [])
     h02 = run.item("B", "H02.fault_unsafe_reuse")
@@ -1319,7 +1372,9 @@ def main(run_dir):
     head = conclusions_md(cons, banner) + (
         ["Outputs made outside this run and reused after the provenance check: " + ", ".join(reused), ""]
         if reused else []) + ([f"Mode: **experiment** (stages {run.manifest.get('stage_order') or 'ADBEFGH'}). This is "
-                               "experimental evidence, not a qualification run; the verdict rule below is not applied.",
+                               "experimental evidence, not a qualification run; the verdict rule below is not applied. "
+                               "Training used plain L2L rollouts (" + PRIMARY + ", " + CONTROL + "); DFlash was "
+                               "intentionally excluded, and its requirements are NOT_TESTED, not FAIL.",
                                ""] if run.mode == "experiment" else []) + h02_md
     from qwen_grpo.evidence import code_sha256, report_code_sha256
     run_code = (run.state.get("identity") or {}).get("experiment_code_sha256")

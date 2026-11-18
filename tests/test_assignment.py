@@ -468,33 +468,138 @@ def stage_order(tmp):
     return out
 
 
-def test_experiment_mode_runs_D_before_B_skips_C_waives_only_h02_and_never_ships(env):
-    tmp, e = experiment_env(env, H02__fault_unsafe_reuse={"status": "FAIL"})
+PLAIN_TRAIN = {"H12__train_final_plain": {"status": "PASS", "files": {   # the configured 60 / 30 updates, plain rollouts
+    "runs/qwen3_4b_final_plain/training/training.json": training_log(60),
+    "runs/qwen3_4b_final_plain_lr0/training/training.json": training_log(30)}},
+    "H12__final_eval_plain": {"status": "PASS", "files": {"t13_final_eval_qwen3_4b_final_plain.json": EVAL}}}
+DFLASH_REQS = ("D0", "D0c", "D1", "D2", "D3", "D4", "D5", "D5b", "D6")
+
+
+def test_experiment_mode_runs_A_D_B_F_G_H_without_dflash_waives_only_h02_and_never_ships(env):
+    tmp, e = experiment_env(env, H02__fault_unsafe_reuse={"status": "FAIL"}, **PLAIN_TRAIN)
     p = run(e, "--experiment")
     d, state, r = the_run(tmp)
     assert p.returncode == 1, p.stdout[-3000:] + p.stderr[-3000:]
-    assert state["mode"] == "experiment" and "C" not in state["stages"]
-    assert stage_order(tmp) == ["D", "B", "E", "F", "G"]
+    assert state["mode"] == "experiment"
+    assert list(state["stages"]) == ["A", "D", "B", "F", "G", "H"]  # executed in this order; no C, no E
+    assert stage_order(tmp) == ["D", "B", "F", "G"]
+    # no DFlash item, test, config or drafter anywhere in what was dispatched or resolved
+    ran = [a[a.index("--entry") + 1] for a in dispatched(tmp) if "--entry" in a and "--dry-run" not in a]
+    assert ran and not any("dflash" in x.lower() for x in ran), ran
+    assert "H12.train_final_plain" in ran and "H12.final_eval_plain" in ran and "H12.train_final" not in ran
+    assert not any("dflash" in f.name.lower() for f in (d / "resolved_configs").iterdir())
+    models = json.loads((d / "environment" / "models_data_seeds.json").read_text())["models"]
+    assert "Qwen/Qwen3-4B" in models and not any("dflash" in m.lower() for m in models), models  # no drafter
     B = items(state, "B")
-    assert "dflash_tests" in B and "unit_tests_cpu" not in B and "H01.lab_sync" not in B
+    assert "dflash_tests" not in B and "unit_tests_cpu" not in B and "H01.lab_sync" not in B
+    assert not any(i.get("kind") == "pytest" for i in B.values())
     assert B["H02.fault_unsafe_reuse"]["status"] == "FAIL"  # recorded as it is, never relabelled
     assert state["waivers"][0]["item"] == "H02.fault_unsafe_reuse" and state["waivers"][0]["status"] == "FAIL"
-    assert items(state, "F")["H12.train_final"]["status"] == "PASS"  # the waiver let the 4B training run
+    # the essential gates still hold: every non-waived B item, D smoke + profile with PASS per-process memory
+    assert items(state, "F")["H12.train_final_plain"]["status"] == "PASS"  # the waiver let the 4B training run
+    # the 8 GB cap is enforced on every Qwen3-4B stage (no cap would make memory_status INCONCLUSIVE)
+    for s, i in (("D", "H11.smoke"), ("D", "H11.profile"), ("F", "H12.train_final_plain"), ("G", "H12.final_eval_plain")):
+        assert items(state, s)[i]["memory_status"] == "PASS", (s, i, items(state, s)[i].get("telemetry"))
+    cfg = items(state, "A")["assignment_config"]
+    assert cfg["status"] == "PASS", cfg
+    assert cfg["checks"]["plain L2L rollouts (dflash disabled, no drafter)"]
+    assert "DFlash rollouts (z-lab/Qwen3-4B-DFlash-b16)" not in cfg["checks"]
     assert r["verdict"] == "NO SHIP VERDICT (experiment mode)" and r["mode"] == "experiment"
     R = reqs(r)
     assert R["L3"]["status"] == "FAIL" and R["L2"]["status"] == "NOT_TESTED"  # H01.lab_sync omitted, not passed
+    for rid in ("T1", "T2", "T3", "T3c", "M1", "M2", "M3", "M4", "V1", "V2", "V3", "V4"):
+        assert R[rid]["status"] == "PASS", R[rid]
+    assert "60/60 rollout batches by StreamedGenerator" in R["T3"]["detail"]
+    assert "30/30 rollout batches by StreamedGenerator" in R["T3c"]["detail"]
+    for rid in DFLASH_REQS:  # intentionally excluded: NOT_TESTED, never FAIL, no fabricated evidence
+        assert R[rid]["status"] == "NOT_TESTED" and "intentionally excluded" in R[rid]["detail"], R[rid]
+        assert R[rid]["evidence"] == [] and R[rid]["measured"] is None
+    no_unmeasured_pass(r)
     con = {c["conclusion"].split(" (")[0]: c for c in r["conclusions"]}
     assert con["training completed"]["status"] == "PASS"
+    assert con["memory compliance established"]["status"] == "PASS"
+    assert con["performance improvement established"]["status"] == "PASS"
+    assert con["DFlash validity established"]["status"] == "NOT_TESTED"
     assert con["full assignment qualification established"]["status"] == "NOT_TESTED"
     assert "known limitation H02.fault_unsafe_reuse FAIL" in con["training correctness established"]["detail"]
     assert r["reuse_banner"] is None
     summary = (d / "reports" / "summary.md").read_text()
-    assert "Known limitation: H02.fault_unsafe_reuse" in summary and "incomplete" in summary
+    # the limitation is reported as the FAIL it is; the fake wrote no lab result, so the report says it cannot be
+    # analysed rather than inventing an analysis. The waiver's own wording is recorded unchanged.
+    assert "Known limitation: H02.fault_unsafe_reuse" in summary and "H02.fault_unsafe_reuse is FAIL" in summary
+    assert "cannot be analysed" in summary
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import assignment as A
+    assert state["waivers"][0]["waiver"] == A.WAIVED["H02.fault_unsafe_reuse"]
+    assert "incomplete" in A.WAIVED["H02.fault_unsafe_reuse"] and list(A.WAIVED) == ["H02.fault_unsafe_reuse"]
+    assert r["waivers"] == state["waivers"]
+    assert "DFlash was intentionally excluded" in summary
+    # the run never claims a SHIP verdict or full qualification (rule text mentioning SHIP is allowed)
+    assert summary.startswith("# GRPO + LoRA on Qwen3-4B under an 8 GB cap: NO SHIP VERDICT (experiment mode)")
+    assert "**SHIP.**" not in summary and "**NO SHIP VERDICT (experiment mode).**" in summary
+    assert "Final verdict: NO SHIP VERDICT (experiment mode)" in (d / "reports" / "final_verdict.md").read_text()
+    assert json.loads((d / "measurements" / "dflash.json").read_text())["benchmarks"] == {}
     assert "experiment" in json.loads((d / "manifest.json").read_text())["command"]
 
 
+def test_a_passing_training_item_is_not_a_completed_training(env):
+    """Stage execution success is not training completion: the training item PASSes (exit 0), but the logs record 8
+    and 3 updates against the configured 60 and 30, so `training completed` is INCONCLUSIVE, never PASS."""
+    tmp, e = experiment_env(env, **{**PLAIN_TRAIN, "H12__train_final_plain": {"status": "PASS", "files": {
+        "runs/qwen3_4b_final_plain/training/training.json": training_log(8),
+        "runs/qwen3_4b_final_plain_lr0/training/training.json": training_log(3)}}})
+    run(e, "--experiment")
+    _, state, r = the_run(tmp)
+    assert items(state, "F")["H12.train_final_plain"]["status"] == "PASS"
+    con = {c["conclusion"].split(" (")[0]: c for c in r["conclusions"]}
+    done = con["training completed"]
+    assert done["status"] == "INCONCLUSIVE", done
+    assert "'qwen3_4b_final_plain': 8" in done["detail"] and "'qwen3_4b_final_plain': 60" in done["detail"], done
+    assert r["verdict"] == "NO SHIP VERDICT (experiment mode)"
+
+
+def test_experiment_mode_never_reuses_training_whose_provenance_does_not_match(env):
+    """A completed plain run left by an earlier experiment run is reused only when its own identity matches (GPU,
+    experiment code, the config it was trained with). Here its manifest and log name another config hash: the second
+    run's resume check FAILs (stale configuration), it is neither marked as prior evidence nor trained over, and the
+    training item is BLOCKED."""
+    from qwen_grpo.evidence import code_sha256
+    ident = {"environment": {"gpu": {"name": "NVIDIA Fake A6000"}}, "code_sha256": code_sha256(ROOT),
+             "config_sha256": "0" * 64}
+    stale = {"runs/qwen3_4b_final_plain/training/training.json": {**training_log(60), **ident},
+             "runs/qwen3_4b_final_plain/manifest.json": {"status": "completed", "config_sha256": "0" * 64},
+             "runs/qwen3_4b_final_plain_lr0/training/training.json": {**training_log(30), **ident},
+             "runs/qwen3_4b_final_plain_lr0/manifest.json": {"status": "completed", "config_sha256": "0" * 64}}
+    tmp, e = experiment_env(env, **{**reusable_scenario(), "H12__train_final_plain": {"files": stale}})
+    assert run(e, "--experiment").returncode == 1
+    n_train = sum("H12.train_final_plain" in a for a in dispatched(tmp))
+    run(e, "--experiment")
+    second = sorted((tmp / "results").iterdir())[-1]
+    Fs = items(json.loads((second / "state.json").read_text()), "F")
+    for name in ("qwen3_4b_final_plain", "qwen3_4b_final_plain_lr0"):
+        res = Fs[f"resume:{name}"]
+        assert res["status"] == "FAIL" and "stale configuration" in res["detail"], res
+        assert "refusing to resume or reuse it" in res["detail"]
+    F = Fs["H12.train_final_plain"]
+    assert F["status"] == "BLOCKED" and not F.get("prior_evidence"), F
+    assert sum("H12.train_final_plain" in a for a in dispatched(tmp)) == n_train  # not retrained silently
+    assert json.loads((second / "requirements.json").read_text())["reuse_banner"] is None
+
+
+def test_experiment_mode_reports_dflash_rollouts_in_a_plain_run_as_a_failure(env):
+    """T3 is judged from the training logs, not the config: a DFlash batch in the plain-L2L run is a FAIL."""
+    tmp, e = experiment_env(env, **{**PLAIN_TRAIN, "H12__train_final_plain": {"status": "PASS", "files": {
+        "runs/qwen3_4b_final_plain/training/training.json": training_log(60, dflash=True),
+        "runs/qwen3_4b_final_plain_lr0/training/training.json": training_log(30, record=False)}}})
+    run(e, "--experiment")
+    _, _, r = the_run(tmp)
+    R = reqs(r)
+    assert R["T3"]["status"] == "FAIL" and "DFlash in a plain-L2L run" in R["T3"]["detail"], R["T3"]
+    assert R["T3c"]["status"] == "INCONCLUSIVE" and "not recorded" in R["T3c"]["detail"], R["T3c"]
+
+
 def test_experiment_mode_a_failed_essential_correctness_check_blocks_training(env):
-    tmp, e = experiment_env(env, H02__lab_async_cuda={"status": "FAIL"})
+    tmp, e = experiment_env(env, H02__lab_async_cuda={"status": "FAIL"}, **PLAIN_TRAIN)
     p = run(e, "--experiment")
     d, state, r = the_run(tmp)
     assert p.returncode == 1
@@ -503,17 +608,74 @@ def test_experiment_mode_a_failed_essential_correctness_check_blocks_training(en
     assert r["verdict"] == "NO SHIP VERDICT (experiment mode)"
 
 
-def test_experiment_dry_run_shows_the_4b_plan_and_writes_nothing(env):
+def test_experiment_mode_a_failed_smoke_or_memory_blocks_training(env):
+    """D's gate is unchanged: the 8 GB watchdog stops a smoke run above the cap, and F does not start."""
+    tmp, e = experiment_env(env, H11__smoke={"sleep": 60}, **PLAIN_TRAIN)
+    e["FAKE_SMI_MIB"] = json.dumps({"*": 5000, "H11.smoke": 9000})  # 9000 MiB > 7629 MiB (8e9 B)
+    run(e, "--experiment")
+    _, state, r = the_run(tmp)
+    smoke = items(state, "D")["H11.smoke"]
+    assert smoke["status"] == "FAIL" and smoke["memory_status"] == "FAIL" and smoke["violation"]
+    assert state["stages"]["F"]["status"] == "BLOCKED" and "H11.smoke" in json.dumps(state["stages"]["F"])
+    assert not any("H12.train_final" in a for a in dispatched(tmp))
+    assert reqs(r)["M1"]["status"] == "FAIL"
+
+
+def test_experiment_mode_resumes_only_a_plain_run_of_the_same_configuration(env):
+    """F's crash-consistent resume works on the plain runs as in full mode; a plain run with another config (or a
+    DFlash-trained qwen3_4b_final) is never resumed into the experiment's runs."""
+    tmp, e = experiment_env(env, **PLAIN_TRAIN)
+    m = tmp / "runs" / "qwen3_4b_final_plain" / "manifest.json"
+    m.parent.mkdir(parents=True)
+    m.write_text(json.dumps({"config_sha256": "deadbeef" * 8, "status": "interrupted", "git_commit": "x"}))
+    other = tmp / "runs" / "qwen3_4b_final" / "manifest.json"  # a full-mode (DFlash) run: never touched here
+    other.parent.mkdir(parents=True)
+    other.write_text(json.dumps({"config_sha256": "abc", "status": "interrupted"}))
+    run(e, "--experiment")
+    _, state, _ = the_run(tmp)
+    F = items(state, "F")
+    assert F["resume:qwen3_4b_final_plain"]["status"] == "FAIL"
+    assert "stale configuration" in F["resume:qwen3_4b_final_plain"]["detail"]
+    assert F["H12.train_final_plain"]["status"] == "BLOCKED"
+    assert not any("qwen3_4b_final:" in k or k == "resume:qwen3_4b_final" for k in F)
+    assert json.loads(other.read_text()) == {"config_sha256": "abc", "status": "interrupted"}
+
+
+def test_experiment_gate_refuses_a_dflash_primary_config():
+    """Experiment mode has no stage E, so F refuses to start if its primary config enabled DFlash."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("assignment_gate_probe", ROOT / "scripts" / "assignment.py")
+    A = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(A)
+    A.install_experiment()
+    assert (A.STAGES, A.PRIMARY, A.CONTROL, A.TRAIN_ID, A.EVAL_ID) == (
+        "ADBFGH", "qwen3_4b_final_plain", "qwen3_4b_final_plain_lr0", "H12.train_final_plain", "H12.final_eval_plain")
+    assert "dflash_tests" not in A.ESSENTIAL_B and A.BUDGET_CONFIGS == ("configs/budget/qwen3-4b_final.yaml",)
+    assert A.final_uses_dflash() is False
+    A.final_uses_dflash = lambda: True
+    passing = {"stages": {s: {"attempts": [{"items": [
+        {"id": i, "status": "PASS", "memory_status": "PASS"} for i in ids]}]} for s, ids in A.STAGE_ENTRIES.items()}}
+    passing["stages"]["A"] = {"attempts": [{"facts": {"cuda": True, "bf16": True, "cuda_streams_ok": True,
+                                                       "ram_ok": True, "disk_ok": True}, "items": []}]}
+    why = A.gate("F", passing)
+    assert len(why) == 1 and "enables DFlash" in why[0], why
+
+
+def test_experiment_dry_run_shows_the_plain_4b_plan_and_writes_nothing(env):
     tmp, e = experiment_env(env)
     p = run(e, "--experiment", "--dry-run")
     assert p.returncode == 0, p.stderr[-2000:]
     out = p.stdout
-    assert "mode: experiment; stage order: A D B E F G H" in out and "8000000000 bytes" in out
-    assert "qwen3_4b_final: Qwen/Qwen3-4B bfloat16, 60 updates, B=5 G=6, 4 new tokens, lr 0.0002" in out
+    assert "mode: experiment; stage order: A D B F G H" in out and "8000000000 bytes" in out
+    assert "qwen3_4b_final_plain: Qwen/Qwen3-4B bfloat16, 60 updates, B=5 G=6, 4 new tokens, lr 0.0002" in out
+    assert "qwen3_4b_final_plain_lr0: Qwen/Qwen3-4B bfloat16, 30 updates, B=5 G=6, 4 new tokens, lr 0.0" in out
     assert "micro-batch 6, 1 iteration(s), eval every 20 on 128, pool 1024" in out
-    assert "z-lab/Qwen3-4B-DFlash-b16" in out and "qwen3_4b_final_lr0" in out
+    assert "disk streaming True, DFlash False (None), memory guard True" in out
+    assert "z-lab/Qwen3-4B-DFlash-b16" not in out
     assert "unit_tests_cpu" not in out and "tests/test_grpo.py" not in out and "H05.real_0.6b_bf16" not in out
-    assert "H12.final_eval" in out and "H10.dflash_bench" in out and "H11.smoke" in out
+    assert "tests/test_dflash" not in out and "H10." not in out and "E dflash" not in out
+    assert "H12.train_final_plain" in out and "H12.final_eval_plain" in out and "H11.smoke" in out
+    assert "budget predictions configs/budget/qwen3-4b_final.yaml ->" in out
     assert not list((tmp / "results").iterdir()) and all("--dry-run" in a or a[0] == "plan" for a in dispatched(tmp))
 
 
@@ -538,7 +700,10 @@ def reusable_scenario(**over):
                                                           True)},
             "H12__train_final": {"files": {**identity_files("qwen3_4b_final", c + "qwen3_4b_final.yaml", 8, True),
                                            **identity_files("qwen3_4b_final_lr0", c + "qwen3_4b_final_lr0.yaml", 3,
-                                                            True)}}, **over}
+                                                            True)}},
+            "H12__train_final_plain": {"files": {
+                **identity_files("qwen3_4b_final_plain", c + "qwen3_4b_final_plain.yaml", 60),
+                **identity_files("qwen3_4b_final_plain_lr0", c + "qwen3_4b_final_plain_lr0.yaml", 30)}}, **over}
 
 
 def test_modes_resume_separately_and_a_full_run_never_reuses_experiment_training(env):
@@ -565,11 +730,11 @@ def test_modes_resume_separately_and_a_full_run_never_reuses_experiment_training
 def test_reused_training_is_announced_and_fresh_moves_it_aside_and_retrains(env):
     tmp, e = experiment_env(env, **reusable_scenario())
     assert run(e, "--experiment").returncode == 1
-    n_train = sum("H12.train_final" in a for a in dispatched(tmp))
+    n_train = sum("H12.train_final_plain" in a for a in dispatched(tmp))
     p = run(e, "--experiment")  # a second experiment run: the completed runs pass the provenance check
     second = sorted((tmp / "results").iterdir())[-1]
     r = json.loads((second / "requirements.json").read_text())
-    F = items(json.loads((second / "state.json").read_text()), "F")["H12.train_final"]
+    F = items(json.loads((second / "state.json").read_text()), "F")["H12.train_final_plain"]
     assert F["prior_evidence"] is True, F
     assert r["reuse_banner"] == "REUSED PRIOR EVIDENCE — NO NEW TRAINING EXECUTED"
     assert "REUSED PRIOR EVIDENCE — NO NEW TRAINING EXECUTED" in (second / "reports" / "summary.md").read_text()
@@ -578,10 +743,10 @@ def test_reused_training_is_announced_and_fresh_moves_it_aside_and_retrains(env)
     third = sorted((tmp / "results").iterdir())[-1]
     man = json.loads((third / "manifest.json").read_text())
     moved = {m["from"] for m in man["archived_by_fresh"]}
-    assert any(x.endswith("runs/qwen3_4b_final") for x in moved) and any(x.endswith("t12_dflash_bench.json") for x in moved)
-    assert all((tmp / "runs" / n).exists() for n in ("qwen3_4b_final", "qwen3_4b_smoke"))  # trained again
-    assert len(list((tmp / "runs").glob("qwen3_4b_final.archived-*"))) == 1  # nothing deleted
-    assert sum("H12.train_final" in a for a in dispatched(tmp)) == n_train + 2
-    F = items(json.loads((third / "state.json").read_text()), "F")["H12.train_final"]
+    assert any(x.endswith("runs/qwen3_4b_final_plain") for x in moved) and not any("dflash" in x for x in moved)
+    assert all((tmp / "runs" / n).exists() for n in ("qwen3_4b_final_plain", "qwen3_4b_smoke"))  # trained again
+    assert len(list((tmp / "runs").glob("qwen3_4b_final_plain.archived-*"))) == 1  # nothing deleted
+    assert sum("H12.train_final_plain" in a for a in dispatched(tmp)) == n_train + 2
+    F = items(json.loads((third / "state.json").read_text()), "F")["H12.train_final_plain"]
     assert F["status"] == "PASS" and not F["prior_evidence"]
     assert json.loads((third / "requirements.json").read_text())["reuse_banner"] is None

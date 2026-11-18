@@ -261,3 +261,43 @@ def test_float32_appears_only_in_configs_labelled_as_diagnostics():
             continue
         assert (config.load(p).model.dtype == "float32") == p.name.startswith("kaggle_06b_fp32_"), p.name
     assert config.is_abstract(EXP / "kaggle_06b_fp32_base.yaml")
+
+
+def test_the_experiment_mode_plain_runs_are_the_final_runs_without_dflash():
+    """scripts/run_assignment.sh --experiment trains qwen3_4b_final_plain(_lr0).yaml: the full mode's final run and its
+    LR=0 control with plain L2L rollouts. Nothing else differs (hyperparameters, data, LoRA, async L2L, pinned store,
+    checkpointing, streaming, memory guard), the run names differ (no checkpoint is shared with a DFlash run), and the
+    control inherits the plain rollout path. The plain-L2L smoke has the same training tensor shapes."""
+    final, lr0 = load("experiments/qwen3_4b_final.yaml"), load("experiments/qwen3_4b_final_lr0.yaml")
+    plain, plain0 = load("experiments/qwen3_4b_final_plain.yaml"), load("experiments/qwen3_4b_final_plain_lr0.yaml")
+    smoke = load("experiments/qwen3_4b_smoke.yaml")
+    assert set(diff(final, plain)) == {"run.name", "dflash.enabled", "dflash.draft_model"}
+    assert set(diff(lr0, plain0)) == {"run.name", "dflash.enabled", "dflash.draft_model"}
+    assert set(diff(plain, plain0)) == {"run.name", "training.learning_rate", "training.max_steps"}
+    assert (plain.run.name, plain0.run.name) == ("qwen3_4b_final_plain", "qwen3_4b_final_plain_lr0")
+    assert len({plain.run.name, plain0.run.name, final.run.name, lr0.run.name}) == 4
+    for c in (plain, plain0):
+        assert not c.dflash.enabled and c.dflash.draft_model is None
+        assert (c.model.name, c.model.dtype, c.execution.backend, c.execution.weight_storage) == \
+            ("Qwen/Qwen3-4B", "bfloat16", "l2l_async", "pinned")
+        assert c.execution.prefetch_depth >= 1 and c.execution.activation_checkpointing
+        assert c.streaming.enabled and c.memory.guard
+    t = plain.training
+    assert (t.batch_size, t.group_size, t.micro_batch_size, t.learning_rate, t.max_steps) == (5, 6, 6, 2e-4, 60)
+    assert (plain0.training.learning_rate, plain0.training.max_steps) == (0.0, 30)
+    assert plain.dflash == plain0.dflash == smoke.dflash
+    assert smoke.execution == plain.execution and smoke.lora == plain.lora and smoke.model == plain.model
+    for k in ("batch_size", "group_size", "micro_batch_size", "max_new_tokens", "num_iterations"):
+        assert getattr(smoke.training, k) == getattr(plain.training, k), k
+
+
+def test_plain_rollouts_use_the_streamed_generator_and_load_no_drafter(monkeypatch):
+    """backend.make_backend builds DFlashGenerator only under dflash.enabled; the plain configs never import or load
+    the drafter."""
+    import inspect
+    from qwen_grpo.execution import backend
+    src = inspect.getsource(backend.make_backend)
+    assert "if cfg.dflash.enabled:" in src and "DFlashDrafter.from_pretrained" in src
+    assert "StreamedGenerator(" in inspect.getsource(backend)
+    for rel in ("experiments/qwen3_4b_final_plain.yaml", "experiments/qwen3_4b_final_plain_lr0.yaml"):
+        assert load(rel).dflash.enabled is False

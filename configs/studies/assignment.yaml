@@ -493,3 +493,36 @@ entries:
         - the merged model agrees with the adapter-attached one
         - the invalid-response rate does not rise
         - the prediction distribution does not collapse to one label
+  # Experiment mode only (scripts/assignment.py EXPERIMENT_STAGE_ENTRIES; full mode keeps H12.train_final and
+  # H12.final_eval): the same primary run and LR=0 control with plain L2L rollouts (qwen3_4b_final_plain*.yaml: dflash
+  # disabled, nothing else changed), under their own run names, and their held-out evaluation. DFlash is not loaded.
+  - id: H12.train_final_plain
+    name: h12_train_final_plain
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true
+    opt_in: true                                 # never selected by `run --hypothesis H12`
+    protocol: experiment                         # the --experiment protocol's own F entry (check_no_opt_in)
+    prerequisites: {runs: [qwen3_4b_smoke]}   # the plain-L2L smoke at the same batch shape
+    configs: [configs/experiments/qwen3_4b_final_plain.yaml, configs/experiments/qwen3_4b_final_plain_lr0.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final_plain.yaml], creates: "run:qwen3_4b_final_plain"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_4b_final_plain_lr0.yaml], creates: "run:qwen3_4b_final_plain_lr0"}
+    judge: exit_codes
+  - id: H12.final_eval_plain
+    name: t13_final_eval_qwen3_4b_final_plain
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, linux_native]
+    min_vram_gib: 8
+    supplementary: true                          # judged by the assignment report (V1-V4), not by final_report.py R14/R15,
+                                                 # which reads the full-mode result t13_final_eval_qwen3_4b_final
+    opt_in: true
+    protocol: experiment                         # the --experiment protocol's own G entry
+    prerequisites: {runs: [qwen3_4b_final_plain, qwen3_4b_final_plain_lr0]}
+    steps:
+      - argv: [scripts/final_eval.py, --run, qwen3_4b_final_plain, --control, qwen3_4b_final_plain_lr0, --device, cuda]
+        creates: research/l2l/experiments/t13_final_eval_qwen3_4b_final_plain.json
+    judge: exit_codes

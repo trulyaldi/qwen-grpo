@@ -13,8 +13,9 @@
 #   moves existing fixed-name training runs / Qwen3-4B results aside (<path>.archived-<UTC>, never deleted).
 #
 # Full: A preflight, B correctness, C Qwen3-0.6B reference, D Qwen3-4B memory, E DFlash, F training, G evaluation,
-# H audit. Experiment: A D B E F G H with a reduced B and no C (scripts/assignment.py). Then the report is always
-# written, also after a failure or Ctrl-C. An experiment run never gets SHIP and cannot satisfy the qualification.
+# H audit. Experiment: A D B F G H without DFlash (no C, no E; a reduced B; plain-L2L final run and LR=0 control,
+# qwen3_4b_final_plain*.yaml; scripts/assignment.py). Then the report is always written, also after a failure or
+# Ctrl-C. An experiment run never gets SHIP and cannot satisfy the qualification.
 # Exit: 0 = verdict SHIP; 1 = report written, not SHIP (always for --experiment); 2 = usage or resume refused;
 # 130 = interrupted. Never provisions or destroys machines, never commits, pushes or uploads.
 set -uo pipefail

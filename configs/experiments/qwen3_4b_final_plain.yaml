@@ -1,0 +1,16 @@
+# Experiment mode (bash scripts/run_assignment.sh --experiment): the PRIMARY Qwen3-4B GRPO + LoRA run of
+# qwen3_4b_final.yaml with plain L2L rollouts. Every hyperparameter, the data, seed, LoRA, async L2L with CUDA prefetch,
+# pinned store, checkpointed backward, disk streaming, memory guard and the 8 GB cap are inherited unchanged; only the
+# run name and the dflash section differ. Rollouts come from the streamed L2L generator (StreamedGenerator), and no
+# drafter is loaded. Its own run name keeps its checkpoints apart from any DFlash-trained qwen3_4b_final run: the two
+# are never resumed from or compared with each other. Full qualification mode still trains qwen3_4b_final.yaml.
+# Plain-L2L baseline at this batch shape: qwen3_4b_smoke.yaml (H11.smoke). Budget (theoretical):
+# configs/budget/qwen3-4b_final.yaml -> results/budget/predictions/qwen3-4b-final_8gb.*
+extends: qwen3_4b_final.yaml
+
+run:
+  name: qwen3_4b_final_plain
+
+dflash:
+  enabled: false
+  draft_model: null

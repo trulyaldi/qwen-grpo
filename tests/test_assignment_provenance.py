@@ -285,3 +285,30 @@ def test_an_interrupted_non_streaming_run_is_not_resumed(monkeypatch, tmp_path):
     items = a.resume_runs(state, entry, None, tmp_path / "attempt")
     assert not marker.exists(), "run.py --resume latest was started for a run without crash-consistent checkpoints"
     assert items and all(i["status"] == "BLOCKED" and "not crash-consistent" in i["detail"] for i in items)
+
+
+def test_budget_no_dflash_estimate_fetches_no_drafter_metadata(tmp_path, monkeypatch):
+    """Experiment mode's stage A recomputes configs/budget/qwen3-4b_final.yaml with --no-dflash-estimate: the optional
+    drafter estimate is dropped (no drafter metadata is fetched), the override is recorded, and a DFlash-enabled
+    budget refuses the flag."""
+    spec = importlib.util.spec_from_file_location("budget_cli", ROOT / "scripts" / "budget.py")
+    B = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(B)
+    fetched, seen = [], {}
+    monkeypatch.setattr(B.architecture, "load", lambda model, targets: ("arch", None))
+    monkeypatch.setattr(B.architecture, "checkpoint_tensors", lambda *a, **k: fetched.append(a) or ({}, None, None))
+    monkeypatch.setattr(B.calculator, "build_report", lambda cfg, arch, db, da: seen.update(cfg=cfg, db=db, da=da)
+                        or {"run_name": cfg["run_name"]})
+    monkeypatch.setattr(B.calculator, "render_markdown", lambda rep: "md")
+    monkeypatch.setattr(B.calculator, "write_prediction", lambda rep, md, out: seen.update(rep=rep) or [])
+    monkeypatch.setattr(sys, "argv", ["budget.py", "--config", str(ROOT / "configs/budget/qwen3-4b_final.yaml"),
+                                      "--out-dir", str(tmp_path), "--no-dflash-estimate"])
+    B.main()
+    assert fetched == [] and seen["db"] is None and seen["da"] is None
+    assert seen["cfg"]["dflash"] == {**seen["cfg"]["dflash"], "enabled": False, "estimate": False}
+    assert seen["rep"]["provenance"]["overrides"] == {"dflash.estimate": False}
+    assert yaml.safe_load((ROOT / "configs/budget/qwen3-4b_final.yaml").read_text())["dflash"]["estimate"] is True
+    monkeypatch.setattr(sys, "argv", ["budget.py", "--config", str(ROOT / "configs/budget/qwen3-4b_final_dflash.yaml"),
+                                      "--out-dir", str(tmp_path), "--no-dflash-estimate"])
+    with pytest.raises(SystemExit, match="enables DFlash"):
+        B.main()

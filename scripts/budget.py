@@ -46,15 +46,26 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", required=True)
     ap.add_argument("--out-dir", default=ROOT / "results/budget/predictions")
+    ap.add_argument("--no-dflash-estimate", action="store_true",
+                    help="drop the optional DFlash drafter estimate of a plain (dflash.enabled false) configuration: no "
+                         "drafter metadata is fetched; recorded in the prediction's provenance (scripts/assignment.py "
+                         "experiment mode)")
     args = ap.parse_args()
     cfg = calculator.load_config(args.config)
+    overrides = {}
+    if args.no_dflash_estimate:
+        if cfg["dflash"]["enabled"]:
+            raise SystemExit(f"--no-dflash-estimate: {args.config} enables DFlash, its drafter is part of the run")
+        if cfg["dflash"]["estimate"]:
+            cfg["dflash"]["estimate"], overrides["dflash.estimate"] = False, False
     arch, _ = architecture.load(cfg["model"]["id"], cfg["lora"]["targets"])
     report = calculator.build_report(cfg, arch, draft_bytes(cfg), draft_architecture(cfg))
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     report["provenance"] = {"created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                             "config": str(args.config),
                             "config_sha256": hashlib.sha256(Path(args.config).read_bytes()).hexdigest(),
-                            "git_commit": commit or None, "kind": "theoretical prediction (no measurement)"}
+                            "git_commit": commit or None, "kind": "theoretical prediction (no measurement)",
+                            **({"overrides": overrides} if overrides else {})}
     md = calculator.render_markdown(report)
     print(md)
     for p in calculator.write_prediction(report, md, args.out_dir):

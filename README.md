@@ -132,6 +132,15 @@ Stages:
   `python scripts/run.py train --config configs/experiments/qwen3_4b_final_ext210.yaml --continue-from runs/qwen3_4b_final/checkpoints/step60`.
 - **H Soup checks:** run if Soup is installed, else NOT_TESTED.
 
+`bash scripts/run_assignment.sh --experiment` (combines with `--dry-run`, `--resume`, `--status`, `--fresh`) collects
+Qwen3-4B training evidence without DFlash, in the order **A D B F G H**. Stages C and E are not run, and no DFlash
+benchmark, smoke, drift study, test or drafter is used. B is reduced to the async-L2L lab cases, the two unsafe-reuse
+fault controls, and tiny resume and merge. F trains `qwen3_4b_final_plain.yaml` and its LR=0 control
+`qwen3_4b_final_plain_lr0.yaml`. These are the final configs with `dflash` disabled and nothing else changed, under
+their own run names. G evaluates them on the held-out split. The 8 GB watchdog, D's memory gate and the essential B
+gate are unchanged; only H02.fault_unsafe_reuse is waived, as a recorded limitation. The report shows the DFlash
+requirements as NOT_TESTED (intentionally excluded) and never gives SHIP. Full qualification needs the default mode.
+
 The report is always written, also after a failure or Ctrl-C. Every item runs in its own process group under 200 ms
 nvidia-smi telemetry (raw CSV, `qwen_grpo/telemetry.py`). On Qwen3-4B items a watchdog stops the workload at the first
 sample above **8 GB = 8e9 bytes**, the conservative reading of the cap (`configs/studies/assignment.yaml`
