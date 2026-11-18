@@ -167,6 +167,15 @@ ENTRY_NAMES = {"H11.profile": "t11_profile_qwen3_4b_async", "H10.dflash_bench": 
                "H08.resume_tiny_cpu": "t09_resume_tiny_cpu", "H08.resume_qwen3_0.6b": "t09_resume_qwen_stream"}
 
 
+# Study entries dropped from the default protocol by design (scripts/assignment.py STAGE_ENTRIES): never run, reported
+# NOT_TESTED with the reason, never FAIL or BLOCKED. Their historical evidence files are kept.
+_H03_WHY = ("chunked output head; execution.vocab_chunk_size is refused for training, so it is off the final path")
+_H07_WHY = ("bounded residency; the copy-only evidence exists, the execution-level case is not on the final path")
+DROPPED = {i: "dropped from the protocol by design: " + r for i, r in {
+    "H03.lab_v2_cpu": _H03_WHY, "H03.fault_raw_logit": _H03_WHY,
+    "H07.store_depth_copy_only": _H07_WHY, "H07.depth_residency_execution": _H07_WHY}.items()}
+
+
 def status_of(it):
     return it["status"] if it else "NOT_TESTED"
 
@@ -179,6 +188,8 @@ def missing(it):
 
 
 def why(it, item_id):
+    if not it and item_id in DROPPED:
+        return f"{item_id}: NOT_TESTED - {DROPPED[item_id]}"
     if not it:
         return f"{item_id}: not run in this assignment run"
     return f"{item_id}: {it['status']} - {str(it.get('detail'))[:240]}"
@@ -697,8 +708,10 @@ def requirements(run, m):
     else:
         add("L6", "GRPO step split between generation and training, explained", False, "NOT_TESTED",
             "no Qwen3-4B training timings in this run")
-    lab("L7", "async prefetch overlap and bounded GPU weight residency (performance)", False,
-        [("C", "H06.prefetch_timing"), ("B", "H07.depth_residency_execution")])
+    # bounded residency (H07) is dropped by design: L7 is judged on the prefetch overlap alone, H07 listed NOT_TESTED
+    st, d, ev = items_status([("C", "H06.prefetch_timing")])
+    add("L7", "async prefetch overlap (performance); bounded GPU weight residency dropped from the protocol", False, st,
+        d + "; " + why(None, "H07.depth_residency_execution"), ev)
 
     # streaming
     st, d, ev = items_status([("B", "H08.resume_tiny_cpu"), ("C", "H08.resume_qwen3_0.6b")])
@@ -1024,9 +1037,13 @@ def silent_failures_md(run, reqs):
     rows = []
     for stage, failure, detection, fault, occurred, tooling in fr.AUDIT:
         faults, soup_check, soup_ids = AUDIT_EXTRA.get(stage, ([], "none", []))
-        measured = "; ".join(f"{f}: {status_of(run.item('B', f))}" for f in faults) or "no fault control in this run"
+        dropped = bool(faults) and all(f in DROPPED and not run.item("B", f) for f in faults)
+        measured = "; ".join(f"{f}: {status_of(run.item('B', f))}" + (f" ({DROPPED[f]})" if f in DROPPED and not
+                                                                       run.item("B", f) else "")
+                             for f in faults) or "no fault control in this run"
         soup_res = "; ".join(f"{k}: {status_of(soup.get(k))}" for k in soup_ids) or "n/a"
         rows.append([stage, failure, detection, fault, measured, soup_check, soup_res,
+                     "NOT_TESTED (dropped from the protocol by design)" if dropped else
                      "see limitations" if "no fault control" in measured else "detected" if "FAIL" not in measured else "NOT detected"])
     sf = run.item("B", "silent_failure_tests")
     md = ["# Silent-failure audit", "",
@@ -1325,7 +1342,7 @@ def main(run_dir):
                 c["lab"].get("gpu") or c["lab"].get("device"), c["lab"]["status"]]
                for c in m["correctness"] if c.get("lab") for q, v in c["lab"]["quantities"].items()])
     perf = []
-    for name in ("qwen3_0.6b_resident", "qwen3_0.6b_l2l_sync", "qwen3_0.6b_l2l_async"):
+    for name in ("qwen3_0.6b_resident_short", "qwen3_0.6b_l2l_sync_short", "qwen3_0.6b_l2l_async_short"):
         lg = run.run_log(name, "C", "H05.real_0.6b_bf16")
         if lg:
             perf.append([name, lg.get("train_seconds"), median([t.get("step_s") for t in lg.get("timings", [])]),

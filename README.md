@@ -87,6 +87,7 @@ configs/qwen.yaml                 the reference run runs/qwen (= the 0.6B profil
 | purpose | config | precision |
 |---|---|---|
 | 0.6B resident / L2L sync / L2L async (100 steps) | `qwen3_0.6b_resident.yaml`, `qwen3_0.6b_l2l_sync.yaml`, `qwen3_0.6b_l2l_async.yaml` | bf16 |
+| the same trio, 10 steps (assignment stage C, `H05.real_0.6b_bf16`) | `qwen3_0.6b_{resident,l2l_sync,l2l_async}_short.yaml` | bf16 |
 | 0.6B L2L async + disk streaming (10 steps) | `qwen3_0.6b_streaming.yaml` | bf16 |
 | 0.6B on a Kaggle T4 (8 steps), the three backends + streaming | `kaggle_06b_fp32_{resident,l2l_sync,l2l_async,streaming}.yaml` | **float32 diagnostic** |
 | 4B L2L async (H11) / sync / resident reference | `qwen3_4b_l2l.yaml`, `qwen3_4b_l2l_sync.yaml`, `qwen3_4b_resident.yaml` | bf16 |
@@ -215,11 +216,11 @@ overwritten, and `hypotheses.yaml` statuses change only by hand, citing evidence
 |---|---|---|---|---|
 | H01 | L2L forward = resident | SUPPORTED | tiny models, CPU + CUDA | async on CUDA; CUDA evidence predates later executor changes |
 | H02 | checkpointed backward = resident LoRA gradients | SUPPORTED | tiny, CPU + CUDA; one real 0.6B step bitwise | same |
-| H03 | memory-efficient output head | SUPPORTED (v2) | tiny, CPU only; v1 stays NOT_SUPPORTED (power-rule design flaw, fixed in 5300146) | GPU; the chunked head is not used in training |
+| H03 | memory-efficient output head | SUPPORTED (v2) | tiny, CPU only; v1 stays NOT_SUPPORTED (power-rule design flaw, fixed in 5300146) | GPU; the chunked head is not used in training. Dropped from the default assignment protocol (off the final path; report: NOT_TESTED by design) |
 | H04 | streamed generation = resident | SUPPORTED | tiny, CPU + CUDA; real 0.6B rollouts equal | async on CUDA |
 | H05 | complete update = resident | SUPPORTED | tiny CPU + CUDA; two 0.6B training runs (10 and 100 steps) bitwise identical on CUDA | async; current code on a bf16 GPU |
 | H06 | async prefetch faster, results unchanged | untested | — | Ampere GPU |
-| H07 | bounded GPU weight residency | SUPPORTED (Ticket 02 copy-only statement) | allocator statistics, copy-only | execution-level case `t11_depth_residency` untested |
+| H07 | bounded GPU weight residency | SUPPORTED (Ticket 02 copy-only statement) | allocator statistics, copy-only | execution-level case `t11_depth_residency` untested. Dropped from the default assignment protocol (not on the final path; report: NOT_TESTED by design) |
 | H08 | crash + resume = uninterrupted | SUPPORTED | tiny, CPU, six crash points | real 0.6B run |
 | H09 | streamed merge preserves behaviour | untested | tiny fp32/bf16 variants PASS | real 0.6B variant (criterion needs all) |
 | H10 | DFlash faster and on-policy | untested | CPU exactness tests only | Qwen3-4B on a GPU |

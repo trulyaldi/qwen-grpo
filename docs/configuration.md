@@ -35,6 +35,7 @@ LoRA, GRPO hyperparameters, seeds, prompt, reward and evaluation are identical; 
 | `qwen3_0.6b_resident.yaml` | 0.6B | resident | bf16 | ≥ 4 GB, native bf16 | reference (100 steps) |
 | `qwen3_0.6b_l2l_sync.yaml` | 0.6B | l2l_sync, pinned, 2 buffers | bf16 | same | L2L = resident? |
 | `qwen3_0.6b_l2l_async.yaml` | 0.6B | l2l_async, prefetch 1 | bf16 | same | prefetching |
+| `qwen3_0.6b_{resident,l2l_sync,l2l_async}_short.yaml` | 0.6B | the three | bf16 | same | the same comparison, 10 steps (assignment stage C, `H05.real_0.6b_bf16`) |
 | `kaggle_06b_fp32_{resident,l2l_sync,l2l_async}.yaml` | 0.6B | the three | **float32 diagnostic** | Kaggle T4 (no bf16) | the same comparison, 8 steps |
 | `qwen3_4b_resident.yaml` | 4B | resident, guard 16 GiB | bf16 | ≥ 16 GB (est. 9.5 GiB) | 4B reference |
 | `qwen3_4b_l2l_sync.yaml` | 4B | l2l_sync, guard 8 GiB | bf16 | 8 GiB budget | 4B L2L, no overlap |

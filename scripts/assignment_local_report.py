@@ -27,15 +27,13 @@ MIB, GIB = 2**20, 2**30
 TINY_EQUIVALENCE = {  # quantity checked -> lab entries (sync on CPU / CUDA, async on CUDA)
     "forward logits": ["H01.lab_sync", "H01.lab_async_cuda"],
     "gradients": ["H02.lab_sync_cpu", "H02.lab_sync_cuda", "H02.lab_async_cuda"],
-    "log-probs / output head": ["H03.lab_v2_cpu"],
     "greedy and sampled generation": ["H04.lab_sync_cpu", "H04.lab_sync_cuda", "H04.lab_async_cuda"],
     "GRPO update (adapter after the step)": ["H05.lab_sync_cpu", "H05.lab_sync_cuda", "H05.lab_async_cuda"],
 }
 FAULTS = {"H01.fault_wrong_layer": "a wrong layer's weights streamed", "H01.fault_unsafe_reuse": "a GPU buffer reused "
           "before its consumer finished (async)", "H02.fault_detach_boundary": "a detached checkpoint boundary (lost "
-          "gradient)", "H02.fault_unsafe_reuse": "unsafe buffer reuse in backward", "H03.fault_raw_logit": "raw logits "
-          "instead of log-softmax", "H04.fault_stale_position": "stale position ids in decoding",
-          "H04.fault_no_padding_mask": "missing padding mask", "H05.fault_advantage": "a corrupted advantage"}
+          "gradient)", "H02.fault_unsafe_reuse": "unsafe buffer reuse in backward", "H04.fault_stale_position": "stale "
+          "position ids in decoding", "H04.fault_no_padding_mask": "missing padding mask", "H05.fault_advantage": "a corrupted advantage"}
 RUNS = {"local_qwen3_0.6b_resident": ("C", "H05.local_runs_0.6b", "resident reference (10 steps)"),
         "local_qwen3_0.6b_l2l_async": ("C", "H05.local_runs_0.6b", "async L2L, in-memory (10 steps)"),
         "local_qwen3_0.6b_smoke": ("F", "H12.local_smoke_0.6b", "integration smoke (2 steps, streaming)"),
@@ -110,13 +108,14 @@ def requirements(run, m):
     for r in rows:
         k = r[0]
         worst_dev[k] = max(worst_dev.get(k, (0.0, 0.0)), (r[4], r[5]))
-    add("L5", "resident vs L2L (sync and async) on tiny models: forward logits, gradients, log-probs, generation, GRPO "
-        "update", True, R.worst(statuses),
-        "; ".join(f"{k}: max |dev| {R.fmt(v[0], '', 3)} (bound {R.fmt(v[1], '', 3)})" for k, v in worst_dev.items())
-        or "no lab result", ["comparisons/equivalence.csv"])
+    add("L5", "resident vs L2L (sync and async) on tiny models: forward logits, gradients, generation, GRPO update",
+        True, R.worst(statuses),
+        ("; ".join(f"{k}: max |dev| {R.fmt(v[0], '', 3)} (bound {R.fmt(v[1], '', 3)})" for k, v in worst_dev.items())
+         or "no lab result") + "; " + R.why(None, "H03.lab_v2_cpu"), ["comparisons/equivalence.csv"])
     fs = {f: st("B", f) for f in FAULTS}
     add("L6", "silent failures are caught: every injected fault is detected", True, R.worst(fs.values()),
-        "; ".join(f"{FAULTS[k]}: {'detected' if v == 'PASS' else v}" for k, v in fs.items()))
+        "; ".join(f"{FAULTS[k]}: {'detected' if v == 'PASS' else v}" for k, v in fs.items())
+        + "; " + R.why(None, "H03.fault_raw_logit"))
 
     # Qwen3-0.6B resident vs async L2L
     i = run.item("C", "H05.local_real_step_0.6b")

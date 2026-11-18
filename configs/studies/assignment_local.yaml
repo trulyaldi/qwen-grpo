@@ -29,10 +29,10 @@ include:
   study: assignment.yaml
   entries: [H01.lab_sync, H01.fault_wrong_layer, H01.lab_async_cuda, H01.fault_unsafe_reuse,
             H02.lab_sync_cpu, H02.lab_sync_cuda, H02.fault_detach_boundary, H02.lab_async_cuda, H02.fault_unsafe_reuse,
-            H03.lab_v2_cpu, H03.fault_raw_logit, H04.lab_sync_cpu, H04.lab_sync_cuda, H04.fault_stale_position,
-            H04.fault_no_padding_mask, H04.lab_async_cuda, H05.lab_sync_cpu, H05.lab_sync_cuda, H05.fault_advantage,
-            H05.lab_async_cuda, H07.store_depth_copy_only, H07.depth_residency_execution, H08.resume_tiny_cpu,
-            H09.merge_tiny_cpu, H06.prefetch_timing]
+            H04.lab_sync_cpu, H04.lab_sync_cuda, H04.fault_stale_position, H04.fault_no_padding_mask,
+            H04.lab_async_cuda, H05.lab_sync_cpu, H05.lab_sync_cuda, H05.fault_advantage, H05.lab_async_cuda,
+            H08.resume_tiny_cpu, H09.merge_tiny_cpu, H06.prefetch_timing]
+# H03 and H07 are dropped from the default protocol by design (scripts/assignment.py STAGE_ENTRIES comment)
 
 entries:
   # ------------------------------------------------------------- C: Qwen3-0.6B resident vs asynchronous L2L

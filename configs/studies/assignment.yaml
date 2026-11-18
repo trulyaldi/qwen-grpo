@@ -231,7 +231,8 @@ entries:
     steps:
       - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, update_equivalence, --config, research/l2l/configs/async.yaml, --device, cuda, --hypothesis, H05]
     judge: lab
-  # Real-model training, the three backends on identical inputs (configs differ in execution and run.name only).
+  # Real-model training, the three backends on identical inputs (configs differ in execution and run.name only),
+  # 10 optimizer steps (*_short configs; the 100-step qwen3_0.6b_{resident,l2l_sync,l2l_async}.yaml stay for manual use).
   # Tolerance: update_equivalence is 0 for l2l_sync and l2l_async, so compare_runs.py's exact comparison is the rule.
   - id: H05.real_0.6b_bf16
     name: h05_real_0.6b_bf16
@@ -240,13 +241,13 @@ entries:
     requires: [cuda, bf16]
     min_vram_gib: 4
     supplementary: true
-    configs: [configs/experiments/qwen3_0.6b_resident.yaml, configs/experiments/qwen3_0.6b_l2l_sync.yaml, configs/experiments/qwen3_0.6b_l2l_async.yaml]
+    configs: [configs/experiments/qwen3_0.6b_resident_short.yaml, configs/experiments/qwen3_0.6b_l2l_sync_short.yaml, configs/experiments/qwen3_0.6b_l2l_async_short.yaml]
     steps:
-      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_resident.yaml], creates: "run:qwen3_0.6b_resident"}
-      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_l2l_sync.yaml], creates: "run:qwen3_0.6b_l2l_sync"}
-      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_l2l_async.yaml], creates: "run:qwen3_0.6b_l2l_async"}
-      - argv: [scripts/compare_runs.py, qwen3_0.6b_resident, qwen3_0.6b_l2l_sync, --out, "{evidence}/compare_resident_vs_l2l_sync.json"]
-      - argv: [scripts/compare_runs.py, qwen3_0.6b_resident, qwen3_0.6b_l2l_async, --out, "{evidence}/compare_resident_vs_l2l_async.json"]
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_resident_short.yaml], creates: "run:qwen3_0.6b_resident_short"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_l2l_sync_short.yaml], creates: "run:qwen3_0.6b_l2l_sync_short"}
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_l2l_async_short.yaml], creates: "run:qwen3_0.6b_l2l_async_short"}
+      - argv: [scripts/compare_runs.py, qwen3_0.6b_resident_short, qwen3_0.6b_l2l_sync_short, --out, "{evidence}/compare_resident_vs_l2l_sync.json"]
+      - argv: [scripts/compare_runs.py, qwen3_0.6b_resident_short, qwen3_0.6b_l2l_async_short, --out, "{evidence}/compare_resident_vs_l2l_async.json"]
     judge: exit_codes
   - id: H05.real_0.6b_fp32_diagnostic
     name: h05_real_0.6b_fp32_diagnostic

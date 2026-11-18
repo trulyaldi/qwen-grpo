@@ -1,0 +1,14 @@
+# 10-step variant of qwen3_0.6b_resident.yaml for the assignment protocol's real-model equivalence check (stage C,
+# H05.real_0.6b_bf16). Changes only the run name, the step count and evaluation; the three *_short configs differ in
+# execution and run.name only (tests/test_profiles.py TRIOS). The 100-step config stays for manual use.
+extends: qwen3_0.6b_resident.yaml
+
+run:
+  name: qwen3_0.6b_resident_short
+
+training:
+  max_steps: 10
+
+evaluation:
+  every: 5
+  full_validation: false

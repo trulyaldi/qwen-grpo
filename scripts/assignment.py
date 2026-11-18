@@ -93,13 +93,16 @@ DISPATCH_MAP = {"PASS": "PASS", "FAIL": "FAIL", "BLOCKED": "BLOCKED", "NOT TESTE
 
 # Which study entries each stage runs, in order. B and C produce fresh evidence on this host (--again when an older
 # result exists); D-G judge fixed-name Qwen3-4B results and training runs, which cannot be renamed.
+# Dropped from the default protocol by design (the study entries stay for manual runs; the report shows them as
+# NOT_TESTED with this reason, scripts/assignment_report.py DROPPED): H03 (chunked output head; execution.vocab_chunk_size
+# is refused for training, so it is off the final path) and H07 (bounded residency; copy-only evidence exists, the
+# execution-level case is not on the final path).
 STAGE_ENTRIES = {
     "B": ["H01.lab_sync", "H01.fault_wrong_layer", "H01.lab_async_cuda", "H01.fault_unsafe_reuse",
           "H02.lab_sync_cpu", "H02.lab_sync_cuda", "H02.fault_detach_boundary", "H02.lab_async_cuda",
-          "H02.fault_unsafe_reuse", "H03.lab_v2_cpu", "H03.fault_raw_logit", "H04.lab_sync_cpu", "H04.lab_sync_cuda",
-          "H04.fault_stale_position", "H04.fault_no_padding_mask", "H04.lab_async_cuda", "H05.lab_sync_cpu",
-          "H05.lab_sync_cuda", "H05.fault_advantage", "H05.lab_async_cuda", "H07.store_depth_copy_only",
-          "H07.depth_residency_execution", "H08.resume_tiny_cpu", "H09.merge_tiny_cpu"],
+          "H02.fault_unsafe_reuse", "H04.lab_sync_cpu", "H04.lab_sync_cuda", "H04.fault_stale_position",
+          "H04.fault_no_padding_mask", "H04.lab_async_cuda", "H05.lab_sync_cpu", "H05.lab_sync_cuda",
+          "H05.fault_advantage", "H05.lab_async_cuda", "H08.resume_tiny_cpu", "H09.merge_tiny_cpu"],
     "C": ["H05.real_0.6b_bf16", "H06.prefetch_timing", "H08.resume_qwen3_0.6b", "H09.merge_qwen3_0.6b"],
     "D": ["H11.smoke", "H11.profile"],
     "E": ["H10.dflash_bench", "H10.smoke_dflash"],
@@ -1200,10 +1203,10 @@ def stage_C(run_dir, state, attempt_dir, study, entries):
     if real and real.get("dispatcher_status") == "DONE" and real["status"] == "PASS":
         # the runs exist, so the dispatcher did not compare them again: compare them now (compare_runs.py exits 0 iff
         # comparable and identical) and let that decide the item
-        for b in ("qwen3_0.6b_l2l_sync", "qwen3_0.6b_l2l_async"):
+        for b in ("qwen3_0.6b_l2l_sync_short", "qwen3_0.6b_l2l_async_short"):
             out = Path(attempt_dir) / f"compare_resident_vs_{b}"
             rec = run_item(out, [*tool("compare_runs", [sys.executable, str(ROOT / "scripts" / "compare_runs.py")]),
-                                 "qwen3_0.6b_resident", b,
+                                 "qwen3_0.6b_resident_short", b,
                                  "--out", str(out / "compare.json")], telemetry_on=False)
             rec.update(id=f"compare_resident_vs_{b}", kind="command",
                        status="PASS" if rec["exit"] == 0 else "FAIL", detail=f"compare_runs.py exit {rec['exit']}")

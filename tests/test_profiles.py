@@ -213,6 +213,8 @@ def test_memory_at_its_defaults_leaves_the_hash_unchanged():
 
 TRIOS = {  # backend comparison: reference first; what else may differ besides execution.* and run.name
     "qwen3_0.6b": (["qwen3_0.6b_resident", "qwen3_0.6b_l2l_sync", "qwen3_0.6b_l2l_async"], set()),
+    "qwen3_0.6b_short": (["qwen3_0.6b_resident_short", "qwen3_0.6b_l2l_sync_short", "qwen3_0.6b_l2l_async_short"],
+                         set()),  # the 10-step H05.real_0.6b_bf16 trio of the assignment protocol
     "kaggle_06b_fp32": (["kaggle_06b_fp32_resident", "kaggle_06b_fp32_l2l_sync", "kaggle_06b_fp32_l2l_async"], set()),
     "kaggle_06b_fp32_train": (["kaggle_06b_fp32_train_resident", "kaggle_06b_fp32_train_l2l_sync",
                                "kaggle_06b_fp32_train_l2l_async"], set()),
