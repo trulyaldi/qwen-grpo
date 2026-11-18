@@ -251,6 +251,8 @@ def requirements(run, m):
 
 def main(run_dir):
     run = R.Run(run_dir)
+    if run.state.get("local_mode") == "fast":
+        return fast_main(run)
     d = run.dir
     for sub in ("measurements", "comparisons", "reports"):
         (d / sub).mkdir(exist_ok=True)
@@ -398,6 +400,351 @@ def main(run_dir):
             lines.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(d)}")
     (d / "checksums.sha256").write_text("\n".join(lines) + "\n")
     print(f"LOCAL VALIDATION {verdict} ({sum(r['status'] == 'PASS' for r in reqs)}/{len(reqs)} PASS); report "
+          f"{d / 'reports' / 'local_report.md'}")
+    for r in reqs:
+        print(f"  {r['status']:12s} {r['id']:4s} {r['clause'][:100]}")
+    return 0 if verdict == "PASS" else 1
+
+
+# --- default (fast) mode: the real training run, no correctness stages ----------------------------------------------
+
+FAST_RUNS = {"local_qwen3_0.6b_smoke": ("F", "H12.local_smoke_0.6b", 2, "2-step integration smoke"),
+             "local_qwen3_0.6b_streaming": ("F", "H12.local_train_fast_0.6b", 10, "10-step training experiment")}
+
+
+def sign_test_p(b, c):
+    """Exact two-sided McNemar (sign) test on the discordant pairs b (wrong -> right) and c (right -> wrong)."""
+    from math import comb
+    n = b + c
+    if n == 0:
+        return 1.0
+    k = min(b, c)
+    return min(1.0, 2 * sum(comb(n, i) for i in range(k + 1)) / 2 ** n)
+
+
+def checkpoint_identity(name):
+    d = R.RUNS / name / "checkpoints"
+    h = R.adapter_hash(d)
+    if not h:
+        return None
+    ck = d / h["checkpoint"]
+    try:
+        from qwen_grpo.streaming.resume import validate
+        ok, why = validate(ck, resumable=False)
+    except Exception as e:  # noqa: BLE001 - recorded, not fatal
+        ok, why = None, f"{type(e).__name__}: {e}"
+    return {**h, "path": str(ck), "commit_json": (ck / "COMMIT.json").exists(), "valid": ok, "why": why}
+
+
+def guard_report(name):
+    files = sorted((R.RUNS / name / "training" / "memory").glob("*.json"))
+    reps = [r for r in (R.read_json(f) for f in files) if r]
+    if not reps:
+        return None
+    return {"files": [str(f) for f in files], "violations": [v for r in reps for v in (r.get("violations") or [])],
+            "evidence": [r.get("evidence") for r in reps], "wsl2": any(r.get("wsl2") for r in reps),
+            "peak": {k: max(((r.get("peak") or {}).get(k) or 0 for r in reps), default=None)
+                     for k in ("device_used", "process_used", "reserved", "allocated")},
+            "budget_bytes": reps[-1].get("budget_bytes")}
+
+
+def fast_requirements(run, m):
+    Q = []
+
+    def add(rid, clause, essential, status, detail, evidence=()):
+        assert status in R.STATUS_ORDER, status
+        Q.append({"id": rid, "clause": clause, "essential": essential, "status": status, "detail": detail,
+                  "evidence": [str(e) for e in evidence if e]})
+
+    f = run.facts()
+    it = run.item("A", "local_config")
+    add("T1", "configuration as specified: Qwen3-0.6B bf16, B=5 G=6, 4 tokens, lr 5e-4, clip 0.2, LoRA r32/a64 q/v/o "
+        "last 2 layers, async L2L (pinned, 2 buffers, prefetch 1, checkpointing), disk streaming, guard on, eval every 5, "
+        "DFlash off", True, R.status_of(it), (it or {}).get("detail", "stage A not run"), ["resolved_configs/"])
+    cu, a = run.item("A", "cuda_streams_events"), run.item("A", "local_assets")
+    pre = R.worst([R.status_of(cu), R.status_of(a)]) if f.get("bf16") else ("FAIL" if f.get("cuda") else "BLOCKED")
+    add("T2", "preflight: CUDA, native bf16, CUDA streams/events, model snapshot and dataset available", True, pre,
+        f"GPU {f.get('gpu')}, bf16 {f.get('bf16')}; streams: {(cu or {}).get('detail')}; assets: {(a or {}).get('detail')}"
+        + (f"; WARNING {f['host_ram_warning']}" if f.get("host_ram_warning") else ""))
+    for rid, name in (("T3", "local_qwen3_0.6b_smoke"), ("T4", "local_qwen3_0.6b_streaming")):
+        stage, iid, steps, what = FAST_RUNS[name]
+        i, lg = run.item(stage, iid), m["logs"].get(name)
+        if lg:
+            rows = lg.get("training", [])
+            ok = lg.get("successful_steps") == steps and bool(rows) and (rows[-1].get("change_from_init") or 0) > 0 \
+                and lg.get("params_equal_init") is False and lg.get("frozen_changed") == []
+            cov = R.coverage_of(lg) or {}
+            add(rid, f"{what}: real rollouts, rewards, GRPO gradients and {steps} AdamW updates; LoRA changed", True,
+                "PASS" if ok and R.status_of(i) == "PASS" else "FAIL",
+                f"{'reused existing run (not trained in this launch)' if (i or {}).get('reused') else 'trained in this launch'}; "
+                f"updates {lg.get('successful_steps')}/{steps}, rollout batches {lg.get('groups_generated')} "
+                f"({lg.get('zero_signal_groups')} zero-advantage batches skipped); reward per step "
+                f"{[R.fmt(r.get('mean_reward'), '', 3) for r in rows]}; LoRA |theta - theta0| "
+                f"{R.fmt(rows[-1].get('change_from_init') if rows else None, '', 4)}, |(a/r)BA| "
+                f"{R.fmt(rows[-1].get('effective_adapter_norm') if rows else None, '', 4)}; unique prompts "
+                f"{cov.get('unique_prompts_visited')}/{cov.get('train_pool_prompts')}",
+                [str(R.RUNS / name / "training" / "training.json"), (i or {}).get("raw_dir")])
+        else:
+            add(rid, f"{what}", True, R.missing(i), R.why(i, iid))
+    fz = {n: lg.get("frozen_changed") for n, lg in m["logs"].items()}
+    add("T5", "frozen base weights unchanged (digest of every frozen tensor before and after)", True,
+        ("FAIL" if any(v != [] for v in fz.values()) else "PASS") if fz else "NOT_TESTED",
+        "; ".join(f"{n}: {'unchanged' if v == [] else v}" for n, v in fz.items()) or "no training log")
+    # memory
+    i = run.item("F", "H12.local_train_fast_0.6b")
+    lg = m["logs"].get("local_qwen3_0.6b_streaming")
+    t, g = (i or {}).get("telemetry") or {}, m.get("guard")
+    mem = (lg or {}).get("memory") or {}
+    viol = bool((g or {}).get("violations")) or (i or {}).get("memory_status") == "FAIL"
+    dev = t.get("device_peak_used_mib")
+    if not lg:
+        st = R.missing(i)
+    elif viol:
+        st = "FAIL"
+    else:  # per-process figure if nvidia-smi gives one (not under WSL2), else the whole device's
+        pp = t.get("process_peak_mib")
+        st = "PASS" if (pp is not None and pp * MIB <= run.cap) or (dev is not None and dev * MIB <= run.cap) \
+            else "INCONCLUSIVE"
+    add("T6", "GPU memory within the 4 GiB card: no guard / watchdog violation; device-wide nvidia-smi peak", True, st,
+        f"PyTorch peak allocated {R.fmt(mem.get('peak_allocated_gib'), ' GiB', 3)}, peak reserved "
+        f"{R.fmt(mem.get('peak_reserved_gib'), ' GiB', 3)} (allocator, excludes the CUDA context: not device evidence); "
+        f"nvidia-smi device memory.used peak {R.fmt(dev, ' MiB', 0)} of {R.fmt(t.get('device_total_mib'), ' MiB', 0)} "
+        f"(whole GPU, every process; on a 4 GiB card it cannot exceed the card, so the evidence is completion without "
+        f"CUDA OOM or guard violation); per-process peak {R.fmt(t.get('process_peak_mib'), ' MiB', 0)}; guard violations {(g or {}).get('violations')}; guard peak device "
+        f"{R.fmt(R.gib((g or {}).get('peak', {}).get('device_used')), ' GiB', 3)}",
+        [(g or {}).get("files", [None])[-1], (t.get("raw_files") or {}).get("gpu")])
+    pp = t.get("process_peak_mib")
+    add("T7", "NVIDIA-reported per-process GPU memory", False, "PASS" if pp is not None else "INCONCLUSIVE",
+        f"per-process peak {pp:.0f} MiB" if pp is not None else
+        f"nvidia-smi gave no numeric per-process figure ({t.get('memory_reason') or 'no telemetry'}); typical under "
+        "WSL2: only device-wide and allocator figures exist")
+    tm = (lg or {}).get("timings") or []
+    tot = {k: sum(x.get(k) or 0 for x in tm) for k in ("rollout_s", "prepare_s", "update_s", "step_s")}
+    add("T8", "timing: rollout generation vs old-log-prob preparation vs update (forward + backward + AdamW)", False,
+        "PASS" if tm else R.missing(i),
+        f"over {len(tm)} steps: rollout {tot['rollout_s']:.1f} s, prepare {tot['prepare_s']:.1f} s, update "
+        f"{tot['update_s']:.1f} s, steps {tot['step_s']:.1f} s; train_seconds {R.fmt((lg or {}).get('train_seconds'), ' s', 1)}"
+        f"; orchestrator item {R.fmt((i or {}).get('seconds'), ' s', 1)} (incl. model load and evaluation)"
+        if tm else "no timing")
+    # evaluation: step 0 is the base policy (LoRA B = 0 is asserted by the trainer)
+    evs = {e["step"]: e for e in (lg or {}).get("evaluations", [])}
+    if evs and 0 in evs and max(evs) > 0:
+        b, fin = evs[0], evs[max(evs)]
+        mb, mf = b["metrics"], fin["metrics"]
+        pb = {p["id"]: p["correct"] for p in b["predictions"]}
+        pf = {p["id"]: p["correct"] for p in fin["predictions"]}
+        up = sum(1 for k in pf if pf[k] and not pb.get(k))
+        down = sum(1 for k in pf if not pf[k] and pb.get(k))
+        pval = sign_test_p(up, down)
+        m["eval"] = {"base": mb, "final": mf, "final_step": max(evs), "wrong_to_right": up, "right_to_wrong": down,
+                     "sign_test_p": pval}
+        add("T9", "validation subset: base policy (step 0) vs final adapter: accuracy, macro F1, class recall, invalid "
+            "rate, prediction distribution", False, "PASS",
+            f"n={mf['n']}; step 0 -> {max(evs)}: acc {mb['accuracy']:.3f} -> {mf['accuracy']:.3f}, F1 "
+            f"{mb['macro_f1']:.3f} -> {mf['macro_f1']:.3f}, recall POS {mb['recall_POSITIVE']:.3f} -> "
+            f"{mf['recall_POSITIVE']:.3f}, NEG {mb['recall_NEGATIVE']:.3f} -> {mf['recall_NEGATIVE']:.3f}, invalid "
+            f"{mb['invalid_rate']:.3f} -> {mf['invalid_rate']:.3f}, predicted POS {mb['predicted_positive_rate']:.3f} -> "
+            f"{mf['predicted_positive_rate']:.3f}")
+        better = mf["accuracy"] > mb["accuracy"]
+        add("T10", "improvement over the base policy (paired, exact sign test on the validation subset)", False,
+            ("PASS" if better else "FAIL") if pval < 0.05 else "INCONCLUSIVE",
+            f"{up} wrong->right, {down} right->wrong of n={mf['n']}, exact two-sided p = {pval:.3g}"
+            + ("" if pval < 0.05 else ": no improvement is claimed")
+            + "; validation subset only, single seed, not the held-out test split")
+    else:
+        add("T9", "validation subset: base vs final adapter", False, R.missing(i), "no step-0 and final evaluation")
+        add("T10", "improvement over the base policy", False, "NOT_TESTED", "no evaluation")
+    ck = m.get("checkpoint")
+    fc = (lg or {}).get("final_checkpoint") or {}
+    add("T11", "checkpoint identity: final adapter checkpoint committed (COMMIT.json), reloaded bitwise", False,
+        ("PASS" if ck.get("valid") and fc.get("reloaded_bitwise_equal") else "FAIL") if ck and lg else R.missing(i),
+        f"{fc.get('path')} (step {fc.get('step')}), adapter sha256 {str(ck.get('sha256'))[:16]}, COMMIT.json "
+        f"{ck.get('commit_json')}, valid {ck.get('valid')} {ck.get('why') or ''}, reloaded bitwise "
+        f"{fc.get('reloaded_bitwise_equal')}" if ck else "no checkpoint")
+    res = {n: lg.get("resumed") for n, lg in m["logs"].items() if lg.get("resumed")}
+    rr = [r for r in run.all_items() if r[1]["id"].startswith("resume:")]
+    add("T12", "resume: restored from the latest valid committed checkpoint", False,
+        R.worst([r[1]["status"] for r in rr]) if rr else ("PASS" if res else "NOT_TESTED"),
+        "; ".join(f"{n}: resumed from {x['from']} at optimizer step {x['step']} (attempt {x['attempts']})"
+                  for n, v in res.items() for x in v)
+        or ("; ".join(f"{r[1]['id']}: {r[1]['status']} {r[1].get('detail')}" for r in rr))
+        or "no interruption in this run (the injected-crash resume experiment runs under --full-tests)")
+    pc = f.get("prior_correctness") or {}
+    add("T13", "correctness suite (CPU / CUDA unit tests, silent failures, L2L equivalence): not re-run in this mode",
+        False, "PASS" if pc.get("status") == "PRIOR" and m.get("prior_ok") else "NOT_TESTED",
+        f"{pc.get('status', 'NOT_TESTED')}: {pc.get('detail', 'not recorded')}" + (f"; {m['prior_summary']}"
+                                                                                   if m.get("prior_summary") else ""),
+        ["environment/prior_correctness.json"])
+    for rid, cl, why in (
+            ("X1", "DFlash speculative rollouts", "never enabled locally: z-lab/Qwen3-4B-DFlash-b16 is for Qwen3-4B only; "
+             "this run does not validate the official Qwen3-4B DFlash drafter"),
+            ("X2", "Qwen3-4B under the 8 GB cap", "not this model; the local limit is the 4 GiB card"),
+            ("X3", "held-out test evaluation, merged model, LR=0 control", "not part of the local protocol"),
+            ("X4", "Soup checks", "not part of the local protocol")):
+        add(rid, cl, False, "NOT_TESTED", why)
+    return Q
+
+
+GUARD = "the recomputed output differs from the forward's"  # qwen_grpo/execution/backward.py, always-on backward check
+
+
+def unsafe_reuse_finding(pc, results_root):
+    """H02.fault_unsafe_reuse, from the earlier run that recorded it: its lab result split into configurations refused
+    by the backward recompute checksum, configurations that ran (and how many of their comparisons failed), and
+    configurations where the fault went unnoticed. Derived from result.json each time; the recorded status is kept."""
+    ev = (pc or {}).get("evidence") or {}
+    st = R.read_json(Path(results_root) / ev.get("run_id", "") / "state.json") if ev else None
+    it = next((i for a in reversed((st or {}).get("stages", {}).get("B", {}).get("attempts", []))
+               for i in a.get("items", []) if i["id"] == "H02.fault_unsafe_reuse"), None)
+    if not it or not it.get("evidence_name"):
+        return None
+    r = R.read_json(R.EXP / it["evidence_name"] / "result.json")
+    if not r:
+        return {"status": it["status"], "run_id": ev["run_id"], "evidence_name": it["evidence_name"], "result": None}
+    refused = {e.split(":")[0].rsplit(".mb", 1)[0] for e in r.get("errors", [])}
+    guard = {e.split(":")[0].rsplit(".mb", 1)[0] for e in r.get("errors", []) if GUARD in e}
+    ran = {}
+    for c in r.get("comparisons", []):
+        ran.setdefault(c["model"], []).append(bool(c.get("pass")))
+    return {"status": it["status"], "run_id": ev["run_id"], "evidence_name": it["evidence_name"],
+            "evidence_dir": it.get("evidence_dir"), "status_lab": r.get("status"),
+            "execution_status": r.get("execution_status"), "refused": len(refused),
+            "refused_by_guard": len(guard), "other_errors": len(refused - guard), "ran": len(ran),
+            "ran_all_comparisons_failed": sum(all(not x for x in v) for v in ran.values()),
+            "undetected": sum(all(v) for v in ran.values())}
+
+
+def unsafe_reuse_md(f):
+    if not f:
+        return ["No earlier H02.fault_unsafe_reuse result is recorded."]
+    if f.get("result") is None and "refused" not in f:
+        return [f"H02.fault_unsafe_reuse is {f['status']} in run {f['run_id']}; its lab result "
+                f"{f['evidence_name']} is missing, so it cannot be analysed."]
+    n = f["refused"] + f["ran"]
+    return [
+        f"`H02.fault_unsafe_reuse` (gradient equivalence under async L2L with an injected unsafe buffer reuse) is recorded "
+        f"as **{f['status']}** in run `{f['run_id']}` (lab result `{f['evidence_name']}`: status {f['status_lab']}, "
+        f"execution {f['execution_status']}). It stays FAIL here; the analysis below explains it and does not change it.",
+        "",
+        f"- {f['refused_by_guard']} of {n} configurations were refused by the always-on backward recompute checksum "
+        f"(`qwen_grpo/execution/backward.py`, \"{GUARD}\"): no gradients were returned. Other execution errors: "
+        f"{f['other_errors']}.",
+        f"- {f['ran']} of {n} configurations ran; {f['ran_all_comparisons_failed']} of them failed every comparison "
+        "against the resident reference (loss, logits, hidden and LoRA gradients).",
+        f"- Configurations where the fault went unnoticed: **{f['undetected']}**.",
+        "",
+        "Cause of the FAIL: the `lab_fault` judge (`scripts/experiment.py`) counts a fault as detected only when the "
+        "lab's execution PASSES and its comparisons fail. A refusal by the runtime checksum is recorded as an execution "
+        "failure, so it is judged \"NOT detected\". The checksum predates the fault case. This is a flaw in the test's "
+        "oracle, not evidence of an async L2L defect; the judge was deliberately left unchanged (owner decision).",
+        "",
+        "Limits: (1) training runs with `verify=False`, so the backward checksum is the only runtime guard; in the "
+        f"{f['ran']} configurations that ran, the corruption was caught only by the lab's resident comparison and would be "
+        "silent in training. (2) The fault is a forced, deterministic overwrite, not a real race; it does not prove "
+        "race-freedom. (3) Tiny models only. Because the item is FAIL, nothing that depends on it (the --full-tests "
+        "training gate) counts as correctness evidence."]
+
+
+def fast_main(run):
+    d = run.dir
+    for sub in ("measurements", "reports"):
+        (d / sub).mkdir(exist_ok=True)
+    m = {"logs": {}}
+    for name, (stage, iid, _, _) in FAST_RUNS.items():
+        lg = run.run_log(name, stage, iid)
+        if lg:
+            m["logs"][name] = lg
+    m["guard"] = guard_report("local_qwen3_0.6b_streaming") if "local_qwen3_0.6b_streaming" in m["logs"] else None
+    m["checkpoint"] = checkpoint_identity("local_qwen3_0.6b_streaming") if "local_qwen3_0.6b_streaming" in m["logs"] \
+        else None
+    pc = R.read_json(d / "environment" / "prior_correctness.json") or {}
+    if pc.get("evidence"):
+        its = {k: v for s in pc["evidence"]["stages"].values() for k, v in s["items"].items()}
+        counts = {}
+        for v in its.values():
+            counts[v] = counts.get(v, 0) + 1
+        m["prior_ok"] = bool(its) and all(v == "PASS" for v in its.values())
+        m["prior_summary"] = (f"run {pc['evidence']['run_id']}: {counts}; not PASS: "
+                              + (", ".join(f"{k} {v}" for k, v in its.items() if v != "PASS") or "none"))
+    m["unsafe_reuse"] = unsafe_reuse_finding(pc, d.parent)
+    reqs = fast_requirements(run, m)
+    ess = [r for r in reqs if r["essential"]]
+    verdict = "PASS" if all(r["status"] == "PASS" for r in ess) else \
+        "FAIL" if any(r["status"] == "FAIL" for r in ess) else "INCOMPLETE"
+    from qwen_grpo.evidence import code_sha256, report_code_sha256
+    (d / "requirements.json").write_text(json.dumps({
+        "verdict": f"LOCAL TRAINING {verdict}", "mode": "fast",
+        "scope": "Qwen3-0.6B GRPO + LoRA + async L2L + disk streaming on a 4 GB GPU; the correctness suite was not "
+                 "re-run; does NOT verify DFlash or the Qwen3-4B assignment",
+        "rule": "PASS iff every essential requirement (T1-T6) is PASS", "requirements": reqs,
+        "report_identity": {"report_code_sha256": report_code_sha256(), "experiment_code_sha256_now": code_sha256()},
+        "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}, indent=1, default=str) + "\n")
+    R.write_csv(d / "measurements" / "training.csv", ["run", "step", "attempt", "mean_reward", "loss", "grad_norm",
+                                                      "update_norm", "change_from_init", "effective_adapter_norm",
+                                                      "peak_allocated_gib", "peak_reserved_gib"],
+                [[n, r.get("step"), r.get("attempt"), r.get("mean_reward"), r.get("loss"), r.get("grad_norm"),
+                  r.get("update_norm"), r.get("change_from_init"), r.get("effective_adapter_norm"),
+                  r.get("peak_allocated_gib"), r.get("peak_reserved_gib")]
+                 for n, lg in m["logs"].items() for r in lg.get("training", [])])
+    R.write_csv(d / "measurements" / "timing.csv", ["run", "step", "rollout_s", "prepare_s", "update_s", "step_s",
+                                                    "weight_bytes_copied", "backend"],
+                [[n, t.get("step"), t.get("rollout_s"), t.get("prepare_s"), t.get("update_s"), t.get("step_s"),
+                  t.get("weight_bytes_copied"), t.get("backend")] for n, lg in m["logs"].items()
+                 for t in lg.get("timings", [])])
+    R.write_csv(d / "measurements" / "evaluation.csv", ["run", "step", "n", "accuracy", "macro_f1", "recall_POSITIVE",
+                                                        "recall_NEGATIVE", "invalid_rate", "predicted_positive_rate",
+                                                        "predicted_negative_rate"],
+                [[n, e["step"], *(e["metrics"].get(k) for k in ("n", "accuracy", "macro_f1", "recall_POSITIVE",
+                                                                  "recall_NEGATIVE", "invalid_rate",
+                                                                  "predicted_positive_rate", "predicted_negative_rate"))]
+                 for n, lg in m["logs"].items() for e in lg.get("evaluations", [])])
+    mem = []
+    for stage, it in run.all_items():
+        t = it.get("telemetry")
+        if t:
+            mem.append([stage, it["id"], "nvidia-smi per-process peak", t.get("process_peak_mib"), t.get("memory_reason")])
+            mem.append([stage, it["id"], "nvidia-smi device memory.used peak (all processes)", t.get("device_peak_used_mib"),
+                        ""])
+    for n, lg in m["logs"].items():
+        mm = lg.get("memory") or {}
+        for k in ("peak_allocated_gib", "peak_reserved_gib"):
+            mem.append(["F", n, f"PyTorch {k}", None if mm.get(k) is None else mm[k] * 1024, "allocator; no CUDA context"])
+    R.write_csv(d / "measurements" / "memory.csv", ["stage", "item", "quantity", "MiB", "note"], mem)
+    (d / "measurements" / "local.json").write_text(json.dumps({k: v for k, v in m.items() if k != "logs"}, indent=1,
+                                                              default=str) + "\n")
+    f = run.facts()
+    md = ["# Local training run (Qwen3-0.6B, default mode)", "",
+          f"**Verdict: LOCAL TRAINING {verdict}** (PASS iff every essential requirement T1-T6 is PASS).", "",
+          "Scope: one real GRPO + LoRA training run through asynchronous L2L (pinned CPU weights, 2 GPU buffers, "
+          "prefetch depth 1, activation checkpointing) with disk-backed streaming, on a 4 GB GPU. The correctness suite "
+          "was **not** re-run (see T13). **This local experiment does not validate the official Qwen3-4B DFlash "
+          "drafter** or anything about Qwen3-4B under the 8 GB cap.", "",
+          f"Run `{d.name}`, commit `{str((run.state.get('identity') or {}).get('git_commit'))[:10]}`, code "
+          f"`{str((run.state.get('identity') or {}).get('experiment_code_sha256'))[:12]}`, GPU {f.get('gpu')}, "
+          f"per-process nvidia-smi {f.get('per_process_smi')}, native Linux {f.get('linux_native')}.", "",
+          "## Requirements", "",
+          R.table(["id", "requirement", "essential", "status", "detail"],
+                  [[r["id"], r["clause"], "yes" if r["essential"] else "no", f"**{r['status']}**", r["detail"][:600]]
+                   for r in reqs]), "", "## Stages", ""]
+    for s in "AF":
+        a = run.attempt(s)
+        md.append(f"- {s}: " + ("not started" if not a else f"{a.get('status')} (attempt {a['n']})"
+                                + (f", blocked by: {'; '.join(a['blocked_by'])}" if a.get("blocked_by") else "")))
+    md += ["", "## Known correctness finding: H02.fault_unsafe_reuse", ""] + unsafe_reuse_md(m["unsafe_reuse"])
+    md += ["", "## Limitations", "",
+           "- 10 updates on 64 training prompts, one seed: a smoke-scale experiment, not evidence of learning.",
+           "- Evaluation is the 32-example validation subset (greedy); no held-out test split, no confidence interval "
+           "beyond the exact sign test in T10.",
+           "- nvidia-smi is sampled (lower-bound peaks); under WSL2 there is no per-process figure, and the device-wide "
+           "figure includes every process on the GPU.",
+           "- The 4 GiB guard budget is the card itself: it records rather than limits.",
+           "", "Raw evidence: `raw/`, `environment/`, `measurements/`, the runs under `runs/`; checksums in "
+               "`checksums.sha256`."]
+    (d / "reports" / "local_report.md").write_text("\n".join(md) + "\n")
+    lines = [f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(d)}" for p in sorted(d.rglob("*"))
+             if p.is_file() and p.name not in ("checksums.sha256", ".lock")]
+    (d / "checksums.sha256").write_text("\n".join(lines) + "\n")
+    print(f"LOCAL TRAINING {verdict} ({sum(r['status'] == 'PASS' for r in reqs)}/{len(reqs)} PASS); report "
           f"{d / 'reports' / 'local_report.md'}")
     for r in reqs:
         print(f"  {r['status']:12s} {r['id']:4s} {r['clause'][:100]}")

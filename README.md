@@ -146,11 +146,17 @@ run reuses. It does **not** test DFlash (the only supported drafter, `z-lab/Qwen
 does not verify the Qwen3-4B assignment.
 
 ```bash
-bash scripts/run_assignment_local.sh --dry-run   # the plan; writes and runs nothing
-bash scripts/run_assignment_local.sh             # -> assignment_results_local/<UTC run-id>/reports/local_report.md
-bash scripts/run_assignment_local.sh --status
-bash scripts/run_assignment_local.sh --resume
+bash scripts/run_assignment_local.sh --dry-run      # the plan; writes and runs nothing
+bash scripts/run_assignment_local.sh                # default: the real training -> assignment_results_local/<run>/reports/local_report.md
+bash scripts/run_assignment_local.sh --full-tests   # the full correctness protocol (stages A B C D F below)
+bash scripts/run_assignment_local.sh --status       # stage table, active item, trainer step
+bash scripts/run_assignment_local.sh --resume       # continues the latest run in the mode it was started in
 ```
+
+Default mode: **A** preflight (CUDA, bf16, streams, resolved configs, model and dataset cached; earlier `--full-tests`
+evidence recorded only with an identical code identity, else NOT_TESTED / STALE), then **F**: the 2-step smoke and, if it
+passes, the 10-step async L2L + disk-streaming run. Item output is streamed live with a heartbeat every 30 s
+(`ASSIGNMENT_HEARTBEAT_S`). Verdict `LOCAL TRAINING PASS / FAIL / INCOMPLETE`. With `--full-tests`:
 
 - **A preflight**, **B correctness:** unit tests and the tiny-model resident-vs-L2L and fault-injection cases.
 - **C equivalence:** Qwen3-0.6B resident vs async L2L. One real GRPO step (`l2l_real_step.py --require-equal`), then the

@@ -118,6 +118,20 @@ entries:
       - argv: [scripts/compare_runs.py, local_qwen3_0.6b_l2l_async, local_qwen3_0.6b_streaming, --allow-differ, streaming,
                --out, "{evidence}/compare_l2l_async_vs_streaming.json"]
     judge: exit_codes
+  # The same 10-step training run for the default (fast) mode of scripts/run_assignment_local.sh: no stage C, so no
+  # in-memory async L2L run to compare with (that comparison is H12.local_train_0.6b under --full-tests). Same run.
+  - id: H12.local_train_fast_0.6b
+    name: local_train_fast_0.6b
+    model: Qwen3-0.6B
+    precision: [bfloat16]
+    requires: [cuda, bf16]
+    min_vram_gib: 4
+    supplementary: true
+    prerequisites: {runs: [local_qwen3_0.6b_smoke]}
+    configs: [configs/experiments/qwen3_0.6b_local_streaming.yaml]
+    steps:
+      - {argv: [scripts/run.py, train, --config, configs/experiments/qwen3_0.6b_local_streaming.yaml], creates: "run:local_qwen3_0.6b_streaming"}
+    judge: exit_codes
   # Deterministic resume: an uninterrupted run A against runs crashed at six injected points (prompt read, rollouts
   # generated, update, files written, committed before rename, after checkpoint) and resumed from their latest valid
   # checkpoint; committed rows, rollout records, occurrences (no duplicate or missing sample), adapters and AdamW state

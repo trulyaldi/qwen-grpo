@@ -8,8 +8,10 @@ dispatcher, tools and nvidia-smi; every number synthetic): a passing run, a corr
 from starting, a streaming-vs-memory difference that fails, and --dry-run / --status writing nothing. CPU only."""
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -156,6 +158,16 @@ def scenario(**over):
     return s
 
 
+def hf_cache(tmp):
+    """A Hub cache holding a Qwen/Qwen3-0.6B snapshot (config.json only): the model the local configs resolve."""
+    d = tmp / "hf" / "models--Qwen--Qwen3-0.6B"
+    (d / "snapshots" / "fakerev").mkdir(parents=True)
+    (d / "snapshots" / "fakerev" / "config.json").write_text("{}")
+    (d / "refs").mkdir()
+    (d / "refs" / "main").write_text("fakerev")
+    return tmp / "hf"
+
+
 @pytest.fixture
 def env(tmp_path):
     for d in ("results", "evidence", "exp", "runs"):
@@ -175,7 +187,8 @@ def env(tmp_path):
                                                                      "run_py")}),
          "FAKE_SMI_MARKER": "assignment_fakes", "FAKE_SMI_MIB": json.dumps({"*": 1500}),
          "FAKE_LOG": str(tmp_path / "dispatch.log"), "FAKE_SCENARIO": str(tmp_path / "scenario.json"),
-         "FAKE_PREDICTION": "{}", "PYTHON": sys.executable, "CUDA_VISIBLE_DEVICES": "", "PATH": os.environ["PATH"]}
+         "FAKE_PREDICTION": "{}", "PYTHON": sys.executable, "CUDA_VISIBLE_DEVICES": "", "PATH": os.environ["PATH"],
+         "HF_HUB_CACHE": str(hf_cache(tmp_path)), "ASSIGNMENT_HEARTBEAT_S": "1"}
     e.pop("SOUP_BIN", None)
     (tmp_path / "scenario.json").write_text(json.dumps(scenario()))
     return tmp_path, e
@@ -194,7 +207,7 @@ def result(tmp):
 
 def test_a_passing_local_run(env):
     tmp, e = env
-    p = run(e)
+    p = run(e, "--full-tests")
     d, state, R, req = result(tmp)
     assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-3000:]
     assert req["verdict"] == "LOCAL VALIDATION PASS" and "does NOT verify DFlash" in req["scope"]
@@ -222,7 +235,7 @@ def test_a_correctness_failure_keeps_training_from_starting(env):
     tmp, e = env
     (tmp / "scenario.json").write_text(json.dumps(scenario(**{"H05__local_real_step_0.6b": {"status": "FAIL", "files": {
         "local_real_step_0.6b.json": {**REAL_STEP, "all_equal": False}}}})))
-    p = run(e)
+    p = run(e, "--full-tests")
     d, state, R, req = result(tmp)
     assert p.returncode == 1 and req["verdict"] == "LOCAL VALIDATION FAIL"
     F = {i["id"]: i for i in state["stages"]["F"]["attempts"][-1]["items"]}
@@ -233,7 +246,7 @@ def test_a_correctness_failure_keeps_training_from_starting(env):
 
 def test_a_streaming_run_that_differs_from_the_in_memory_run_fails(env):
     tmp, e = env
-    p = run({**e, "FAKE_COMPARE_DIFFER": "1"})
+    p = run({**e, "FAKE_COMPARE_DIFFER": "1"}, "--full-tests")
     _, state, R, req = result(tmp)
     assert req["verdict"] == "LOCAL VALIDATION FAIL"
     assert R["L8"]["status"] == "FAIL"  # resident vs L2L differ -> C fails ...
@@ -243,8 +256,180 @@ def test_a_streaming_run_that_differs_from_the_in_memory_run_fails(env):
 
 def test_dry_run_writes_nothing(env):
     tmp, e = env
-    p = run(e, "--dry-run")
+    p = run(e, "--full-tests", "--dry-run")
     assert p.returncode == 0, p.stderr[-2000:]
     assert "LOCAL laptop validation" in p.stdout and "DFlash" in p.stdout and "H audit" not in p.stdout
     assert not list((tmp / "results").iterdir()) and not list((tmp / "runs").iterdir())
     assert all("--dry-run" in a for a in dispatched(tmp))
+
+
+# ------------------------------------------------------------------------------- default (fast) mode, with fakes
+
+def fast_log(steps):
+    preds = lambda ok: [{"id": i, "label": "POSITIVE", "prediction": "POSITIVE" if ok(i) else None, "correct": ok(i)}
+                        for i in range(32)]
+    m = lambda ok: {"n": 32, "accuracy": sum(map(ok, range(32))) / 32, "macro_f1": 0.5, "recall_POSITIVE": 0.5,
+                    "recall_NEGATIVE": 0.5, "invalid_rate": 0.1, "predicted_positive_rate": 0.5,
+                    "predicted_negative_rate": 0.4}
+    evs = [(0, lambda i: i < 20), (5, lambda i: i < 21), (steps, lambda i: i < 22)] if steps >= 5 else \
+        [(0, lambda i: i < 20), (steps, lambda i: i < 20)]
+    return {**log(steps), "memory": {"peak_allocated_gib": 1.1, "peak_reserved_gib": 1.3},
+            "evaluations": [{"step": s, "metrics": m(ok), "predictions": preds(ok)} for s, ok in evs],
+            "final_checkpoint": {"path": f"runs/local_qwen3_0.6b_streaming/checkpoints/step{steps}", "step": steps,
+                                 "reloaded_bitwise_equal": True}, "train_seconds": 20.0}
+
+
+STEP_LINES = [["LoRA modules (6): ...", 0.2], ["step  1 (attempt   1) 1P,2N mixed 3  R 0.50  loss +0.0100", 2.5],
+              ["step  2 (attempt   2) 3P,4N mixed 2  R 0.60  loss +0.0200", 0.2]]
+
+
+def fast_scenario(**over):
+    s = {"*": {"status": "PASS", "sleep": 0.3},
+         "H12.local_smoke_0.6b": {"status": "PASS", "files": {
+             "runs/local_qwen3_0.6b_smoke/training/training.json": fast_log(2)}},
+         "H12.local_train_fast_0.6b": {"status": "PASS", "files": {
+             "runs/local_qwen3_0.6b_streaming/training/training.json": fast_log(10)}}}
+    for k, v in over.items():
+        s[k.replace("__", ".")] = {**s.get(k.replace("__", "."), {"status": "PASS"}), **v}
+    return s
+
+
+@pytest.fixture
+def fast(env):
+    tmp, e = env
+    (tmp / "scenario.json").write_text(json.dumps(fast_scenario()))
+    return tmp, e
+
+
+def test_default_mode_runs_the_smoke_then_the_10_step_run_and_no_correctness_stage(fast):
+    tmp, e = fast
+    p = run(e)
+    d, state, R, req = result(tmp)
+    assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-3000:]
+    assert state["local_mode"] == "fast" and set(state["stages"]) == {"A", "F"}
+    assert req["verdict"] == "LOCAL TRAINING PASS" and req["mode"] == "fast"
+    for rid in ("T1", "T2", "T3", "T4", "T5", "T6"):
+        assert R[rid]["status"] == "PASS", R[rid]
+    assert "trained in this launch" in R["T4"]["detail"] and "zero-advantage" in R["T4"]["detail"]
+    assert R["T7"]["status"] == "PASS" and "1500 MiB" in R["T7"]["detail"]  # the fake lists the item's processes
+    assert R["T10"]["status"] == "INCONCLUSIVE" and "no improvement is claimed" in R["T10"]["detail"]
+    assert R["T13"]["status"] == "NOT_TESTED" and R["X1"]["status"] == "NOT_TESTED"
+    runs = [a for a in dispatched(tmp) if a[0] == "run"]
+    assert [a[a.index("--entry") + 1] for a in runs] == ["H12.local_smoke_0.6b", "H12.local_train_fast_0.6b"]
+    assert not any("dflash" in json.dumps(a).lower() for a in dispatched(tmp))
+    A = {i["id"]: i for i in state["stages"]["A"]["attempts"][-1]["items"]}
+    assert A["local_assets"]["status"] == "PASS" and A["local_config"]["status"] == "PASS"
+    report = (d / "reports" / "local_report.md").read_text()
+    assert "does not validate the official Qwen3-4B DFlash drafter" in report
+    for f in ("measurements/training.csv", "measurements/evaluation.csv", "measurements/memory.csv",
+              "measurements/timing.csv", "environment/prior_correctness.json", "checksums.sha256"):
+        assert (d / f).exists(), f
+
+
+def test_default_mode_a_failed_smoke_blocks_the_10_step_run(fast):
+    tmp, e = fast
+    (tmp / "scenario.json").write_text(json.dumps(fast_scenario(H12__local_smoke_0__6b={"status": "FAIL"})))
+    p = run(e)
+    _, state, R, req = result(tmp)
+    assert p.returncode == 1 and req["verdict"] == "LOCAL TRAINING FAIL"
+    F = {i["id"]: i for i in state["stages"]["F"]["attempts"][-1]["items"]}
+    assert F["H12.local_smoke_0.6b"]["status"] == "FAIL" and F["H12.local_train_fast_0.6b"]["status"] == "BLOCKED"
+    assert not any("H12.local_train_fast_0.6b" in a for a in dispatched(tmp))
+
+
+def test_default_mode_a_failed_config_or_missing_model_blocks_training(fast):
+    tmp, e = fast
+    p = run({**e, "HF_HUB_CACHE": str(tmp / "empty_cache")})
+    _, state, R, req = result(tmp)
+    assert p.returncode == 1 and R["T2"]["status"] == "FAIL"
+    assert state["stages"]["F"]["status"] == "BLOCKED" and "local_assets" in json.dumps(state["stages"]["F"])
+    assert not any(a[0] == "run" for a in dispatched(tmp))
+
+
+def test_the_fast_gate_requires_the_local_config_check():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import assignment_local as L
+    facts = {"cuda": True, "bf16": True, "cuda_streams_ok": True, "ram_ok": True, "disk_ok": True,
+             "local_assets_ok": True, "assignment_config": "PASS"}
+    st = lambda f: {"stages": {"A": {"attempts": [{"facts": f, "items": []}]}}}
+    assert L.fast_gate("F", st(facts)) == []
+    assert "DFlash off" in " ".join(L.fast_gate("F", st({**facts, "assignment_config": "FAIL"})))
+
+
+def test_training_output_streams_live_with_a_heartbeat_and_status_shows_the_active_item(fast):
+    tmp, e = fast
+    (tmp / "scenario.json").write_text(json.dumps(fast_scenario(
+        H12__local_smoke_0__6b={"lines": STEP_LINES + [["waiting", 6.0]]})))
+    p = subprocess.Popen(["bash", str(ROOT / "scripts" / "run_assignment_local.sh")], env=e, cwd=ROOT,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    seen, t0 = [], time.time()
+    while time.time() - t0 < 120:  # the step line reaches the terminal while the item is still running
+        line = p.stdout.readline()
+        seen.append(line)
+        if "step  1 (attempt" in line:
+            break
+    assert any("step  1 (attempt" in l for l in seen), "".join(seen)[-3000:]
+    assert not any("<- H12.local_smoke_0.6b" in l for l in seen)
+    time.sleep(2.5)
+    st = subprocess.run(["bash", str(ROOT / "scripts" / "run_assignment_local.sh"), "--status"], env=e, cwd=ROOT,
+                        capture_output=True, text=True, timeout=120)
+    assert "active item: H12.local_smoke_0.6b" in st.stdout and "orchestrator: running" in st.stdout, st.stdout
+    assert "trainer step" in st.stdout and "mode: fast" in st.stdout
+    rest, _ = p.communicate(timeout=300)
+    out = "".join(seen) + rest
+    assert p.returncode == 0, out[-3000:]
+    assert "[heartbeat" in out and "trainer step 2" in out and "$ python scripts/run.py train" in out
+    d, *_ = result(tmp)
+    log = (d / "logs" / "orchestrator.log").read_text()
+    assert "step  1 (attempt" in log  # timestamped copy of the live stream
+    st = subprocess.run(["bash", str(ROOT / "scripts" / "run_assignment_local.sh"), "--status"], env=e, cwd=ROOT,
+                        capture_output=True, text=True, timeout=120)
+    assert "orchestrator: not running" in st.stdout and "last item" in st.stdout
+
+
+def test_default_mode_interrupt_then_resume_keeps_the_run_and_its_mode(fast):
+    tmp, e = fast
+    (tmp / "scenario.json").write_text(json.dumps(fast_scenario(H12__local_train_fast_0__6b={"sleep": 60})))
+    p = subprocess.Popen(["bash", str(ROOT / "scripts" / "run_assignment_local.sh")], env=e, cwd=ROOT,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    t0 = time.time()
+    while not any("H12.local_train_fast_0.6b" in json.dumps(a) for a in dispatched(tmp)) and time.time() - t0 < 300:
+        time.sleep(0.3)
+    time.sleep(1.0)
+    os.kill(p.pid, signal.SIGINT)
+    out, _ = p.communicate(timeout=180)
+    assert p.returncode == 130, out[-3000:]
+    d, state, R, req = result(tmp)
+    assert state["stages"]["F"]["attempts"][-1]["interrupted"] and req["verdict"] != "LOCAL TRAINING PASS"
+    p = run(e, "--resume", "--full-tests")  # a fast run is never continued as a full one
+    assert p.returncode == 2 and "fast mode" in p.stderr
+    (tmp / "scenario.json").write_text(json.dumps(fast_scenario()))
+    p = run(e, "--resume")
+    assert p.returncode == 0, p.stdout[-3000:]
+    d2, state, R, req = result(tmp)
+    assert d2 == d and state["local_mode"] == "fast" and state["history"][-1]["event"] == "resume"
+    assert len(state["stages"]["A"]["attempts"]) == 1 and len(state["stages"]["F"]["attempts"]) == 2
+    F = {i["id"]: i for i in state["stages"]["F"]["attempts"][-1]["items"]}
+    assert F["H12.local_smoke_0.6b"].get("carried_over_from_attempt") == 1  # finished before the interrupt
+    assert sum("H12.local_smoke_0.6b" in json.dumps(a) for a in dispatched(tmp)) == 1
+    assert req["verdict"] == "LOCAL TRAINING PASS"
+
+
+def test_default_dry_run_writes_nothing_and_runs_no_test(fast):
+    tmp, e = fast
+    p = run(e, "--dry-run")
+    assert p.returncode == 0, p.stderr[-2000:]
+    assert "default mode" in p.stdout and "NOT run in this mode" in p.stdout and "B correctness" not in p.stdout
+    assert not list((tmp / "results").iterdir()) and not list((tmp / "runs").iterdir())
+    assert all("--dry-run" in a for a in dispatched(tmp))
+    assert any("H12.local_smoke_0.6b" in a for a in dispatched(tmp))
+
+
+def test_without_per_process_nvidia_smi_the_allocator_figures_do_not_make_memory_pass(fast):
+    """As under WSL2: nvidia-smi lists none of the pipeline's processes, the device-wide reading (another 49 GB GPU's
+    6000 MiB) exceeds the 4 GiB card, the allocator says 1.3 GiB: memory is INCONCLUSIVE, never PASS."""
+    tmp, e = fast
+    run({**e, "FAKE_SMI_MARKER": "no_such_process"})
+    _, _, R, req = result(tmp)
+    assert R["T7"]["status"] == "INCONCLUSIVE" and R["T6"]["status"] == "INCONCLUSIVE"
+    assert "1.300 GiB" in R["T6"]["detail"] and req["verdict"] == "LOCAL TRAINING INCOMPLETE"

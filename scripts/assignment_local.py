@@ -23,9 +23,22 @@ NOT_TESTED records and checksums. This file only swaps in the local protocol:
                               gate: B essential, C both PASS, D not FAIL (memory guard), smoke before the rest
   No DFlash stage (the only supported drafter is for Qwen3-4B) and no held-out evaluation or Soup stage: the local
   report marks them NOT_TESTED and never claims the Qwen3-4B assignment.
+
+Two modes, recorded per run in state.json (local_mode; runs made before it existed are "full"):
+  fast (default)  A preflight (+ model/dataset availability, earlier correctness evidence recorded only if its code
+                  identity equals this run's, else STALE) and F = 2-step smoke, then the 10-step run
+                  H12.local_train_fast_0.6b (same run, no comparison with stage C). Gate: stage A facts only.
+  full            --full-tests: stages A B C D F as above.
+Every item's stdout/stderr (and the dispatcher's step logs) is streamed to the terminal while it runs, with a
+heartbeat every ASSIGNMENT_HEARTBEAT_S seconds (default 30): elapsed time, PIDs and the trainer's last step.
+The active item is kept in <run>/active.json for --status.
 """
+import fcntl
 import os
+import re
 import sys
+import threading
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +69,11 @@ COMPARISONS = {"H05.local_runs_0.6b": [("local_qwen3_0.6b_resident", "local_qwen
                "H12.local_train_0.6b": [("local_qwen3_0.6b_l2l_async", "local_qwen3_0.6b_streaming", ["streaming"])]}
 LOCAL_PYTEST_CPU = [p for p in A.PYTEST_CPU if "dflash" not in p]
 LOCAL_PYTEST_CUDA = [p for p in A.PYTEST_CUDA if "dflash" not in p]
+MODES = ("fast", "full")
+FAST_STAGES = "AF"
+FAST_STAGE_ENTRIES = {"F": ["H12.local_smoke_0.6b", "H12.local_train_fast_0.6b"]}
+FAST_RUN_NAMES = ("local_qwen3_0.6b_smoke", "local_qwen3_0.6b_streaming")
+HEARTBEAT_S = float(os.environ.get("ASSIGNMENT_HEARTBEAT_S", "30"))
 
 
 def local_config_check(configs):
@@ -94,8 +112,84 @@ def local_config_check(configs):
                                         "only, and no substitute drafter is used"]}
 
 
+def prior_correctness(state, gpu):
+    """The latest earlier local run that ran the correctness stages (B, C) with exactly this run's code identity
+    (experiment_code_sha256: every code, config and test file) and GPU: its per-item statuses, never re-judged.
+    Otherwise STALE (identity differs) or NOT_TESTED (none)."""
+    ident = state["identity"]
+    found = []
+    for d in sorted(A.RESULTS.glob("*"), reverse=True) if A.RESULTS.exists() else []:
+        s = A.read_json(d / "state.json")
+        if not s or d.name == state["run_id"] or not any(s["stages"].get(x) for x in "BC"):
+            continue
+        same = s["identity"].get("experiment_code_sha256") == ident.get("experiment_code_sha256") and \
+            (A.facts(s).get("gpu") == gpu)
+        stages = {}
+        for x in "BC":
+            a = A.last_attempt(s, x)
+            if a:
+                stages[x] = {"attempt": a["n"], "status": a.get("status"), "started_utc": a.get("started_utc"),
+                             "ended_utc": a.get("ended_utc"), "items": {i["id"]: i["status"] for i in a["items"]}}
+        found.append({"run_id": d.name, "git_commit": s["identity"].get("git_commit"),
+                      "experiment_code_sha256": s["identity"].get("experiment_code_sha256"), "gpu": A.facts(s).get("gpu"),
+                      "same_identity": same, "stages": stages})
+    use = next((r for r in found if r["same_identity"]), None)
+    if use:
+        status, detail = "PRIOR", f"recorded from run {use['run_id']} (same code identity and GPU), not re-run"
+    elif found:
+        use, status = found[0], "STALE"
+        detail = (f"latest correctness evidence is run {use['run_id']} (commit {str(use['git_commit'])[:10]}, code "
+                  f"{str(use['experiment_code_sha256'])[:12]} vs now {str(ident.get('experiment_code_sha256'))[:12]}, "
+                  f"GPU {use['gpu']}): code identity or GPU differs, so it is not used")
+    else:
+        status, detail = "NOT_TESTED", "no earlier local run with correctness stages under " + A.rel(A.RESULTS)
+    return {"status": status, "detail": detail, "evidence": use, "candidates": len(found),
+            "note": "evidence produced outside scripts/run_assignment_local.sh (e.g. pytest by hand) has no recorded "
+                    "code identity and is not used"}
+
+
+def fast_extras(run_dir, state, items, f):
+    """Fast mode, stage A: model/dataset availability (gates F), earlier correctness evidence (recorded, never a gate),
+    and the training runs that already exist (reused or refused by the unchanged rules, never overwritten)."""
+    models = f.get("models") or {}
+    data = A.ROOT / "data" / "sentiment.json"
+    checks = {f"{m} cached locally (revision {v.get('cached_revision')})": bool(v.get("cached_revision"))
+              for m, v in models.items()}
+    checks["Qwen/Qwen3-0.6B among the resolved models"] = "Qwen/Qwen3-0.6B" in models
+    checks[f"dataset {A.rel(data)} present"] = data.is_file()
+    bad = [k for k, v in checks.items() if not v]
+    items.append({"id": "local_assets", "kind": "check", "status": "FAIL" if bad else "PASS", "checks": checks,
+                  "detail": ("missing: " + "; ".join(bad)) if bad else "model snapshot and dataset available"})
+    f["local_assets_ok"] = not bad
+    if not f.get("ram_ok"):  # recorded, not a gate in this mode (the full mode's gate keeps it)
+        h = f.get("host") or {}
+        f["host_ram_warning"] = (f"host RAM {(h.get('meminfo') or {}).get('MemTotal', 0) / 1e9:.1f} GB < "
+                                 f"{h.get('ram_required_bytes', 0) / 1e9:.0f} GB (study host_requirements): training is "
+                                 "not blocked in this mode; watch CPU RSS (timings[].cpu_rss_bytes)")
+        print(f"   WARNING: {f['host_ram_warning']}")
+    pc = prior_correctness(state, f.get("gpu"))
+    f["prior_correctness"] = {k: pc[k] for k in ("status", "detail")}
+    A.write_json(Path(run_dir) / "environment" / "prior_correctness.json", pc)
+    print(f"   earlier correctness evidence: {pc['status']}: {pc['detail']}")
+    existing = []
+    for name in FAST_RUN_NAMES:
+        m = A.read_json(A.RUNS_DIR / name / "manifest.json")
+        if m is not None:
+            existing.append(f"runs/{name} ({m.get('status')})")
+    f["existing_runs"] = existing
+    if existing:
+        print(f"   NOTE: {', '.join(existing)} already exist and are never overwritten: a completed run with the same "
+              "code, config and GPU is reused (not retrained), otherwise it is reported INCONCLUSIVE. To train again: "
+              "python scripts/run.py remove --run <name> --confirm")
+
+
+_stage_A = A.stage_A
+
+
 def local_stage_A(run_dir, state, attempt_dir, study, entries):
-    items, f = A.stage_A(run_dir, state, attempt_dir, study, entries)
+    items, f = _stage_A(run_dir, state, attempt_dir, study, entries)
+    if state.get("local_mode") == "fast":
+        fast_extras(run_dir, state, items, f)
     blockers = []
     for b in f.get("blockers", []):  # rephrase the 4B-oriented blockers for the local stages (A..F without E)
         if b["stages"] == "F" and "per-process" in b["reason"]:
@@ -130,6 +224,141 @@ def local_gate(stage, state):
         if r and (r["status"] == "FAIL" or r.get("memory_status") == "FAIL"):
             why.append(f"stage D: H11.local_profile_0.6b is {r['status']} (memory {r.get('memory_status')})")
     return why
+
+
+def fast_gate(stage, state):
+    """Fast mode: training is gated on stage A's facts only (the correctness stages are not part of this mode)."""
+    f, why = A.facts(state), []
+    if stage == "F":
+        if not (f.get("cuda") and f.get("bf16") and f.get("cuda_streams_ok")):
+            why.append("stage A: no usable native-bf16 CUDA GPU (or the stream/event check failed)")
+        if not f.get("disk_ok"):
+            why.append("stage A: free disk below the local requirement")
+        if f.get("assignment_config") != "PASS":
+            why.append(f"stage A: local_config is {f.get('assignment_config')} (B, G, LoRA, lr, clip, DFlash off, guard "
+                       "on, async L2L settings must hold as configured)")
+        if not f.get("local_assets_ok"):
+            why.append("stage A: local_assets is not PASS (model snapshot or dataset missing)")
+    return why
+
+
+# --- live output -----------------------------------------------------------------------------------------------
+
+STEP_LINE = re.compile(r"^step\s+(\d+)\s+\(attempt")
+EVIDENCE_LINE = re.compile(r"-> evidence/(\S+)")
+
+
+def descendants(pid):
+    """[(pid, command line)] of every live descendant of `pid` (Linux /proc), parents first."""
+    kids = {}
+    for p in Path("/proc").glob("[0-9]*"):
+        try:
+            ppid = int((p / "stat").read_text().rsplit(")", 1)[1].split()[1])
+            kids.setdefault(ppid, []).append((int(p.name), (p / "cmdline").read_bytes().replace(b"\0", b" ")
+                                              .decode(errors="replace").strip()))
+        except (OSError, IndexError, ValueError):
+            continue
+    out, todo = [], [pid]
+    while todo:
+        for c in kids.get(todo.pop(0), []):
+            out.append(c)
+            todo.append(c[0])
+    return out
+
+
+class Live(threading.Thread):
+    """Streams an item's output files to the terminal as they grow (stdout.log, stderr.log, and the step logs of the
+    dispatcher's evidence directory), with a heartbeat; keeps <run>/active.json current. Reads files only."""
+
+    def __init__(self, out_dir, argv):
+        super().__init__(daemon=True)
+        self.out_dir, self.argv, self.t0, self.done = Path(out_dir), argv, time.time(), threading.Event()
+        self.run_dir = next((p for p in self.out_dir.parents if (p / "state.json").exists()), None)
+        self.files, self.step, self.pids, self.last_out = {}, None, [], time.time()
+        self.started = A.utc()
+
+    def tail(self, path, label):
+        pos, buf = self.files.get(path, (0, b""))
+        try:
+            with open(path, "rb") as f:
+                f.seek(pos)
+                data = f.read()
+        except OSError:
+            return
+        lines = (buf + data).replace(b"\r", b"\n").split(b"\n")
+        self.files[path] = (pos + len(data), lines.pop())
+        for raw in lines:
+            line = raw.decode(errors="replace").rstrip()
+            if not line:
+                continue
+            self.last_out = time.time()
+            if m := STEP_LINE.match(line):
+                self.step = int(m[1])
+            if m := EVIDENCE_LINE.search(line):
+                for root in (A.EVIDENCE, A.ROOT / "evidence"):
+                    if (root / m[1]).exists():
+                        self.files.setdefault(root / m[1] / "raw", None)
+            print(f"   {label}| {line}", flush=True)
+
+    def poll(self):
+        for name in ("stdout.log", "stderr.log"):
+            self.tail(self.out_dir / name, "" if name == "stdout.log" else "stderr")
+        for raw_dir in [k for k, v in self.files.items() if v is None]:  # an evidence raw/ directory: its step logs
+            for log in sorted(raw_dir.glob("step*.log")):
+                self.tail(log, log.stem)
+            self.files[raw_dir] = None
+
+    def active(self, final=False):
+        if self.run_dir is None:
+            return
+        rec = {"item": self.out_dir.name, "argv": self.argv, "raw_dir": A.rel(self.out_dir), "started_utc": self.started,
+               "elapsed_s": round(time.time() - self.t0, 1), "orchestrator_pid": os.getpid(),
+               "pids": [{"pid": p, "cmd": c[:300]} for p, c in self.pids], "last_step": self.step,
+               "updated_utc": A.utc(), "running": not final}
+        A.write_json(self.run_dir / "active.json", rec)
+
+    def heartbeat(self):
+        self.pids = descendants(os.getpid())
+        main = next((f"{p} ({c[:120]})" for p, c in reversed(self.pids) if "run.py" in c or "pytest" in c), None)
+        e = int(time.time() - self.t0)
+        print(f"   [heartbeat {A.utc()}] {self.out_dir.name}: elapsed {e // 60}m{e % 60:02d}s, pids "
+              f"{[p for p, _ in self.pids if 'nvidia-smi' not in _]}" + (f", workload pid {main}" if main else "")
+              + f", trainer step {self.step if self.step is not None else '-'}, last output "
+              f"{int(time.time() - self.last_out)}s ago", flush=True)
+        self.active()
+
+    def run(self):
+        print(f"-> {self.out_dir.name}: started {self.started}\n   $ {' '.join(map(str, self.argv))}", flush=True)
+        time.sleep(0.5)
+        self.pids = descendants(os.getpid())
+        print(f"   pid {[p for p, c in self.pids if 'nvidia-smi' not in c][:4]}", flush=True)
+        self.active()
+        beat = time.time()
+        while not self.done.wait(0.5):
+            self.poll()
+            if time.time() - beat >= HEARTBEAT_S:
+                beat = time.time()
+                self.heartbeat()
+
+    def stop(self):
+        self.done.set()
+        self.join(timeout=5)
+        self.poll()
+        self.active(final=True)
+        print(f"<- {self.out_dir.name}: ended after {time.time() - self.t0:.0f} s", flush=True)
+
+
+_run_item = A.run_item
+
+
+def live_run_item(out_dir, argv, env=None, cap=None, telemetry_on=True):
+    """scripts/assignment.py run_item, unchanged, with its output streamed live (Live)."""
+    live = Live(out_dir, argv)
+    live.start()
+    try:
+        return _run_item(out_dir, argv, env=env, cap=cap, telemetry_on=telemetry_on)
+    finally:
+        live.stop()
 
 
 def compare(attempt_dir, a, b, allow):
@@ -174,7 +403,7 @@ def stage_F(run_dir, state, attempt_dir, study, entries):
     return items
 
 
-def install():
+def install(mode="full"):
     """Point scripts/assignment.py at the local protocol (module globals are read at call time)."""
     if "ASSIGNMENT_STUDY" not in os.environ:
         A.STUDY = LOCAL_STUDY
@@ -189,22 +418,133 @@ def install():
     A.assignment_config_check = local_config_check
     A.gate = local_gate
     A.RUNNERS = {"A": local_stage_A, "B": A.stage_B, "C": with_comparisons("C"), "D": A.stage_entries, "F": stage_F}
+    A.run_item = live_run_item
+    A.stage_A = local_stage_A  # cmd_stage calls stage_A by name, not through RUNNERS
+    if mode == "fast":
+        A.STAGES, A.STAGE_ENTRIES, A.FRESH, A.CAPPED = FAST_STAGES, FAST_STAGE_ENTRIES, set(), {"F"}
+        A.gate = fast_gate
+        A.RUNNERS = {"A": local_stage_A, "F": stage_F}
+
+
+def mode_of(run_dir):
+    """The mode a run was started in (runs made before the fast mode existed ran the full protocol)."""
+    s = A.read_json(Path(run_dir) / "state.json") if run_dir else None
+    return (s or {}).get("local_mode", "full") if s else None
+
+
+def requested_mode():
+    m = os.environ.get("ASSIGNMENT_LOCAL_MODE", "fast")
+    if m not in MODES:
+        raise SystemExit(f"ASSIGNMENT_LOCAL_MODE must be one of {MODES}, not {m!r}")
+    return m
+
+
+def cmd_status(run_dir):
+    """The stage table, then the active (or last) item from <run>/active.json and whether an orchestrator holds the
+    run's lock."""
+    rc = A.main(["status"] + (["--run-dir", str(run_dir)] if run_dir else []))
+    run_dir = Path(run_dir) if run_dir else A.latest_run()
+    if run_dir is None:
+        return rc
+    print(f"mode: {mode_of(run_dir)}")
+    alive = None
+    if (run_dir / ".lock").exists():
+        with open(run_dir / ".lock") as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(f, fcntl.LOCK_UN)
+                alive = False
+            except OSError:
+                alive = True
+    print(f"orchestrator: {'running' if alive else 'not running'}")
+    act = A.read_json(run_dir / "active.json")
+    if act:
+        state = "active" if act.get("running") and alive else "last" if not act.get("running") else \
+            "STOPPED (no orchestrator holds the run; an interrupted item)"
+        print(f"{state} item: {act['item']} started {act['started_utc']}, elapsed {act['elapsed_s']:.0f} s at "
+              f"{act['updated_utc']}, trainer step {act.get('last_step')}\n  $ {' '.join(map(str, act['argv']))}")
+        for p in act.get("pids", []):
+            print(f"  pid {p['pid']}: {p['cmd'][:160]}")
+        print(f"  logs: {act['raw_dir']}/stdout.log, stderr.log")
+    return rc
+
+
+def fast_dry_run():
+    study, entries = A.load_study()
+    cap = A.probe()
+    print(f"dry run at commit {(A.git('rev-parse', '--short', 'HEAD') or '?').strip()} - nothing is written or run")
+    print(f"GPU {cap.get('gpu')}, bf16 {cap.get('bf16')}, VRAM {cap.get('vram_gib')} GiB, per-process nvidia-smi "
+          f"{cap.get('per_process_smi')}, native Linux {cap.get('linux_native')}")
+    c = study["gpu_memory_cap"]
+    print(f"GPU memory watchdog: {c['bytes'] / 2**30:.3f} GiB ({c['wording']}); memory.guard on in the configs")
+    print("A preflight: provenance, capabilities, CUDA streams/events, resolved local configs (B5 G6, LoRA r32/a64, "
+          "DFlash off, guard on), model and dataset availability, earlier correctness evidence (recorded, not re-run)")
+    print("correctness suite (stages B C D, the resume experiment): NOT run in this mode; use --full-tests")
+    for name in FAST_RUN_NAMES:
+        m = A.read_json(A.RUNS_DIR / name / "manifest.json")
+        print(f"runs/{name}: " + ("absent (will be trained)" if m is None else
+                                  f"exists, status {m.get('status')} (never overwritten: reused or refused)"))
+    print("F training: 2-step smoke, then (only if it passes) the 10-step run:", flush=True)
+    import subprocess
+    subprocess.run([*A.dispatcher(), "run", "--dry-run", "--entry", *FAST_STAGE_ENTRIES["F"]], cwd=ROOT)
+    return 0
 
 
 def main(argv=None):
-    install()
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv[:1] == ["report"]:
+    install()
+    run_dir = Path(argv[argv.index("--run-dir") + 1]) if "--run-dir" in argv else None
+    cmd = argv[:1]
+    if cmd == ["mode"]:
+        print(mode_of(A.latest_run()) or requested_mode())
+        return 0
+    if cmd in (["stage"], ["report"]):
+        mode = mode_of(run_dir)
+    elif cmd == ["status"]:
+        mode = mode_of(run_dir or A.latest_run()) or "fast"
+    elif cmd == ["init"] and ("--resume" in argv or "--from-stage" in argv):
+        mode = mode_of(run_dir or A.latest_run()) or requested_mode()
+        if os.environ.get("ASSIGNMENT_LOCAL_MODE") not in (None, mode):
+            print(f"refusing: the run to continue was started in {mode} mode, not "
+                  f"{os.environ['ASSIGNMENT_LOCAL_MODE']}", file=sys.stderr)
+            return 2
+    else:
+        mode = requested_mode()
+    install(mode)
+    if cmd == ["report"]:
         import importlib.util
-        run_dir = Path(argv[argv.index("--run-dir") + 1])
         spec = importlib.util.spec_from_file_location("assignment_local_report",
                                                       ROOT / "scripts" / "assignment_local_report.py")
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod.main(run_dir)
-    if argv[:1] == ["dry-run"]:
+    if cmd == ["status"]:
+        return cmd_status(run_dir)
+    if cmd == ["dry-run"]:
+        if mode == "fast":
+            print("LOCAL run, default mode (Qwen3-0.6B, 4 GB GPU): A preflight, F real GRPO + LoRA + async L2L training "
+                  "(2-step smoke, then 10 steps). DFlash, the Qwen3-4B 8 GB cap, held-out test evaluation and Soup are "
+                  "out of scope (NOT_TESTED). Nothing below is run.")
+            return fast_dry_run()
         print("LOCAL laptop validation (Qwen3-0.6B, 4 GB GPU): stages A B C D F; DFlash, the Qwen3-4B 8 GB cap, "
               "held-out evaluation and Soup are out of scope (NOT_TESTED). Nothing below is run.")
+    if cmd == ["init"] and "--resume" not in argv and "--from-stage" not in argv:
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = A.main(argv)
+        if rc == 0:
+            d = Path(out.getvalue().strip().splitlines()[-1])
+            state = A.load_state(d)
+            state["local_mode"] = mode
+            A.save_state(d, state)
+            man = A.read_json(d / "manifest.json")
+            man.update(local_mode=mode, command="bash scripts/run_assignment_local.sh"
+                       + (" --full-tests" if mode == "full" else ""))
+            A.write_json(d / "manifest.json", man)
+        sys.stdout.write(out.getvalue())
+        return rc
     return A.main(argv)
 
 
