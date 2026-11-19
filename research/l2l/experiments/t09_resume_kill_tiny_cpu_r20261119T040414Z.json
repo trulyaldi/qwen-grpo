@@ -1,0 +1,108 @@
+{
+ "mode": "tiny_cpu",
+ "config": "tiny",
+ "runs": {
+  "A": "tiny_stream_killA",
+  "B": "tiny_stream_killB"
+ },
+ "started_utc": "2026-11-19T04:04:20.844+00:00",
+ "stall": "rollouts_generated@3:900",
+ "cap_bytes": null,
+ "raw": "/home/trulyaldi/qwen-grpo/research/l2l/experiments/t09_resume_kill_tiny_cpu_r20261119T040414Z_raw",
+ "A": {
+  "argv": [
+   "/home/trulyaldi/qwen-grpo/.venv/bin/python",
+   "/home/trulyaldi/qwen-grpo/scripts/resume_kill_test.py",
+   "child",
+   "--device",
+   "cpu",
+   "--tiny",
+   "--root",
+   "/tmp/t09_resume_6o0g9sj7",
+   "--config",
+   "/tmp/t09_kill_jz6tjor2/tiny_stream_killA.yaml"
+  ],
+  "started_utc": "2026-11-19T04:04:20.847+00:00",
+  "exit": 0,
+  "ended_utc": "2026-11-19T04:04:34.816+00:00"
+ },
+ "B1": {
+  "argv": [
+   "/home/trulyaldi/qwen-grpo/.venv/bin/python",
+   "/home/trulyaldi/qwen-grpo/scripts/resume_kill_test.py",
+   "child",
+   "--device",
+   "cpu",
+   "--tiny",
+   "--root",
+   "/tmp/t09_resume_6o0g9sj7",
+   "--config",
+   "/tmp/t09_kill_jz6tjor2/tiny_stream_killB.yaml"
+  ],
+  "started_utc": "2026-11-19T04:04:34.818+00:00",
+  "exit": -9,
+  "ended_utc": "2026-11-19T04:04:46.236+00:00"
+ },
+ "kill": {
+  "killed_utc": "2026-11-19T04:04:46.050+00:00",
+  "last_step_line": 3,
+  "checkpoints_at_kill": [
+   0,
+   2
+  ],
+  "signal": "SIGKILL",
+  "pgid": 905603
+ },
+ "B2": {
+  "argv": [
+   "/home/trulyaldi/qwen-grpo/.venv/bin/python",
+   "/home/trulyaldi/qwen-grpo/scripts/resume_kill_test.py",
+   "child",
+   "--device",
+   "cpu",
+   "--tiny",
+   "--root",
+   "/tmp/t09_resume_6o0g9sj7",
+   "--config",
+   "/tmp/t09_resume_6o0g9sj7/runs/tiny_stream_killB/config.yaml",
+   "--resume",
+   "latest"
+  ],
+  "started_utc": "2026-11-19T04:04:46.238+00:00",
+  "exit": 0,
+  "ended_utc": "2026-11-19T04:04:59.591+00:00"
+ },
+ "checks": {
+  "both_completed": true,
+  "resumed_session_recorded": true,
+  "committed_rows_equal": true,
+  "rollout_records_equal": true,
+  "no_epoch_problems_A": true,
+  "no_epoch_problems_B": true,
+  "sample_multiset_equal_no_gap_no_duplicate": true,
+  "checkpoints_identical_adapter_and_adamw": true,
+  "final_torch_rng_equal": true,
+  "python_rng_restored_from_resume_checkpoint": true,
+  "final_counters_equal": true,
+  "no_leftover_tmp_or_invalid": true
+ },
+ "compared": [
+  "training rows (step, attempt, prompt ids, rollout sha256, rewards, loss, grad/update norms, iteration, clip_frac, init_diff)",
+  "zero-signal attempts (attempt, rollout sha256)",
+  "subset-evaluation predictions",
+  "attempt and optimizer-step counters",
+  "rollout records on disk (group ids, policy versions, ordered occurrences, response token ids, rewards)",
+  "(epoch, sample) occurrence multiset",
+  "every common checkpoint's LoRA tensors and AdamW state (compare_runs)",
+  "final checkpoint torch (and CUDA) RNG state vs A",
+  "B's Python RNG state vs the state saved in its resume checkpoint"
+ ],
+ "not_compared": [
+  "Python's global RNG across A and B (unseeded and unused by training: different per process)",
+  "wall-clock timings and memory samples (differ by construction)",
+  "the exact instant of the kill (recorded, not compared)",
+  "per-token log-probs and gradient tensors (not recorded by the trainer)"
+ ],
+ "pass": true,
+ "ended_utc": "2026-11-19T04:04:59.727+00:00"
+}
