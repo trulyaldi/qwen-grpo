@@ -1,0 +1,20 @@
+$ soup --no-telemetry ship --evidence research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_lr0_control_evidence.json -o research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_lr0_control_verdict.json
+exit 2
+--- stdout
+╭───────────────────────────────────────────────────────────────────────────────── soup ship ─────────────────────────────────────────────────────────────────────────────────╮
+│ DON'T SHIP                                                                                                                                                                  │
+│ Leg 1 task win (metric): 0.8771 -> 0.8771  [no win]                                                                                                                         │
+│ Judge numerics: unstamped                                                                                                                                                   │
+│                                                                                                                                                                             │
+│ Leg 2 general suite (threshold 5.00%)                                                                                                                                       │
+│ ┏━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━┳━━━┳━━━━━━━━━┓                                                                                                                            │
+│ ┃ Benchmark       ┃ Base ┃ Tuned ┃ Δ ┃ Verdict ┃                                                                                                                            │
+│ ┡━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━╇━━━╇━━━━━━━━━┩                                                                                                                            │
+│ │ (none measured) │    - │     - │ - │ missing │                                                                                                                            │
+│ └─────────────────┴──────┴───────┴───┴─────────┘                                                                                                                            │
+│                                                                                                                                                                             │
+│ No general-suite benchmarks were measured — cannot verify the model didn't regress. Supply a general suite or --baseline.                                                   │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+Wrote research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_lr0_control_verdict.json
+
+--- stderr

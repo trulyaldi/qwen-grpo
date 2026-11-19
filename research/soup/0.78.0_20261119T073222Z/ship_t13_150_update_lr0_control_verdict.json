@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "decision": "DON'T SHIP",
+  "task_win": {
+    "mode": "metric",
+    "base": 0.8771106941838649,
+    "tuned": 0.8771106941838649,
+    "won": false,
+    "rows": null,
+    "truncated": null,
+    "generation_failures": null,
+    "reward": null,
+    "paired": null
+  },
+  "benchmark_deltas": [],
+  "failed_rule": "missing_baseline",
+  "forgetting_threshold": 0.05,
+  "soup_version": "0.78.0",
+  "noise_floor": null,
+  "numerics": null,
+  "adapter_change": null,
+  "judged": null,
+  "base_adapter": null,
+  "task_rows": null
+}

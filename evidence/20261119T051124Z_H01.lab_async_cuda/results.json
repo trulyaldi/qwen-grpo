@@ -1,0 +1,19 @@
+{
+ "experiment_id": "20261119T051124Z_H01.lab_async_cuda",
+ "entry": "H01.lab_async_cuda",
+ "hypothesis": "H01",
+ "evidence_name": "t08_forward_equivalence_async_r20261119T051124Z",
+ "status": "PASS",
+ "criterion": "MET",
+ "detail": "status PASS, execution PASS, hypothesis_result SUPPORTED: all 2690 comparisons within predefined thresholds",
+ "supplementary": false,
+ "diagnostic": false,
+ "outputs": [
+  {
+   "output": "research/l2l/experiments/t08_forward_equivalence_async_r20261119T051124Z",
+   "exists": true,
+   "file": "research/l2l/experiments/t08_forward_equivalence_async_r20261119T051124Z/result.json",
+   "sha256_uncompressed": "08da0f90b074b649ba88c6d17be4a9cb53cea87236628b0ebf07e245c8561078"
+  }
+ ]
+}

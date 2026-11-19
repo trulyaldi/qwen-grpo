@@ -1,0 +1,17 @@
+timestamp, pid, process_name, used_gpu_memory [MiB]
+2026/11/19 05:13:26.034, 9431, /workspace/qwen-grpo/.venv/bin/python, 122 MiB
+2026/11/19 05:13:27.035, 9431, /workspace/qwen-grpo/.venv/bin/python, 122 MiB
+2026/11/19 05:13:28.036, 9431, /workspace/qwen-grpo/.venv/bin/python, 180 MiB
+2026/11/19 05:13:29.037, 9431, /workspace/qwen-grpo/.venv/bin/python, 180 MiB
+2026/11/19 05:13:30.038, 9431, /workspace/qwen-grpo/.venv/bin/python, 186 MiB
+2026/11/19 05:13:31.039, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:32.040, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:33.041, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:34.042, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:35.043, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:36.044, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:37.045, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:38.046, 9431, /workspace/qwen-grpo/.venv/bin/python, 188 MiB
+2026/11/19 05:13:39.047, 9431, /workspace/qwen-grpo/.venv/bin/python, 190 MiB
+2026/11/19 05:13:40.048, 9431, /workspace/qwen-grpo/.venv/bin/python, 190 MiB
+2026/11/19 05:13:41.050, 9431, /workspace/qwen-grpo/.venv/bin/python, 190 MiB

@@ -1,0 +1,37 @@
+timestamp, pid, process_name, used_gpu_memory [MiB]
+2026/11/19 05:11:29.197, 8690, /workspace/qwen-grpo/.venv/bin/python, 104 MiB
+2026/11/19 05:11:30.198, 8690, /workspace/qwen-grpo/.venv/bin/python, 142 MiB
+2026/11/19 05:11:31.199, 8690, /workspace/qwen-grpo/.venv/bin/python, 142 MiB
+2026/11/19 05:11:32.200, 8690, /workspace/qwen-grpo/.venv/bin/python, 172 MiB
+2026/11/19 05:11:33.201, 8690, /workspace/qwen-grpo/.venv/bin/python, 172 MiB
+2026/11/19 05:11:34.202, 8690, /workspace/qwen-grpo/.venv/bin/python, 172 MiB
+2026/11/19 05:11:35.203, 8690, /workspace/qwen-grpo/.venv/bin/python, 172 MiB
+2026/11/19 05:11:36.204, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:37.205, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:38.206, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:39.206, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:40.207, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:41.208, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:42.209, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:43.209, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:44.210, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:45.211, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:46.211, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:47.212, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:48.214, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:49.215, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:50.216, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:51.217, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:52.217, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:53.218, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:54.219, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:55.220, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:56.221, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:57.222, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:58.223, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:11:59.223, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:12:00.224, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:12:01.225, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:12:02.226, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:12:03.227, 8690, /workspace/qwen-grpo/.venv/bin/python, 178 MiB
+2026/11/19 05:12:04.228, 8690, [No data], 178 MiB

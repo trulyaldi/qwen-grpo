@@ -1,0 +1,655 @@
+{
+ "soup": "soup",
+ "version": "soup v0.78.0",
+ "started_utc": "20261119T073222Z",
+ "evidence_dir": "research/soup/0.78.0_20261119T073222Z",
+ "status": "EXECUTED",
+ "discovery": {
+  "root": {
+   "exit": 0,
+   "exists": true
+  },
+  "doctor": {
+   "exit": 0,
+   "exists": true
+  },
+  "data_doctor": {
+   "exit": 0,
+   "exists": true
+  },
+  "adapters_check": {
+   "exit": 0,
+   "exists": true
+  },
+  "reward_stress": {
+   "exit": 0,
+   "exists": true
+  },
+  "ship": {
+   "exit": 0,
+   "exists": true
+  },
+  "advise": {
+   "exit": 0,
+   "exists": true
+  },
+  "plan": {
+   "exit": 0,
+   "exists": true
+  },
+  "train": {
+   "exit": 0,
+   "exists": true
+  }
+ },
+ "checks": [
+  {
+   "name": "doctor",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "doctor"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 0.86,
+   "stdout": "Soup Doctor - checking your environment...\n\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 System \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Python:   3.12.15                                                                                                                                                           \u2502\n\u2502 Platform: Linux 7.0.0-38-generic                                                                                                                                            \u2502\n\u2502 Arch:     x86_64                                                                                                                                                            \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 GPU \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Backend:  unknown (torch not installed)                                                                                                                                     \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n    System Resources     \n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 Resource \u2503 Value      \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 RAM      \u2502 126 GB     \u2502\n\u2502 Disk     \u2502 39 GB free \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n                            Dependencies                             \n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 Package      \u2503 Required \u2503 Installed \u2503 Min Version \u2503 Status        \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 pydantic     \u2502   yes    \u2502  2.14.3   \u2502 >=2.0.0     \u2502 OK            \u2502\n\u2502 typer        \u2502   yes    \u2502  0.27.3   \u2502 >=0.15.4    \u2502 OK            \u2502\n\u2502 rich         \u2502   yes    \u2502  15.0.0   \u2502 >=13.0.0    \u2502 OK            \u2502\n\u2502 pyyaml       \u2502   yes    \u2502   6.0.3   \u2502 >=6.0       \u2502 OK            \u2502\n\u2502 plotext      \u2502   yes    \u2502   6.1.0   \u2502 >=5.2.0     \u2502 OK            \u2502\n\u2502 fastapi      \u2502 optional \u2502     -     \u2502 >=0.104.0   \u2502 not installed \u2502\n\u2502 uvicorn      \u2502 optional \u2502     -     \u2502 >=0.24.0    \u2502 not installed \u2502\n\u2502 datasketch   \u2502 optional \u2502     -     \u2502 >=1.6.0     \u2502 not installed \u2502\n\u2502 lm-eval      \u2502 optional \u2502     -     \u2502 >=0.4.0     \u2502 not installed \u2502\n\u2502 wandb        \u2502 optional \u2502     -     \u2502 >=0.15.0    \u2502 not installed \u2502\n\u2502 deepspeed    \u2502 optional \u2502     -     \u2502 >=0.12.0    \u2502 not installed \u2502\n\u2502 httpx        \u2502 optional \u2502     -     \u2502 >=0.24.0    \u2502 not installed \u2502\n\u2502 unsloth      \u2502 optional \u2502     -     \u2502 >=2024.8    \u2502 not installed \u2502\n\u2502 Pillow       \u2502 optional \u2502     -     \u2502 >=9.0.0     \u2502 not installed \u2502\n\u2502 torchao      \u2502 optional \u2502     -     \u2502 >=0.18.0    \u2502 not installed \u2502\n\u2502 sglang       \u2502 optional \u2502     -     \u2502 >=0.5.1     \u2502 not installed \u2502\n\u2502 librosa      \u2502 optional \u2502     -     \u2502 >=0.10.0    \u2502 not installed \u2502\n\u2502 torch        \u2502 [train]  \u2502     -     \u2502 >=2.6.0     \u2502 not installed \u2502\n\u2502 transformers \u2502 [train]  \u2502     -     \u2502 >=5.16.1    \u2502 not installed \u2502\n\u2502 peft         \u2502 [train]  \u2502     -     \u2502 >=0.20.0    \u2502 not installed \u2502\n\u2502 trl          \u2502 [train]  \u2502     -     \u2502 >=0.29.0    \u2502 not installed \u2502\n\u2502 datasets     \u2502 [train]  \u2502     -     \u2502 >=2.14.0    \u2502 not installed \u2502\n\u2502 bitsandbytes \u2502 [train]  \u2502     -     \u2502 >=0.41.0    \u2502 not installed \u2502\n\u2502 accelerate   \u2502 [train]  \u2502     -     \u2502 >=0.27.0    \u2502 not installed \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\nFound 1 issue(s):\n  > Training stack not installed:\n  pip install torch --index-url https://download.pytorch.org/whl/cu132\n  pip install \"soup-cli[train]\"\n\nFix all:\n  pip install torch --index-url https://download.pytorch.org/whl/cu132\n  pip install \"soup-cli[train]\"\n\nGitHub: https://github.com/MakazhanAlpamys/Soup\n",
+   "stderr": "",
+   "same_interpreter_as_training": false,
+   "note": "Soup runs in another interpreter: its doctor/env checks describe Soup's environment, not the training environment (install soup-cli into the training venv to use them there)",
+   "kind": "doctor",
+   "status": "EXECUTED"
+  },
+  {
+   "name": "data_doctor_clean",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_clean_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-4B",
+    "--max-length",
+    "256",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_clean.json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.64,
+   "stdout": "Error: soup data doctor needs transformers to load a tokenizer \u2014 install with: pip install \"soup-cli[train]\"\n",
+   "stderr": "",
+   "input": "research/soup/0.78.0_20261119T073222Z/data_doctor_clean_input.jsonl",
+   "report": null,
+   "kind": "data_doctor",
+   "status": "EXECUTED",
+   "fixture": "clean"
+  },
+  {
+   "name": "data_doctor_fault_no_assistant",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_no_assistant_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-4B",
+    "--max-length",
+    "256",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_no_assistant.json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.63,
+   "stdout": "Error: soup data doctor needs transformers to load a tokenizer \u2014 install with: pip install \"soup-cli[train]\"\n",
+   "stderr": "",
+   "input": "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_no_assistant_input.jsonl",
+   "report": null,
+   "kind": "data_doctor",
+   "status": "EXECUTED",
+   "fixture": "fault_no_assistant",
+   "flaw": "rows with nothing to train on (no assistant turn)",
+   "overall": null,
+   "clean_overall": null,
+   "checks_changed_vs_clean": {},
+   "detected": false
+  },
+  {
+   "name": "data_doctor_fault_empty_assistant",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_empty_assistant_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-4B",
+    "--max-length",
+    "256",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_empty_assistant.json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.63,
+   "stdout": "Error: soup data doctor needs transformers to load a tokenizer \u2014 install with: pip install \"soup-cli[train]\"\n",
+   "stderr": "",
+   "input": "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_empty_assistant_input.jsonl",
+   "report": null,
+   "kind": "data_doctor",
+   "status": "EXECUTED",
+   "fixture": "fault_empty_assistant",
+   "flaw": "empty assistant turns (empty target)",
+   "overall": null,
+   "clean_overall": null,
+   "checks_changed_vs_clean": {},
+   "detected": false
+  },
+  {
+   "name": "data_doctor_fault_unknown_role",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_unknown_role_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-4B",
+    "--max-length",
+    "256",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_unknown_role.json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.63,
+   "stdout": "Error: soup data doctor needs transformers to load a tokenizer \u2014 install with: pip install \"soup-cli[train]\"\n",
+   "stderr": "",
+   "input": "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_unknown_role_input.jsonl",
+   "report": null,
+   "kind": "data_doctor",
+   "status": "EXECUTED",
+   "fixture": "fault_unknown_role",
+   "flaw": "a message role outside the template's roles",
+   "overall": null,
+   "clean_overall": null,
+   "checks_changed_vs_clean": {},
+   "detected": false
+  },
+  {
+   "name": "data_doctor_fault_truncation",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_truncation_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-4B",
+    "--max-length",
+    "32",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_truncation.json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.66,
+   "stdout": "Error: soup data doctor needs transformers to load a tokenizer \u2014 install with: pip install \"soup-cli[train]\"\n",
+   "stderr": "",
+   "input": "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_truncation_input.jsonl",
+   "report": null,
+   "kind": "data_doctor",
+   "status": "EXECUTED",
+   "fixture": "fault_truncation",
+   "flaw": "rows longer than --max-length (would be truncated)",
+   "overall": null,
+   "clean_overall": null,
+   "checks_changed_vs_clean": {},
+   "detected": false
+  },
+  {
+   "name": "data_doctor_fault_noncanonical_label",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_noncanonical_label_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-4B",
+    "--max-length",
+    "256",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_noncanonical_label.json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.63,
+   "stdout": "Error: soup data doctor needs transformers to load a tokenizer \u2014 install with: pip install \"soup-cli[train]\"\n",
+   "stderr": "",
+   "input": "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_noncanonical_label_input.jsonl",
+   "report": null,
+   "kind": "data_doctor",
+   "status": "EXECUTED",
+   "fixture": "fault_noncanonical_label",
+   "flaw": "labels outside the reward's vocabulary (reward 0 for every row): semantic",
+   "overall": null,
+   "clean_overall": null,
+   "checks_changed_vs_clean": {},
+   "detected": false
+  },
+  {
+   "name": "data_doctor_fault_label_leak",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_label_leak_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-4B",
+    "--max-length",
+    "256",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_label_leak.json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.63,
+   "stdout": "Error: soup data doctor needs transformers to load a tokenizer \u2014 install with: pip install \"soup-cli[train]\"\n",
+   "stderr": "",
+   "input": "research/soup/0.78.0_20261119T073222Z/data_doctor_fault_label_leak_input.jsonl",
+   "report": null,
+   "kind": "data_doctor",
+   "status": "EXECUTED",
+   "fixture": "fault_label_leak",
+   "flaw": "the gold label leaked into the prompt: semantic",
+   "overall": null,
+   "clean_overall": null,
+   "checks_changed_vs_clean": {},
+   "detected": false
+  },
+  {
+   "name": "reward_stress",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "reward",
+    "stress",
+    "research/soup/0.78.0_20261119T073222Z/reward_stress_verifier.py",
+    "--references",
+    "research/soup/0.78.0_20261119T073222Z/reward_stress_references.jsonl",
+    "--output-report",
+    "research/soup/0.78.0_20261119T073222Z/reward_stress.json"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 0.65,
+   "stdout": "Warning: Loading custom reward function from: <repo>/research/soup/0.78.0_20261119T073222Z/reward_stress_verifier.py\nThis will execute arbitrary Python code. Only use reward files you trust.\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 reward stress: research/soup/0.78.0_20261119T073222Z/reward_stress_verifier.py \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 attack           n  accepted  accept-rate                                                                                                                                   \u2502\n\u2502 empty          600         0           0%                                                                                                                                   \u2502\n\u2502 length         600         0           0%                                                                                                                                   \u2502\n\u2502 repetition     600         0           0%                                                                                                                                   \u2502\n\u2502 sentinel       600         0           0%                                                                                                                                   \u2502\n\u2502 wrapped_junk  1400         0           0%                                                                                                                                   \u2502\n\u2502 answer_spray   800         0           0%                                                                                                                                   \u2502\n\u2502                                                                                                                                                                             \u2502\n\u2502 reference accept: 100%   gameability: 0%   verdict: robust (not gameable)                                                                                                   \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+   "stderr": "",
+   "verifier": "research/soup/0.78.0_20261119T073222Z/reward_stress_verifier.py",
+   "permissive_fault": false,
+   "verdict": "robust",
+   "report": {
+    "reference_accept": 1.0,
+    "attacks": [
+     {
+      "kind": "empty",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "length",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "repetition",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "sentinel",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "wrapped_junk",
+      "n": 1400,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "answer_spray",
+      "n": 800,
+      "accepted": 0,
+      "accept_rate": 0.0
+     }
+    ],
+    "gameability": 0.0,
+    "gameable": false,
+    "threshold": 0.5,
+    "max_gameable": 0.0,
+    "sentinel": "GOLD"
+   },
+   "kind": "reward_stress",
+   "status": "EXECUTED",
+   "detected": null,
+   "finding": "robust"
+  },
+  {
+   "name": "reward_stress_permissive",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "reward",
+    "stress",
+    "research/soup/0.78.0_20261119T073222Z/reward_stress_permissive_verifier.py",
+    "--references",
+    "research/soup/0.78.0_20261119T073222Z/reward_stress_permissive_references.jsonl",
+    "--output-report",
+    "research/soup/0.78.0_20261119T073222Z/reward_stress_permissive.json"
+   ],
+   "cwd": ".",
+   "exit": 2,
+   "seconds": 0.66,
+   "stdout": "Warning: Loading custom reward function from: <repo>/research/soup/0.78.0_20261119T073222Z/reward_stress_permissive_verifier.py\nThis will execute arbitrary Python code. Only use reward files you trust.\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 reward stress: research/soup/0.78.0_20261119T073222Z/reward_stress_permissive_verifier.py \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 attack           n  accepted  accept-rate                                                                                                                                   \u2502\n\u2502 empty          600         0           0%                                                                                                                                   \u2502\n\u2502 length         600         0           0%                                                                                                                                   \u2502\n\u2502 repetition     600         0           0%                                                                                                                                   \u2502\n\u2502 sentinel       600         0           0%                                                                                                                                   \u2502\n\u2502 wrapped_junk  1400         0           0%                                                                                                                                   \u2502\n\u2502 answer_spray   800       800         100%                                                                                                                                   \u2502\n\u2502                                                                                                                                                                             \u2502\n\u2502 reference accept: 100%   gameability: 100%   verdict: GAMEABLE                                                                                                              \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+   "stderr": "",
+   "verifier": "research/soup/0.78.0_20261119T073222Z/reward_stress_permissive_verifier.py",
+   "permissive_fault": true,
+   "verdict": "gameable",
+   "report": {
+    "reference_accept": 1.0,
+    "attacks": [
+     {
+      "kind": "empty",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "length",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "repetition",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "sentinel",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "wrapped_junk",
+      "n": 1400,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "answer_spray",
+      "n": 800,
+      "accepted": 800,
+      "accept_rate": 1.0
+     }
+    ],
+    "gameability": 1.0,
+    "gameable": true,
+    "threshold": 0.5,
+    "max_gameable": 0.0,
+    "sentinel": "GOLD"
+   },
+   "kind": "reward_stress",
+   "status": "EXECUTED",
+   "detected": true,
+   "finding": "gameable"
+  },
+  {
+   "name": "adapters_check_qwen3_4b_final_plain_150_v2_step0",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "adapters",
+    "check",
+    "runs/qwen3_4b_final_plain_150_v2/checkpoints/step0",
+    "--json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.64,
+   "stdout": "",
+   "stderr": "numpy package required; pip install \"soup-cli[train]\" (or pip install numpy)\n",
+   "adapter": "runs/qwen3_4b_final_plain_150_v2/checkpoints/step0",
+   "report": null,
+   "kind": "adapters_check",
+   "status": "EXECUTED",
+   "expected": "inactive (B = 0 by initialisation)",
+   "finding": null,
+   "detected": false
+  },
+  {
+   "name": "adapters_check_qwen3_4b_final_plain_150_v2_step150",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "adapters",
+    "check",
+    "runs/qwen3_4b_final_plain_150_v2/checkpoints/step150",
+    "--json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.63,
+   "stdout": "",
+   "stderr": "numpy package required; pip install \"soup-cli[train]\" (or pip install numpy)\n",
+   "adapter": "runs/qwen3_4b_final_plain_150_v2/checkpoints/step150",
+   "report": null,
+   "kind": "adapters_check",
+   "status": "EXECUTED",
+   "expected": "alive (trained adapter)",
+   "finding": null,
+   "detected": false
+  },
+  {
+   "name": "adapters_check_qwen3_4b_final_plain_150_v2_lr0_step0",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "adapters",
+    "check",
+    "runs/qwen3_4b_final_plain_150_v2_lr0/checkpoints/step0",
+    "--json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.64,
+   "stdout": "",
+   "stderr": "numpy package required; pip install \"soup-cli[train]\" (or pip install numpy)\n",
+   "adapter": "runs/qwen3_4b_final_plain_150_v2_lr0/checkpoints/step0",
+   "report": null,
+   "kind": "adapters_check",
+   "status": "EXECUTED",
+   "expected": "inactive (B = 0 by initialisation)",
+   "finding": null,
+   "detected": false
+  },
+  {
+   "name": "adapters_check_qwen3_4b_final_plain_150_v2_lr0_step30",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "adapters",
+    "check",
+    "runs/qwen3_4b_final_plain_150_v2_lr0/checkpoints/step30",
+    "--json"
+   ],
+   "cwd": ".",
+   "exit": 1,
+   "seconds": 0.66,
+   "stdout": "",
+   "stderr": "numpy package required; pip install \"soup-cli[train]\" (or pip install numpy)\n",
+   "adapter": "runs/qwen3_4b_final_plain_150_v2_lr0/checkpoints/step30",
+   "report": null,
+   "kind": "adapters_check",
+   "status": "EXECUTED",
+   "expected": "inactive (LR = 0: never changed)",
+   "finding": null,
+   "detected": false
+  },
+  {
+   "name": "ship_t13_150_update",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "ship",
+    "--evidence",
+    "research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_evidence.json",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_verdict.json"
+   ],
+   "cwd": ".",
+   "exit": 2,
+   "seconds": 0.65,
+   "stdout": "\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 soup ship \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 DON'T SHIP                                                                                                                                                                  \u2502\n\u2502 Leg 1 task win (metric): 0.8771 -> 0.8865  [won]                                                                                                                            \u2502\n\u2502 Judge numerics: unstamped                                                                                                                                                   \u2502\n\u2502                                                                                                                                                                             \u2502\n\u2502 Leg 2 general suite (threshold 5.00%)                                                                                                                                       \u2502\n\u2502 \u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513                                                                                                                            \u2502\n\u2502 \u2503 Benchmark       \u2503 Base \u2503 Tuned \u2503 \u0394 \u2503 Verdict \u2503                                                                                                                            \u2502\n\u2502 \u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529                                                                                                                            \u2502\n\u2502 \u2502 (none measured) \u2502    - \u2502     - \u2502 - \u2502 missing \u2502                                                                                                                            \u2502\n\u2502 \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518                                                                                                                            \u2502\n\u2502                                                                                                                                                                             \u2502\n\u2502 No general-suite benchmarks were measured \u2014 cannot verify the model didn't regress. Supply a general suite or --baseline.                                                   \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\nWrote research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_verdict.json\n",
+   "stderr": "",
+   "evidence": {
+    "task": {
+     "mode": "metric",
+     "base": 0.8771106941838649,
+     "tuned": 0.8864915572232646
+    },
+    "benchmarks": {}
+   },
+   "verdict": "DON'T SHIP",
+   "report": {
+    "schema_version": 2,
+    "decision": "DON'T SHIP",
+    "task_win": {
+     "mode": "metric",
+     "base": 0.8771106941838649,
+     "tuned": 0.8864915572232646,
+     "won": true,
+     "rows": null,
+     "truncated": null,
+     "generation_failures": null,
+     "reward": null,
+     "paired": null
+    },
+    "benchmark_deltas": [],
+    "failed_rule": "missing_baseline",
+    "forgetting_threshold": 0.05,
+    "soup_version": "0.78.0",
+    "noise_floor": null,
+    "numerics": null,
+    "adapter_change": null,
+    "judged": null,
+    "base_adapter": null,
+    "task_rows": null
+   },
+   "kind": "ship",
+   "status": "EXECUTED",
+   "our_statistics": "paired diff +0.0094, 95% CI [-0.0038, +0.0225]: NOT significant (CI includes 0)",
+   "finding": "DON'T SHIP"
+  },
+  {
+   "name": "ship_t13_150_update_lr0_control",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "ship",
+    "--evidence",
+    "research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_lr0_control_evidence.json",
+    "-o",
+    "research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_lr0_control_verdict.json"
+   ],
+   "cwd": ".",
+   "exit": 2,
+   "seconds": 0.64,
+   "stdout": "\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 soup ship \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 DON'T SHIP                                                                                                                                                                  \u2502\n\u2502 Leg 1 task win (metric): 0.8771 -> 0.8771  [no win]                                                                                                                         \u2502\n\u2502 Judge numerics: unstamped                                                                                                                                                   \u2502\n\u2502                                                                                                                                                                             \u2502\n\u2502 Leg 2 general suite (threshold 5.00%)                                                                                                                                       \u2502\n\u2502 \u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513                                                                                                                            \u2502\n\u2502 \u2503 Benchmark       \u2503 Base \u2503 Tuned \u2503 \u0394 \u2503 Verdict \u2503                                                                                                                            \u2502\n\u2502 \u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529                                                                                                                            \u2502\n\u2502 \u2502 (none measured) \u2502    - \u2502     - \u2502 - \u2502 missing \u2502                                                                                                                            \u2502\n\u2502 \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518                                                                                                                            \u2502\n\u2502                                                                                                                                                                             \u2502\n\u2502 No general-suite benchmarks were measured \u2014 cannot verify the model didn't regress. Supply a general suite or --baseline.                                                   \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\nWrote research/soup/0.78.0_20261119T073222Z/ship_t13_150_update_lr0_control_verdict.json\n",
+   "stderr": "",
+   "evidence": {
+    "task": {
+     "mode": "metric",
+     "base": 0.8771106941838649,
+     "tuned": 0.8771106941838649
+    },
+    "benchmarks": {}
+   },
+   "verdict": "DON'T SHIP",
+   "report": {
+    "schema_version": 2,
+    "decision": "DON'T SHIP",
+    "task_win": {
+     "mode": "metric",
+     "base": 0.8771106941838649,
+     "tuned": 0.8771106941838649,
+     "won": false,
+     "rows": null,
+     "truncated": null,
+     "generation_failures": null,
+     "reward": null,
+     "paired": null
+    },
+    "benchmark_deltas": [],
+    "failed_rule": "missing_baseline",
+    "forgetting_threshold": 0.05,
+    "soup_version": "0.78.0",
+    "noise_floor": null,
+    "numerics": null,
+    "adapter_change": null,
+    "judged": null,
+    "base_adapter": null,
+    "task_rows": null
+   },
+   "kind": "ship",
+   "status": "EXECUTED",
+   "our_statistics": "LR = 0 control: no parameter change, identical predictions",
+   "finding": "DON'T SHIP"
+  },
+  {
+   "kind": "preflight",
+   "name": "advise",
+   "status": "NOT_RUN",
+   "detail": "Soup's pre-flight plans Soup's own trainer from a soup.yaml (model, quantization, sharding, data length); this project's GRPO + L2L engine is not a Soup trainer, so there is no config for it to check. Its --help output is kept (help_advise.log, help_plan.log, help_train.log)."
+  },
+  {
+   "kind": "preflight",
+   "name": "plan",
+   "status": "NOT_RUN",
+   "detail": "Soup's pre-flight plans Soup's own trainer from a soup.yaml (model, quantization, sharding, data length); this project's GRPO + L2L engine is not a Soup trainer, so there is no config for it to check. Its --help output is kept (help_advise.log, help_plan.log, help_train.log)."
+  },
+  {
+   "kind": "preflight",
+   "name": "train hardware-fit",
+   "status": "NOT_RUN",
+   "detail": "Soup's pre-flight plans Soup's own trainer from a soup.yaml (model, quantization, sharding, data length); this project's GRPO + L2L engine is not a Soup trainer, so there is no config for it to check. Its --help output is kept (help_advise.log, help_plan.log, help_train.log)."
+  }
+ ],
+ "ended_utc": "20261119T073239Z"
+}

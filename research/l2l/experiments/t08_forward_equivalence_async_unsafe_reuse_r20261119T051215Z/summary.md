@@ -1,0 +1,42 @@
+**FAULT INJECTION RUN** (unsafe_reuse=2): a FAIL is the expected outcome.
+
+Detected: 66 configurations refused at runtime (BufferReuseError), 0 caught by the comparisons only.
+
+# t08_forward_equivalence_async_unsafe_reuse_r20261119T051215Z: forward_equivalence (correctness)
+
+**Status: FAIL** (execution PASS; hypothesis -: NOT_EVALUATED, no hypothesis declared for this run)
+
+- fixture.0.6b-like: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- fixture.4b-like: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.plain.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.plain.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.disabled.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.disabled.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.last2-attention.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.last2-attention.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.all.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.float32.all.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.plain.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.plain.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.disabled.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.disabled.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.last2-attention.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.last2-attention.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.all.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.eager.bfloat16.all.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.sdpa.float32.plain.b2: refused by BufferReuseError: copy of layer 3 into buffer 0, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- 0.6b-like.sdpa.float32.plain.b3: refused by BufferReuseError: copy of layer 3 into buffer 2, which is bound to layer 2 in use (forward): its weights would be overwritten while read (R3)
+- ... 46 more
+
+- commit `29852d11c2a37eeda94cd5ee53692fffd8d75d69` (tracked tree dirty: False), torch 2.14.1+cu126, transformers 4.57.6, peft 0.21.3, GPU NVIDIA GeForce RTX 3060
+- config `research/l2l/configs/async.yaml` sha256 `f3d2268fb2f68f9b`; fields used: ['model.dtype', 'execution']; backend `l2l_async`
+- input sha256 `cb7569af732767ae`, tolerances sha256 `54e48e883478a48e`
+
+
+measurements: `{"residency": {}, "lora_effect": {}}`
+
+memory snapshot (snapshot), evidence grade **assignment**:
+- CPU RSS 1613.01953125 MiB, high-water mark 1613.01953125 MiB (this process)
+- PyTorch allocator, this process: peak allocated 9.1 MiB, peak reserved 22.0 MiB (excludes the CUDA context and non-PyTorch allocations)
+- cudaMemGetInfo total - free: 198.1 MiB, device-wide (every process and context on the GPU, not process-specific)
+- nvidia-smi raw: compute apps `8953, 178`, memory.used `199` (unreliable under WSL2)

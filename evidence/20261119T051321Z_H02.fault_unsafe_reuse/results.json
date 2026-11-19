@@ -1,0 +1,19 @@
+{
+ "experiment_id": "20261119T051321Z_H02.fault_unsafe_reuse",
+ "entry": "H02.fault_unsafe_reuse",
+ "hypothesis": "H02",
+ "evidence_name": "t08_gradient_equivalence_async_unsafe_reuse_r20261119T051321Z",
+ "status": "PASS",
+ "criterion": "NOT_EVALUATED",
+ "detail": "fault injection: detected (status FAIL, execution PASS)",
+ "supplementary": false,
+ "diagnostic": false,
+ "outputs": [
+  {
+   "output": "research/l2l/experiments/t08_gradient_equivalence_async_unsafe_reuse_r20261119T051321Z",
+   "exists": true,
+   "file": "research/l2l/experiments/t08_gradient_equivalence_async_unsafe_reuse_r20261119T051321Z/result.json",
+   "sha256_uncompressed": "abf3f88be69241c6cf4fcef4b92266e44fcc46a0d47596fb8b808478434eae50"
+  }
+ ]
+}

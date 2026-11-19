@@ -1,0 +1,19 @@
+{
+ "experiment_id": "20261119T051445Z_H05.lab_async_cuda",
+ "entry": "H05.lab_async_cuda",
+ "hypothesis": "H05",
+ "evidence_name": "t08_update_equivalence_async_r20261119T051445Z",
+ "status": "PASS",
+ "criterion": "MET",
+ "detail": "status PASS, execution PASS, hypothesis_result SUPPORTED: all 6528 comparisons within predefined thresholds",
+ "supplementary": false,
+ "diagnostic": false,
+ "outputs": [
+  {
+   "output": "research/l2l/experiments/t08_update_equivalence_async_r20261119T051445Z",
+   "exists": true,
+   "file": "research/l2l/experiments/t08_update_equivalence_async_r20261119T051445Z/result.json",
+   "sha256_uncompressed": "691814324d58a007bd5ca7c91ee703ab8739234703f8acb6717df9eb661dcb3b"
+  }
+ ]
+}

@@ -1,0 +1,17 @@
+LoRA modules (6): ['model.layers.2.self_attn.q_proj', 'model.layers.2.self_attn.v_proj', 'model.layers.2.self_attn.o_proj', 'model.layers.3.self_attn.q_proj', 'model.layers.3.self_attn.v_proj', 'model.layers.3.self_attn.o_proj']
+trainable parameters: 5,632 of 2,446,032 (0.2303%)
+resumed from runs/tiny_stream_killB/checkpoints/step2: step 2, attempt 1
+streaming resume: uncommitted rollout groups [2, 3] moved aside (they are regenerated)
+streaming resume: pending group 1 restored from disk at iteration 2
+step  3 (attempt   1) 1266N,43P    mixed 1  R 0.67  it 2  r [0.962, 1.024]  clip 0.000  kl 1.48e-04  loss -0.0096  |g| 2.803e-01 (A 3.62e-03, B 2.80e-01)  |dtheta| 3.23e-02  |(a/r)BA| 1.277e-01  
+step  4 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 0  r [1.000, 1.000]  clip 0.000  kl 0.00e+00  loss +0.0000  |g| 1.694e-01 (A 1.92e-03, B 1.69e-01)  |dtheta| 2.63e-02  |(a/r)BA| 1.595e-01  
+  [val subset, step 4] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+step  5 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 1  r [0.993, 1.004]  clip 0.000  kl 5.06e-06  loss -0.0013  |g| 1.707e-01 (A 2.44e-03, B 1.71e-01)  |dtheta| 2.56e-02  |(a/r)BA| 1.876e-01  
+step  6 (attempt   3) 210N,1266N   mixed 1  R 0.67  it 2  r [0.984, 1.009]  clip 0.000  kl 2.25e-05  loss -0.0030  |g| 1.718e-01 (A 2.97e-03, B 1.72e-01)  |dtheta| 2.59e-02  |(a/r)BA| 2.141e-01  
+  [val subset, step 6] acc 0.0000  F1 0.0000  rec POS 0.0000 NEG 0.0000  invalid 1.0000  pred POS 0.0000  (n=2)
+
+batches by number of mixed groups: {'0': 1, '1': 2, '2': 0}, prompt groups 6, responses 18, train time 3 s
+steps 6/6, batches 3, zero-signal batches 1, frozen changed 0/46, params equal init: False
+grad norm range [1.694e-01, 2.885e-01]  change from init 1.480e-01  |(a/r)BA| 2.141e-01
+
+run tiny_stream_killB: runs/tiny_stream_killB/  report: runs/tiny_stream_killB/report.md

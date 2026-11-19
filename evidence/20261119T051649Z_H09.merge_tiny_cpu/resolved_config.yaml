@@ -1,0 +1,59 @@
+--- # research/l2l/configs/store_cpu.yaml sha256 cd9f52c56460a60b7002d9d6f07cdef4f673c53ad031019b3db269649b3809ab
+run:
+  name: l2l_lab_store_cpu
+  gpu_budget_gib: 4.0
+  overwrite: false
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: float32
+lora:
+  rank: 32
+  alpha: 64
+  targets: last2-attention
+data:
+  train_samples: 512
+  val_subset: 512
+  subset_seed: 42
+training:
+  batch_size: 5
+  group_size: 6
+  learning_rate: 0.0005
+  max_steps: 100
+  max_attempts: 1000
+  max_new_tokens: 4
+  seed: 42
+  clip_eps: 0.2
+  num_iterations: 1
+  micro_batch_size: null
+evaluation:
+  every: 10
+  full_validation: true
+  max_new_tokens: 4
+  batch_size: 32
+  score_batch_size: 8
+  bootstrap_samples: 10000
+  subset_label_scores: false
+verification:
+  split: validation
+  control_checkpoint: null
+  train_control: false
+execution:
+  backend: l2l_sync
+  weight_storage: pageable
+  resident_layers: 0
+  weight_buffers: 2
+  prefetch_depth: 0
+  activation_checkpointing: true
+  vocab_chunk_size: null
+  kv_cache: gpu
+streaming:
+  enabled: false
+  directory: null
+dflash:
+  enabled: false
+  draft_model: null
+memory:
+  guard: false
+  interval_s: 0.5
+  allocator_cap: false
+  budget_bytes: null

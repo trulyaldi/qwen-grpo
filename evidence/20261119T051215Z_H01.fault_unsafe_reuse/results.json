@@ -1,0 +1,19 @@
+{
+ "experiment_id": "20261119T051215Z_H01.fault_unsafe_reuse",
+ "entry": "H01.fault_unsafe_reuse",
+ "hypothesis": "H01",
+ "evidence_name": "t08_forward_equivalence_async_unsafe_reuse_r20261119T051215Z",
+ "status": "PASS",
+ "criterion": "NOT_EVALUATED",
+ "detail": "fault injection: detected (status FAIL, execution PASS)",
+ "supplementary": false,
+ "diagnostic": false,
+ "outputs": [
+  {
+   "output": "research/l2l/experiments/t08_forward_equivalence_async_unsafe_reuse_r20261119T051215Z",
+   "exists": true,
+   "file": "research/l2l/experiments/t08_forward_equivalence_async_unsafe_reuse_r20261119T051215Z/result.json",
+   "sha256_uncompressed": "c2710f92b02f7c3b869d7c0ebe493c1017fa3126575148b2a0f77feec82e650a"
+  }
+ ]
+}

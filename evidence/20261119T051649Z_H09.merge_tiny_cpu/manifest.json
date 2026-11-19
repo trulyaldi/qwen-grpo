@@ -1,0 +1,112 @@
+{
+ "experiment_id": "20261119T051649Z_H09.merge_tiny_cpu",
+ "entry": {
+  "id": "H09.merge_tiny_cpu",
+  "name": "t10_merge_equivalence_tiny",
+  "model": "tiny",
+  "precision": [
+   "float32",
+   "bfloat16"
+  ],
+  "requires": [
+   "fixture_packages"
+  ],
+  "steps": [
+   {
+    "argv": [
+     "scripts/l2l_lab.py",
+     "run",
+     "--name",
+     "{name}",
+     "--case",
+     "merge_equivalence",
+     "--config",
+     "research/l2l/configs/store_cpu.yaml",
+     "--device",
+     "cpu",
+     "--hypothesis",
+     "H09"
+    ]
+   }
+  ],
+  "judge": "lab"
+ },
+ "evidence_name": "t10_merge_equivalence_tiny_r20261119T051649Z",
+ "study": {
+  "path": "configs/studies/assignment.yaml",
+  "sha256": "45931fa58c1c0928f77d05f52d4b4f929eae33b400129148de3d5fe3bea8ab62"
+ },
+ "git": {
+  "commit": "29852d11c2a37eeda94cd5ee53692fffd8d75d69",
+  "branch": "main",
+  "tracked_dirty": false,
+  "dirty_files": []
+ },
+ "utc_start": "2026-11-19T05:16:49+00:00",
+ "utc_end": "2026-11-19T05:17:51+00:00",
+ "python": "3.12.15",
+ "hardware": {
+  "cuda": true,
+  "bf16": true,
+  "vram_gib": 11.63,
+  "gpu": "NVIDIA GeForce RTX 3060",
+  "capability": "8.6",
+  "cuda_error": null,
+  "packages": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "per_process_smi": true,
+  "nvidia_smi_apps": "10439, 122",
+  "fixture_packages_saved": {
+   "torch": "2.14.1+cu126",
+   "transformers": "4.57.6",
+   "peft": "0.21.3"
+  },
+  "fixture_packages": true,
+  "linux_native": true,
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+  "host_ram_gib": 125.8
+ },
+ "model": "tiny",
+ "precision": [
+  "float32",
+  "bfloat16"
+ ],
+ "diagnostic": false,
+ "configs": {
+  "research/l2l/configs/store_cpu.yaml": {
+   "sha256": "cd9f52c56460a60b7002d9d6f07cdef4f673c53ad031019b3db269649b3809ab",
+   "seeds": {
+    "training.seed": 42,
+    "data.subset_seed": 42
+   },
+   "precision": "float32",
+   "backend": "l2l_sync"
+  }
+ },
+ "commands": [
+  {
+   "argv": [
+    "scripts/l2l_lab.py",
+    "run",
+    "--name",
+    "t10_merge_equivalence_tiny_r20261119T051649Z",
+    "--case",
+    "merge_equivalence",
+    "--config",
+    "research/l2l/configs/store_cpu.yaml",
+    "--device",
+    "cpu",
+    "--hypothesis",
+    "H09"
+   ],
+   "utc_start": "2026-11-19T05:16:49+00:00",
+   "utc_end": "2026-11-19T05:17:47+00:00",
+   "seconds": 57.6,
+   "exit": 0,
+   "log": "raw/step01.log"
+  }
+ ]
+}

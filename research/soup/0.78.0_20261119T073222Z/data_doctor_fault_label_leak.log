@@ -1,0 +1,6 @@
+$ soup --no-telemetry data doctor research/soup/0.78.0_20261119T073222Z/data_doctor_fault_label_leak_input.jsonl --model Qwen/Qwen3-4B --max-length 256 --sample 200 -o research/soup/0.78.0_20261119T073222Z/data_doctor_fault_label_leak.json
+exit 1
+--- stdout
+Error: soup data doctor needs transformers to load a tokenizer — install with: pip install "soup-cli[train]"
+
+--- stderr

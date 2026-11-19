@@ -1,0 +1,19 @@
+{
+ "experiment_id": "20261119T051240Z_H02.lab_async_cuda",
+ "entry": "H02.lab_async_cuda",
+ "hypothesis": "H02",
+ "evidence_name": "t08_gradient_equivalence_async_r20261119T051240Z",
+ "status": "PASS",
+ "criterion": "MET",
+ "detail": "status PASS, execution PASS, hypothesis_result SUPPORTED: all 5296 comparisons within predefined thresholds",
+ "supplementary": false,
+ "diagnostic": false,
+ "outputs": [
+  {
+   "output": "research/l2l/experiments/t08_gradient_equivalence_async_r20261119T051240Z",
+   "exists": true,
+   "file": "research/l2l/experiments/t08_gradient_equivalence_async_r20261119T051240Z/result.json",
+   "sha256_uncompressed": "a9323e7d0da8a87608854a6e19b613e795d69212b6fa8ebabb1e21817fef3eca"
+  }
+ ]
+}

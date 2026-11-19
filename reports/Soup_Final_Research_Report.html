@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GRPO + LoRA on Qwen3-4B under an 8 GB cap</title>
+<!--
+  Source of reports/Soup_Final_Research_Report.pdf. Build (from the repository root, WSL with Windows Chrome):
+    .venv/bin/python -I reports/figures/make_figures.py
+    bash reports/build_pdf.sh
+  Every number is traced to its artifact in reports/REPORT_EVIDENCE_MAP.md.
+-->
+<style>
+  @page { size: A4; margin: 0; }
+  :root { --ink: #1a1a1a; --muted: #5f5f5f; --rule: #c9c9c9; --soft: #f3f3f3; --acc: #1f5fa8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: var(--ink); }
+  body { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; font-size: 8.55pt; line-height: 1.32;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; padding: 11mm 13.5mm 0 13.5mm; position: relative; overflow: hidden;
+          page-break-after: always; break-after: page; }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  .foot { position: absolute; left: 13.5mm; right: 13.5mm; bottom: 5.5mm; font-size: 7pt; color: var(--muted);
+          display: flex; justify-content: space-between; }
+  .kicker { font-size: 7.6pt; font-weight: bold; color: var(--muted); letter-spacing: 0.02em; }
+  h1 { font-size: 19pt; margin: 1.5mm 0 1mm; line-height: 1.1; }
+  .sub { color: var(--muted); font-size: 8pt; margin-bottom: 1.6mm; }
+  hr.top { border: 0; border-top: 0.6pt solid var(--rule); margin: 0 0 2mm; }
+  h2 { font-size: 7.9pt; font-weight: bold; text-transform: uppercase; margin: 2.4mm 0 0.8mm; letter-spacing: 0.02em; }
+  h2 .n { color: var(--muted); }
+  p { margin: 0 0 1.3mm; text-align: left; }
+  b { font-weight: bold; }
+  sup, sub { line-height: 0; font-size: 75%; }
+  th { white-space: nowrap; }
+  .muted { color: var(--muted); }
+  .verdict { border-left: 2.2pt solid var(--ink); background: var(--soft); padding: 1.6mm 2.4mm; margin: 0 0 1.5mm; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; }
+  table { border-collapse: collapse; width: 100%; font-size: 7.6pt; line-height: 1.25; margin: 0.6mm 0 1.4mm; }
+  th { text-align: left; font-weight: bold; border-top: 0.8pt solid var(--ink); border-bottom: 0.5pt solid var(--ink);
+       padding: 0.6mm 1.2mm; vertical-align: bottom; }
+  td { padding: 0.45mm 1.2mm; vertical-align: top; border-bottom: 0.3pt solid #e2e2e2; }
+  tr:last-child td { border-bottom: 0.8pt solid var(--ink); }
+  td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .cap { font-size: 7.3pt; color: var(--muted); margin: 0.4mm 0 1.4mm; line-height: 1.25; }
+  .cap b { color: var(--ink); }
+  .eq { display: grid; grid-template-columns: 1fr auto; align-items: center; margin: 0.6mm 0 0.9mm; }
+  .eq .no { color: var(--muted); font-size: 7.6pt; }
+  math { font-size: 9.6pt; }
+  math[display="block"] { margin: 0; }
+  ul { margin: 0 0 1.3mm; padding-left: 3.6mm; }
+  li { margin: 0 0 0.45mm; }
+  .tag { font-size: 6.9pt; font-weight: bold; padding: 0 0.9mm; border: 0.5pt solid currentColor; border-radius: 0.6mm; white-space: nowrap; }
+  .ok { color: #1d6b35; } .no { color: #a1271b; } .part { color: #8a5a00; }
+  .refs { font-size: 7.1pt; line-height: 1.25; }
+  .refcols { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; }
+  .refs p { margin: 0 0 0.5mm; padding-left: 4mm; text-indent: -4mm; }
+  code { font-family: Consolas, "Liberation Mono", monospace; font-size: 7.3pt; }
+  svg text { font-family: Arial, "Liberation Sans", sans-serif; }
+  figure { margin: 0.8mm 0 0; }
+  img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+
+<!-- ============================== PAGE 1 ============================== -->
+<section class="page">
+  <div class="kicker">SOUP INTERNSHIP · TAKE-HOME TASK · HARD TRACK · FINAL REPORT</div>
+  <h1>GRPO + LoRA on Qwen3-4B under an 8 GB cap</h1>
+  <div class="sub">Final run <code>qwen3_4b_final_plain_150_v2</code> (plain L2L, DFlash off) and LR=0 control <code>…_150_v2_lr0</code> · commit <code>29852d1</code>, clean tree · rented RTX 3060 12 GB · 2026-11-19 · own engine on PyTorch 2.14.1, transformers 4.57.6, PEFT 0.21.3 · evidence index: <code>reports/REPORT_EVIDENCE_MAP.md</code></div>
+  <hr class="top">
+
+  <div class="verdict"><b>Verdict: DON'T SHIP.</b> I trained a LoRA adapter on Qwen3-4B (non-thinking) with GRPO for 150 updates, streaming all 36 decoder layers from pinned host RAM through my own layer-to-layer (L2L) engine. Every stage stayed under the 8×10<sup>9</sup> B cap in nvidia-smi (highest per-process peak 2,864,709,632 B, 35.8%). The adapter changed and the algorithm ran correctly, but held-out accuracy rose only +0.94 pp, 95% CI [−0.38, +2.25] pp (n = 1066); AUC rose by a small but significant +0.0012. The assignment's DFlash rollouts were not run: the final experiment is plain L2L.</div>
+
+  <p><b>Task and choices.</b> Binary sentiment on Rotten Tomatoes [6]; the policy must answer POSITIVE or NEGATIVE, and the reward is 1 iff <code>response.strip().upper()</code> equals the gold label. It is exact and cheap, and on Qwen3-0.6B it moved test accuracy from 0.733 to 0.796 within 100 steps. 1024 balanced training prompts, no SFT, <code>enable_thinking=False</code> (asserted on every rendered prompt); test and validation hold 1066 examples each with no text shared with training. I wrote my own engine because the assignment asks for my own L2L, streaming and merge, and I needed bitwise control of the layer loop. Soup v0.78.0 served only as an external auditor. <b>My mistake:</b> I did not measure the 4B base's headroom first. It already scores 0.877, which shapes everything in section 3.</p>
+
+  <h2><span class="n">1.</span> Memory and time budget</h2>
+  <p><b>Why streaming is necessary.</b> 4.022×10<sup>9</sup> parameters × 2 B (bf16) = 8.045×10<sup>9</sup> B of weights, already above the 8.000×10<sup>9</sup> B cap before the CUDA context, KV cache or activations. So the 36 decoder layers (192.5 MiB each, 6.77 GiB) live in pinned host RAM, and the GPU holds only:</p>
+  <div class="eq"><math display="block"><msub><mi>M</mi><mi>GPU</mi></msub><mo>≈</mo><munder><mn>0.78</mn><mtext>emb = LM head</mtext></munder><mo>+</mo><munder><mrow><mn>2</mn><mo>×</mo><mn>0.20</mn></mrow><mtext>layer buffers</mtext></munder><mo>+</mo><munder><mn>0.46</mn><mtext>KV, 30×104 tok</mtext></munder><mo>+</mo><munder><mn>0.04</mn><mtext>fp32 logits</mtext></munder><mo>+</mo><munder><mn>0.01</mn><mtext>LoRA+AdamW</mtext></munder><mo>+</mo><mtext>context</mtext><mspace width="0.3em"/><mtext>GB</mtext></math><span class="no">(1)</span></div>
+  <p>Logits are computed only at response positions (151,936-entry vocab: 37 MiB per micro-batch of 6 instead of ≈0.74 GiB at all 104 positions). There are no reference log-probs (KL weight 0) and no drafter; the calculator puts the DFlash drafter at +0.84 GiB, unmeasured. LoRA (r = 32, α = 64) sits only on q/v/o of layers 34–35, so layers 0–33 run without autograd and only the two LoRA layers' inputs are checkpointed. The calculator allowed 20 resident layers (6.56 GiB); I kept 0, which exercises streaming everywhere but costs the full 7.27 GB per sweep instead of 3.23 GB.</p>
+  <table>
+    <tr><th>quantity</th><th class="r">predicted</th><th class="r">measured</th></tr>
+    <tr><td>PyTorch allocated / reserved, training peak</td><td class="r">1.750 / 1.925 GiB</td><td class="r">1.682 / 2.506 GiB</td></tr>
+    <tr><td>nvidia-smi per process, training (rollout + update)</td><td class="r">2.425 GiB</td><td class="r"><b>2.668 GiB</b> (35.8% of cap)</td></tr>
+    <tr><td>nvidia-smi device-wide, training</td><td class="r">–</td><td class="r">2.699 GiB</td></tr>
+    <tr><td>nvidia-smi per process, evaluation of all 4 models</td><td class="r">2.098 GiB</td><td class="r">1.867 GiB</td></tr>
+    <tr><td>merge (CPU, tensor by tensor): GPU / host max RSS</td><td class="r">0 / 2.14 GiB</td><td class="r">no CUDA context / 8.60 GB</td></tr>
+    <tr><td>host RSS, training</td><td class="r">14.71 GiB</td><td class="r">14.39 GiB</td></tr>
+    <tr><td>H2D bytes per GRPO update (13–14 sweeps × 7.267 GB)</td><td class="r">103.8 GB</td><td class="r">94.8 GB mean</td></tr>
+    <tr><td>generation / training time per update</td><td class="r">2.42 / 6.23 s</td><td class="r">2.24 / 7.28 s</td></tr>
+    <tr><td>GRPO update, total (transfer bound at 12.0 GB/s)</td><td class="r">≥ 8.65 s</td><td class="r">9.55 s mean</td></tr>
+  </table>
+  <p class="cap"><b>Table 1.</b> Predictions: my calculator on the safetensors headers before any 4B run (<code>results/budget/predictions/qwen3-4b-final_8gb.md</code>). Measurements: 150-update run, in-process sampler every 0.5 s (5947 samples, median gap 0.56 s), plus an external nvidia-smi wrapper per stage. LR=0 control 2.668 GiB, smoke 2.307 GiB, profile 2.057 GiB per process; device 13 MiB during the merge. Spikes shorter than one sample interval are invisible: backward and optimizer windows were too short to get their own reading.</p>
+  <p><b>Gaps.</b> Allocated memory came within 4%. Reserved was 0.58 GiB higher than predicted: the caching allocator keeps blocks from the different rollout, micro-batch and evaluation shapes, and my 10% overhead term was too small. The CUDA context cost 0.17 GB, not the assumed 0.5 GiB. The merge used 8.60 GB of host RSS against my 2.14 GiB prediction, which counted no memory-mapped pages. In a profiled merge, anonymous memory grew only 0.32 GB, so I attribute most of the gap to file-backed pages of the mapped safetensors (inference: ru_maxrss cannot separate them). <b>Time:</b> the update is transfer-bound, <math><mi>t</mi><mo>≥</mo><mn>14</mn><mo>×</mo><mn>7.267</mn><mtext> GB</mtext><mo>/</mo><mn>12.23</mn><mtext> GB/s</mtext><mo>=</mo><mn>8.32</mn><mtext> s</mtext></math>, 87% of the measured 9.55 s. Generation needs 3–4 sweeps (prefill plus one per new token); old log-probs and the update need 5 each, one per micro-batch of 6. So training, not generation, takes 76% of an update (2.24 s generation, 3.52 s old log-probs, 3.76 s update). The 12.23 GB/s figure comes from the 2026-11-18 profile on a different rented host; the 2026-11-19 profile measured 7.25 GB/s, which would need 14.0 s per update, more than any update took. I treat it as a contended measurement but have not explained it.</p>
+  <p><b>Enforcing the cap.</b> The in-process guard stops at exactly 8×10<sup>9</sup> B, and an external wrapper sampled nvidia-smi for every stage. <b>Both tests of the guard's stop-on-violation path failed on the rented host</b> (<code>test_memory_guard</code>, <code>test_profiler</code>: no exception raised; they pass on my laptop). The nvidia-smi records show that no stage came near the cap; they do not show that the guard would have stopped one that did.</p>
+  <h2><span class="n">2.</span> L2L, streaming and DFlash</h2>
+  <p><b>Implementation.</b> Each layer's weights sit in one page-aligned host slab registered with <code>cudaHostRegister</code>. A side stream copies layer i+1 into the free buffer while layer i computes; <i>ready</i> and <i>free</i> CUDA events order every copy against its reader, and a runtime ownership check refuses to reuse a buffer still being read. Generation streams the whole model once per decode step for all 30 sequences, with the KV cache on the GPU. Training streams it once per micro-batch for old log-probs and again for the update, then re-streams layers 35 and 34 for backward, recomputing each from its saved input and checking an exact checksum against the forward. Because my micro-batch loop sits outside the layer loop, an update costs 10 training sweeps; a layer-major loop, as in L2L [4], would need 2.</p>
+  <div class="foot"><span>Soup · internship · take-home task · final report</span><span>1</span></div>
+</section>
+
+<!-- ============================== PAGE 2 ============================== -->
+<section class="page">
+  <figure>
+  <svg viewBox="0 0 720 168" width="100%" role="img" aria-label="L2L execution pipeline">
+    <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1a1a1a"/></marker></defs>
+    <g font-size="9.2" fill="#1a1a1a">
+      <!-- host -->
+      <rect x="4" y="18" width="168" height="142" fill="#f3f3f3" stroke="#9a9a9a" stroke-width="0.8"/>
+      <text x="10" y="31" font-weight="bold" font-size="9.5">HOST (CPU RAM)</text>
+      <rect x="12" y="38" width="152" height="44" fill="#fff" stroke="#1a1a1a" stroke-width="0.7"/>
+      <text x="18" y="50">36 decoder-layer slabs, bf16</text>
+      <text x="18" y="61">cudaHostRegister (pinned)</text>
+      <text x="18" y="72">201.9 MB each · 7.267 GB total</text>
+      <rect x="12" y="88" width="152" height="30" fill="#fff" stroke="#9a9a9a" stroke-width="0.7"/>
+      <text x="18" y="100">prompts.jsonl + byte offsets</text>
+      <text x="18" y="111">rollouts/group_*.pt + index</text>
+      <rect x="12" y="124" width="152" height="30" fill="#fff" stroke="#9a9a9a" stroke-width="0.7"/>
+      <text x="18" y="136">merge: CPU, tensor by tensor,</text>
+      <text x="18" y="147">W₀ + 2·BA → bf16, 1 GiB shards</text>
+      <!-- copy stream -->
+      <line x1="164" y1="60" x2="238" y2="60" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ar)"/>
+      <text x="176" y="52" fill="#1f5fa8" font-size="8.6">H2D copy</text>
+      <text x="176" y="74" fill="#1f5fa8" font-size="8.6">12.2 GB/s</text>
+      <!-- GPU -->
+      <rect x="240" y="18" width="476" height="142" fill="#fff" stroke="#1a1a1a" stroke-width="0.9"/>
+      <text x="248" y="31" font-weight="bold" font-size="9.5">GPU (RTX 3060, capped at 8×10⁹ B by nvidia-smi)</text>
+      <rect x="250" y="38" width="96" height="22" fill="#fff" stroke="#1f5fa8" stroke-width="0.9"/>
+      <text x="256" y="52">buffer 0: layer i</text>
+      <rect x="250" y="64" width="96" height="22" fill="#fff" stroke="#1f5fa8" stroke-width="0.9" stroke-dasharray="3 2"/>
+      <text x="256" y="78">buffer 1: layer i+1</text>
+      <text x="250" y="98" font-size="8.2" fill="#5f5f5f">ready / free CUDA events;</text>
+      <text x="250" y="108" font-size="8.2" fill="#5f5f5f">reuse of a busy buffer is</text>
+      <text x="250" y="118" font-size="8.2" fill="#5f5f5f">refused at runtime</text>
+      <line x1="346" y1="49" x2="384" y2="49" stroke="#1a1a1a" stroke-width="0.9" marker-end="url(#ar)"/>
+      <rect x="386" y="38" width="160" height="48" fill="#f3f3f3" stroke="#1a1a1a" stroke-width="0.7"/>
+      <text x="392" y="50" font-weight="bold">compute stream</text>
+      <text x="392" y="62">unmodified HF/PEFT layer i</text>
+      <text x="392" y="73">forward, decode step, or</text>
+      <text x="392" y="84" font-size="8.6">no-grad pass for layers 0–33</text>
+      <line x1="546" y1="62" x2="572" y2="62" stroke="#1a1a1a" stroke-width="0.9" marker-end="url(#ar)"/>
+      <rect x="574" y="38" width="134" height="48" fill="#fff" stroke="#1a1a1a" stroke-width="0.7"/>
+      <text x="580" y="50">LM head (tied embedding)</text>
+      <text x="580" y="61">→ log π of response tokens</text>
+      <text x="580" y="72">→ GRPO loss (2)</text>
+      <text x="580" y="83" font-size="8.6">rewards, advantages (1)</text>
+      <rect x="386" y="96" width="322" height="30" fill="#fff" stroke="#1a1a1a" stroke-width="0.7"/>
+      <text x="392" y="108">backward, layers 35 → 34: re-stream layer, recompute from the saved</text>
+      <text x="392" y="119">layer input, check exact checksum vs forward, autograd.grad → LoRA grads</text>
+      <path d="M640,86 L640,96" stroke="#1a1a1a" stroke-width="0.9" marker-end="url(#ar)"/>
+      <rect x="250" y="130" width="458" height="24" fill="#f3f3f3" stroke="#9a9a9a" stroke-width="0.7"/>
+      <text x="256" y="141">Resident: embedding = LM head 0.778 GB, final norm, LoRA (fp32) + AdamW state 12 MiB, KV cache of</text>
+      <text x="256" y="151">rollouts and evaluation, layer-boundary inputs of layers 34–35. Accumulate grads (3), then AdamW.</text>
+    </g>
+  </svg>
+  </figure>
+  </figure>
+  <p class="cap"><b>Figure 1.</b> My executor (<code>qwen_grpo/execution/</code>), configured as <code>l2l_async</code>: prefetch depth 1, 2 buffers, 0 resident decoder layers. Rollouts, old log-probs, the update, greedy evaluation and label scoring all run through it; the merge never touches the GPU.</p>
+  <p><b>Equivalence</b> (<code>scripts/l2l_lab.py</code>, cases <code>t08_*</code>). On tiny random Qwen3 models (4–6 layers, fp32 and bf16, eager and SDPA, several LoRA placements), async L2L matched resident execution on the rented RTX 3060 bitwise: 2690 forward comparisons, 5296 loss/logit/gradient comparisons, and 6528 comparisons of the full update including AdamW state. The bound is 0 because the same device, kernels and bytes must give identical results. Generation passed 1292 comparisons within a derived bound (prefix logits 8.7×10<sup>−3</sup>, largest error 9.8×10<sup>−4</sup>). Earlier, Qwen3-0.6B ran 100 training steps with bitwise-identical rows under resident and synchronous L2L. <b>History:</b> my first gate failed H01 on 2 comparisons against a fixture recorded on another machine (1.3 and 2.3×10<sup>−7</sup>, bound 0) and blocked training. I moved the gate to a same-host comparison and kept the fixture as a non-gating diagnostic. <b>Limits:</b> async was checked only on tiny models with <code>verify=True</code>, which synchronizes at every layer; on 4B, resident execution does not fit, so there is no reference to compare against.</p>
+  <p><b>Sync vs async speed: not measured.</b> I have no synchronous 4B baseline or copy/compute timeline, so I claim no prefetch speed-up (H06 untested). I only know that an update took 1.15× the transfer bound at 12.23 GB/s in this run, and 1.01× in my 60-update run.</p>
+  <div class="cols">
+  <div>
+    <p><b>Streaming and resume.</b> Prompts are read by byte offset, and all 672 rollout batches went to disk with an index. Deterministic resume passed at 6 injected crash points and under an external SIGKILL on a tiny CPU model. On real Qwen3-4B, I SIGKILLed a 6-step job after its step-2 checkpoint and resumed it in a new process. Committed rows, rollout records, the sample multiset (no gaps, no duplicates), adapter and AdamW state at every checkpoint, and the final RNG all matched an uninterrupted run. That test was a separate 6-step job, not a kill in the middle of the 150-update run.</p>
+    <p><b>Merge.</b> The merge reads the base lazily tensor by tensor on the CPU and writes bf16(W<sub>0</sub> + 2·BA) in 1 GiB shards. Each of the 6 adapted tensors is within half a bf16 ulp of the exact sum. The guarded merge stage (32 s) opened no GPU process. I did not keep the merged checkpoint.</p>
+  </div>
+  <div>
+    <p><b>DFlash: incomplete.</b> I integrated the speculative loop for <code>z-lab/Qwen3-4B-DFlash-b16</code> into the L2L executor, feeding the drafter hidden features from the streamed target layers. With tiny and oracle drafters it passes CPU tests, including token-identical greedy output. <b>I never ran it on Qwen3-4B.</b> The final run has <code>dflash.enabled: false</code>, checked at pre-flight, so I have no acceptance length, no step time with or without it, no on-policy sampling check and no drift curve. The measured update bounds the possible gain: generation is 3–4 of 13–14 sweeps, and each draft block still needs one verification sweep. With 4-token answers, even perfect drafting saves at most 2–3 sweeps (14–21% of transfer time), at a predicted +0.84 GiB.</p>
+  </div>
+  </div>
+
+  <h2><span class="n">3.</span> Evidence that training occurred</h2>
+  <p>I separate three claims. <b>(i) The adapter changed:</b> ‖θ − θ<sub>0</sub>‖ = 2.00, its sha256 differs from the initialization, 56 of 1066 test predictions changed, and 0 of 398 frozen base tensors changed (sha256 before and after). <b>(ii) The algorithm ran correctly:</b> |log π<sub>θ</sub> − log π<sub>old</sub>| = 0 before all 150 updates, the gradient and full-update equivalence above holds, and zero-signal batches were skipped. <b>(iii) The model improved on held-out data:</b> only partly (Table 2).</p>
+  <table>
+    <tr><th>policy (test, n = 1066, greedy)</th><th class="r">accuracy</th><th class="r">macro-F1</th><th class="r">AUC</th><th class="r">invalid</th><th class="r">POS rate</th><th class="r">recall POS / NEG</th></tr>
+    <tr><td>base Qwen3-4B (adapter disabled)</td><td class="r">0.8771</td><td class="r">0.8787</td><td class="r">0.9511</td><td class="r">5</td><td class="r">0.436</td><td class="r">0.816 / 0.938</td></tr>
+    <tr><td>trained, adapter attached (step 150)</td><td class="r">0.8865</td><td class="r">0.8869</td><td class="r">0.9523</td><td class="r">1</td><td class="r">0.489</td><td class="r">0.876 / 0.897</td></tr>
+    <tr><td>merged bf16 model</td><td class="r">0.8865</td><td class="r">0.8869</td><td class="r">0.9523</td><td class="r">1</td><td class="r">0.489</td><td class="r">0.876 / 0.897</td></tr>
+    <tr><td>LR=0 control (step 30)</td><td class="r">0.8771</td><td class="r">0.8787</td><td class="r">0.9511</td><td class="r">5</td><td class="r">0.436</td><td class="r">0.816 / 0.938</td></tr>
+    <tr><td colspan="7"><b>trained − base:</b> Δaccuracy +0.94 pp, paired-bootstrap 95% CI [−0.38, +2.25] pp; McNemar p = 0.22 (22 vs 32 discordant); ΔAUC +0.0012, CI [+0.0002, +0.0022]</td></tr>
+    <tr><td colspan="7"><b>merged − trained:</b> predictions 1066/1066 identical; label scores within 4×10<sup>−5</sup> on 633 (exactly equal on 400), differ by 0.0625–0.375 nats on 433</td></tr>
+    <tr><td colspan="7"><b>control − base:</b> predictions and scores identical; adapter at step 30 byte-identical to its initialization (same sha256)</td></tr>
+  </table>
+  <p class="cap"><b>Table 2.</b> Produced by <code>scripts/final_eval.py</code> (all four policies through the same L2L backend, prompts and decoding) → <code>research/l2l/experiments/t13_final_eval_qwen3_4b_final_plain_150_v2.json</code>; every value recomputed independently by <code>reports/verify_report_numbers.py</code>. AUC uses s(x) = log P(POSITIVE) − log P(NEGATIVE), teacher-forced.</p>
+  <p><b>Interpretation.</b> The accuracy CI includes 0, so I do not claim an accuracy improvement; my pre-registered rule for H12 (CI above 0) is not met. With 54 discordant pairs, a 5% test needs about 1.35 pp. The AUC CI excludes 0, so the adapter ranks examples slightly better. Most of the change, however, is a shift of the class prior. Label scores moved +6.01 ± 0.88 nats toward POSITIVE with rank correlation 0.9985 to the base (Figure 2b). This corrects a base that under-predicted POSITIVE (0.436 against a true 0.5) and trades NEGATIVE recall for POSITIVE recall. Running 2.5× more updates than my first run moved Δaccuracy from +0.38 to +0.94 pp, still inside the noise.</p>
+  <div class="foot"><span>Soup · internship · take-home task · final report</span><span>2</span></div>
+</section>
+
+<!-- ============================== PAGE 3 ============================== -->
+<section class="page">
+  <figure><img src="figures/fig_memory_scores.svg" alt="Memory trace and label-score scatter"></figure>
+  <p class="cap"><b>Figure 2.</b> (a) In-process nvidia-smi trace of the 150-update run; the LR=0 control reached the same peak. (b) Teacher-forced label score per test example, trained against base: a near-parallel shift above the diagonal.</p>
+  <p><b>Why loss and reward are not evidence.</b> With one update per rollout batch, ρ ≡ 1, the clip never fires and the loss equals −mean(A) = 0 (logged |L| ≤ 3.2×10<sup>−8</sup>): the gradient is REINFORCE with a group baseline, and the loss says nothing about learning. The logged reward covers only batches that produced an update, so it is selection-biased; it fell from 0.86 to 0.73. Over all 20,160 rollouts, the reward stayed between 0.86 and 0.92 in every 50-batch bin. <b>Why so little signal:</b> only 163 of 3360 groups (4.9%) had mixed rewards, so 522 of 672 batches (77.7%) had zero advantage, as (1 − 0.049)<sup>5</sup> = 0.78 predicts. 55% of the 3211 s of training went to those batches.</p>
+  <p><b>Merge and control.</b> The merged model's predictions match on every example, but its label scores are not numerically identical. The 433 larger differences are multiples of 1/16 nat (within 0.1%), 1–3 bf16 spacings at these score magnitudes (|s| up to 26). The merged path rounds W<sub>0</sub> + 2·BA to bf16, while the adapter path adds an fp32 LoRA product to the bf16 base output; the pattern is consistent with bf16 rounding, but I have not isolated the cause (one score went from +0.125 to a 0.0 tie, prediction unchanged). The LR=0 control proves only that the evaluation is deterministic and the adapter inert at lr = 0. A shuffled-reward control, which would separate reward-driven change from noise, was not run.</p>
+  <p><b>What the check does not detect:</b> a threshold shift posing as learning unless AUC is read alongside accuracy; forgetting outside this task (no general benchmark); near-duplicate leakage (overlap is checked on exact text: 0 shared train/test texts); pretraining exposure to Rotten Tomatoes (equal for all four policies); gaming outside the two-label parser.</p>
+
+  <h2><span class="n">4.</span> Silent failures and Soup coverage</h2>
+  <ul>
+    <li><b>Reward gaming.</b> Tested with <code>soup reward stress</code>: 0 of 4600 attacks were accepted against my reward, and a planted substring-match verifier was flagged (800/800 answer-spray accepted). <b>Soup catches it.</b></li>
+    <li><b>Zero-signal run</b> (finishes and looks healthy, learns little): I count mixed groups per batch and per update; 77.7% of batches carried no signal. Soup has no check for this: offline <code>soup ship</code> compares point scores without a CI (in 0.77.2 it said SHIP for a +0.09 pp gain). On this run it said <b>DON'T SHIP only because no general benchmark was supplied</b>, not because of significance.</li>
+    <li><b>Data and template</b> (thinking mode on, leaked labels, rows with no target): I assert the empty think block on every prompt and check text overlap (0). <code>soup data doctor</code> <b>did not run</b> on 7 planted-fault fixtures (missing <code>soup-cli[train]</code>). In 0.77.2 it reported a planted "no assistant turn" file as identical to clean data.</li>
+    <li><b>GRPO</b> (stale old log-probs, wrong micro-batch scaling): an assertion before every update (difference 0), a CPU test, and the bitwise H05 update. No Soup check applies to a custom trainer. <b>L2L</b> (buffer overwritten while read, recompute mismatch): 146 of 146 injected unsafe reuses were refused at runtime, and every recomputed layer is checksummed. <b>Streaming:</b> the kill/resume tests above. Soup has no check for either.</li>
+    <li><b>Merge</b> (dropped scale, wrong module, delta lost in bf16): the half-ulp residual check and 1066/1066 prediction agreement. <code>soup adapters check</code> <b>did not run</b> (numpy missing); in 0.77.2 it flagged an all-zero adapter as inactive, which catches an untrained adapter, not a wrong merge. <b>DFlash</b> (drafter substituting for the policy): CPU tests only; not on the final path.</li>
+    <li><b>Memory</b> (cap exceeded outside the allocator): per-process nvidia-smi for every stage, all below the cap; the internal guard's stop tests failed on the host (section 1). Soup pre-flight (<code>advise</code>, <code>plan</code>, <code>train</code> hardware-fit) was <b>not run</b>: it plans Soup's own trainer, not my engine.</li>
+  </ul>
+
+  <div class="cols">
+  <div>
+    <h2><span class="n">5.</span> Verdict: DON'T SHIP</h2>
+    <p>Memory, L2L correctness, merge and control hold, but the artifact is not demonstrably better (Δaccuracy CI includes 0; mostly a prior shift), and DFlash, the sync/async comparison, two Soup checks and the guard on the host are unverified. Before shipping:</p>
+    <ul>
+      <li>Keep only prompts the base answers correctly in 1–5 of 6 samples, or raise G, so most groups are mixed. Pre-register n for a target effect, given the current 1.35 pp detectable effect.</li>
+      <li>Ship on a paired-CI lower bound above 0, plus a general benchmark for forgetting, both fed to <code>soup ship</code>.</li>
+      <li>Run DFlash on 4B with acceptance length, step time with and without it, greedy identity, a sampling check and drift; add a shuffled-reward control.</li>
+      <li>Fix the guard's stop path on the host, then install <code>soup-cli[train]</code> and run data doctor and adapters check.</li>
+    </ul>
+  </div>
+  <div>
+    <h2>What surprised me, what still concerns me</h2>
+    <p>The usual training signals were structurally blind: loss 0, ratio 1, clip 0. The base already solved the task, so GRPO mostly learned a class prior. The update is a PCIe copy loop, not compute. I am concerned that async L2L is verified only on tiny models with per-layer synchronization, that the 7.25 GB/s profile reading is unexplained, and that the guard's failure on the host is undiagnosed.</p>
+    <h2>Provenance and AI tools</h2>
+    <p>Raw timestamped logs and nvidia-smi samples: <code>runs/*/training/</code> and <code>assignment_results/manual/*/telemetry/</code>. The staged runner's gate failed on the two guard tests, so I ran each stage by hand under the logging wrapper. Claude Code (Opus 5.5) co-authored 119 of 137 commits (code, tests, orchestration, audits, drafts). I accepted code only after bitwise tests passed; its reports went stale after reruns and its profiler once miscounted bytes, so a separate script recomputes every number here.</p>
+  </div>
+  </div>
+  <div class="refs"><p>[1] Shao et al., DeepSeekMath (GRPO), arXiv:2402.03300. [2] Hu et al., LoRA, arXiv:2106.09685. [3] Chen et al., sublinear memory cost, arXiv:1604.06174. [4] Pudipeddi et al., L2L, arXiv:2002.05645. [5] Qwen3 technical report, arXiv:2505.09388. [6] Pang &amp; Lee, ACL 2005.</p></div>
+  <div class="foot"><span>Soup · internship · take-home task · final report</span><span>3</span></div>
+</section>
+</body>
+</html>

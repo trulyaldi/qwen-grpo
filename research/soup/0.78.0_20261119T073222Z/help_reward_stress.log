@@ -1,0 +1,26 @@
+$ soup --no-telemetry reward stress --help
+exit 0
+--- stdout
+                                                                                                                                                                               
+ Usage: soup reward stress [OPTIONS] {reward_target}                                                                                                                           
+                                                                                                                                                                               
+ Adversarially probe a reward verifier for gameability (exit 0 robust / 2 gameable).                                                                                           
+                                                                                                                                                                               
+╭─ Arguments ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ *    reward_target      <str>  Verifier to probe: a .py path, a builtin name, or 'verifiable'. [required]                                                                   │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --references               <str>    JSONL of gold outputs (enables gold-aware probing).                                                                                     │
+│ --field                    <str>    Gold field (default: answer). [default: answer]                                                                                         │
+│ --verifiable-domain        <str>    Domain for a 'verifiable' target.                                                                                                       │
+│ --sentinel                 <str>    Sentinel-spam token. [default: GOLD]                                                                                                    │
+│ --threshold                <float>  Reward >= this = accept. [default: 0.5]                                                                                                 │
+│ --max-gameable             <float>  Max junk accept-rate allowed before the verdict flips to gameable. [default: 0.0]                                                       │
+│ --attacks                  <str>    Comma list: empty,length,repetition,sentinel,wrapped_junk,answer_spray.                                                                 │
+│                                     [default: empty,length,repetition,sentinel,wrapped_junk,answer_spray]                                                                   │
+│ --output-report            <str>    Also write the stress report as JSON.                                                                                                   │
+│ --help                              Show this message and exit.                                                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+--- stderr

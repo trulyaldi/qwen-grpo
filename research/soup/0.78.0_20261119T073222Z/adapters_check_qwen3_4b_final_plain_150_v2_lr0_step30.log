@@ -1,0 +1,6 @@
+$ soup --no-telemetry adapters check runs/qwen3_4b_final_plain_150_v2_lr0/checkpoints/step30 --json
+exit 1
+--- stdout
+
+--- stderr
+numpy package required; pip install "soup-cli[train]" (or pip install numpy)

@@ -1,0 +1,45 @@
+{
+ "status": "UNAVAILABLE",
+ "started_utc": "20261119T073027Z",
+ "plan": {
+  "discovery": [
+   "root",
+   "doctor",
+   "data_doctor",
+   "adapters_check",
+   "reward_stress",
+   "ship",
+   "advise",
+   "plan",
+   "train"
+  ],
+  "data_doctor": [
+   "clean",
+   "fault_no_assistant",
+   "fault_empty_assistant",
+   "fault_unknown_role",
+   "fault_truncation",
+   "fault_noncanonical_label",
+   "fault_label_leak"
+  ],
+  "reward_stress": [
+   "real_reward",
+   "permissive_fault"
+  ],
+  "adapters_check": [
+   "qwen3_4b_final_plain_150_v2_step0",
+   "qwen3_4b_final_plain_150_v2_step150",
+   "qwen3_4b_final_plain_150_v2_lr0_step0",
+   "qwen3_4b_final_plain_150_v2_lr0_step30"
+  ],
+  "ship": [
+   "t13_150_update",
+   "t13_150_update_lr0_control"
+  ],
+  "preflight": [
+   "advise",
+   "plan",
+   "train hardware-fit"
+  ]
+ }
+}

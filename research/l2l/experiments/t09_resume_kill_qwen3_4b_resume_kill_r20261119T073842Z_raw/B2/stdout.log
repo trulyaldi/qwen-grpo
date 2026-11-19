@@ -1,0 +1,17 @@
+LoRA modules (6): ['model.layers.34.self_attn.q_proj', 'model.layers.34.self_attn.v_proj', 'model.layers.34.self_attn.o_proj', 'model.layers.35.self_attn.q_proj', 'model.layers.35.self_attn.v_proj', 'model.layers.35.self_attn.o_proj']
+trainable parameters: 1,081,344 of 4,023,549,440 (0.0269%)
+resumed from runs/qwen3_4b_resume_kill_killB/checkpoints/step2: step 2, attempt 4
+streaming resume: uncommitted rollout groups [5, 6, 7, 8, 9] moved aside (they are regenerated)
+step  3 (attempt   9) 342N,644P,609P,1130P,142N mixed 1  R 0.83  loss -0.0000  |g| 2.964e-01 (A 8.33e-02, B 2.84e-01)  |dtheta| 1.29e-01  |(a/r)BA| 2.884e-01  alloc 1.13  peak res 1.77 GiB
+step  4 (attempt  14) 197P,1254P,336P,323P,1158P mixed 1  R 0.83  loss -0.0000  |g| 2.963e-01 (A 1.31e-01, B 2.66e-01)  |dtheta| 1.14e-01  |(a/r)BA| 3.439e-01  alloc 1.13  peak res 1.91 GiB
+  [val subset, step 4] acc 0.9375  F1 0.9373  rec POS 0.8750 NEG 1.0000  invalid 0.0000  pred POS 0.4375  (n=16)
+step  5 (attempt  16) 388N,1305P,946N,1115N,135P mixed 1  R 0.97  loss -0.0000  |g| 3.138e-01 (A 1.66e-01, B 2.67e-01)  |dtheta| 7.40e-02  |(a/r)BA| 3.775e-01  alloc 1.13  peak res 1.91 GiB
+step  6 (attempt  17) 755P,259N,1214N,1491P,1230N mixed 1  R 0.97  loss -0.0000  |g| 2.528e-01 (A 1.43e-01, B 2.08e-01)  |dtheta| 7.39e-02  |(a/r)BA| 4.132e-01  alloc 1.13  peak res 1.91 GiB
+  [val subset, step 6] acc 0.9375  F1 0.9373  rec POS 0.8750 NEG 1.0000  invalid 0.0000  pred POS 0.4375  (n=16)
+
+batches by number of mixed groups: {'0': 11, '1': 5, '2': 1, '3': 0, '4': 0, '5': 0}, prompt groups 85, responses 510, train time 94 s
+steps 6/6, batches 17, zero-signal batches 11, frozen changed 0/398, params equal init: False
+grad norm range [2.528e-01, 3.138e-01]  change from init 4.603e-01  |(a/r)BA| 4.132e-01
+peak allocated 1.67 GiB, peak reserved 1.91 GiB, device 11.63 GiB; allocator peak below the 8.0 GiB budget: yes (allocator stats exclude the CUDA context: not budget evidence; nvidia-smi samples in training/memory/)
+
+run qwen3_4b_resume_kill_killB: runs/qwen3_4b_resume_kill_killB/  report: runs/qwen3_4b_resume_kill_killB/report.md

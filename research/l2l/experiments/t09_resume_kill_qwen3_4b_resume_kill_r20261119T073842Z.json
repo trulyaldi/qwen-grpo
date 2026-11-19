@@ -1,0 +1,332 @@
+{
+ "mode": "real_cuda",
+ "config": "configs/experiments/qwen3_4b_resume_kill.yaml",
+ "runs": {
+  "A": "qwen3_4b_resume_kill_killA",
+  "B": "qwen3_4b_resume_kill_killB"
+ },
+ "started_utc": "2026-11-19T07:38:42.452+00:00",
+ "stall": null,
+ "cap_bytes": 8000000000,
+ "raw": "research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw",
+ "A": {
+  "argv": [
+   "/venv/main/bin/python",
+   "/workspace/qwen-grpo/scripts/resume_kill_test.py",
+   "child",
+   "--device",
+   "cuda",
+   "--config",
+   "/tmp/t09_kill_4vwu1unr/qwen3_4b_resume_kill_killA.yaml"
+  ],
+  "started_utc": "2026-11-19T07:38:42.453+00:00",
+  "stdout": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/A/stdout.log",
+  "stderr": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/A/stderr.log",
+  "raw_dir": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/A",
+  "cap_bytes": 8000000000,
+  "expect_gpu": true,
+  "exit": 0,
+  "ended_utc": "2026-11-19T07:41:51.835+00:00",
+  "seconds": 189.4,
+  "signals_sent": [],
+  "stop_reason": null,
+  "violation": null,
+  "children_max_rss_bytes": 15490772992,
+  "children_max_rss_note": "ru_maxrss of the largest waited-for descendant of this supervisor (Linux, KiB)",
+  "telemetry": {
+   "raw_files": {
+    "apps": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/A/telemetry/nvidia_smi_apps.csv",
+    "gpu": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/A/telemetry/nvidia_smi_gpu.csv",
+    "pids": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/A/telemetry/pids.csv",
+    "meta": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/A/telemetry/telemetry.json"
+   },
+   "interval_ms": 200,
+   "started_utc": "2026-11-19T07:38:42.453+00:00",
+   "stopped_utc": "2026-11-19T07:41:51.834+00:00",
+   "nvidia_smi_version": "NVIDIA-SMI version  : 595.99.02\nNVML version        : 595.99\nDRIVER version      : 595.99.02\nCUDA Version        : 13.2",
+   "exit_codes": {
+    "apps": 0,
+    "gpu": 0
+   },
+   "stderr_nonempty": {
+    "apps": false,
+    "gpu": false
+   },
+   "apps_rows": 908,
+   "apps_numeric_rows": 908,
+   "apps_unparsed_lines": 0,
+   "gpu_rows": 945,
+   "gpu_unparsed_lines": 0,
+   "attributed_pids": [
+    47335
+   ],
+   "tracked_pids": 72,
+   "attributed_samples": 908,
+   "attributed_numeric_samples": 908,
+   "partial_samples": 0,
+   "process_peak_mib": 2364.0,
+   "process_peak_timestamp": "2026/11/19 07:40:48.052",
+   "device_peak_used_mib": 2397.0,
+   "device_peak_timestamp": "2026/11/19 07:40:48.111",
+   "device_total_mib": 12288.0,
+   "gpu_names": [
+    "NVIDIA GeForce RTX 3060"
+   ],
+   "power_peak_w": 138.18,
+   "utilization_peak_pct": 100.0,
+   "cap_bytes": 8000000000,
+   "cap_mib": 7629.39453125,
+   "memory_status": "PASS",
+   "memory_reason": "per-process peak 2364 MiB <= cap 7629 MiB over 908 samples",
+   "violation": null,
+   "note": "nvidia-smi was sampled every 200 ms; allocations that rise and fall between two samples are not seen, so a measured peak is a lower bound on the true peak",
+   "sampling": {
+    "device_samples": 945,
+    "first_sample_utc": "2026-11-19T07:38:42.508000+00:00",
+    "last_sample_utc": "2026-11-19T07:41:51.600000+00:00",
+    "max_gap_s": 0.212,
+    "gaps_over_1s": 0,
+    "gaps_over_max": 0,
+    "max_gap_limit_s": 5.0,
+    "workload_started_utc": "2026-11-19T07:38:43.087+00:00",
+    "workload_ended_utc": "2026-11-19T07:41:50.798+00:00",
+    "problems": []
+   },
+   "monitor_failures": [],
+   "expect_gpu": true,
+   "utc_offset_s": 0,
+   "scope": "process_peak_mib: sum of used_gpu_memory over this item's process group per sample (CUDA context included); device_peak_used_mib: memory.used of the whole GPU (every process, may include others)"
+  },
+  "memory_status": "PASS"
+ },
+ "B1": {
+  "argv": [
+   "/venv/main/bin/python",
+   "/workspace/qwen-grpo/scripts/resume_kill_test.py",
+   "child",
+   "--device",
+   "cuda",
+   "--config",
+   "/tmp/t09_kill_4vwu1unr/qwen3_4b_resume_kill_killB.yaml"
+  ],
+  "started_utc": "2026-11-19T07:41:51.886+00:00",
+  "stdout": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B1/stdout.log",
+  "stderr": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B1/stderr.log",
+  "raw_dir": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B1",
+  "cap_bytes": 8000000000,
+  "expect_gpu": true,
+  "exit": -9,
+  "ended_utc": "2026-11-19T07:43:49.691+00:00",
+  "seconds": 117.8,
+  "signals_sent": [],
+  "stop_reason": null,
+  "violation": null,
+  "children_max_rss_bytes": 15501090816,
+  "children_max_rss_note": "ru_maxrss of the largest waited-for descendant of this supervisor (Linux, KiB)",
+  "telemetry": {
+   "raw_files": {
+    "apps": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B1/telemetry/nvidia_smi_apps.csv",
+    "gpu": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B1/telemetry/nvidia_smi_gpu.csv",
+    "pids": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B1/telemetry/pids.csv",
+    "meta": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B1/telemetry/telemetry.json"
+   },
+   "interval_ms": 200,
+   "started_utc": "2026-11-19T07:41:51.887+00:00",
+   "stopped_utc": "2026-11-19T07:43:49.690+00:00",
+   "nvidia_smi_version": "NVIDIA-SMI version  : 595.99.02\nNVML version        : 595.99\nDRIVER version      : 595.99.02\nCUDA Version        : 13.2",
+   "exit_codes": {
+    "apps": 0,
+    "gpu": 0
+   },
+   "stderr_nonempty": {
+    "apps": false,
+    "gpu": false
+   },
+   "apps_rows": 551,
+   "apps_numeric_rows": 551,
+   "apps_unparsed_lines": 0,
+   "gpu_rows": 585,
+   "gpu_unparsed_lines": 0,
+   "attributed_pids": [
+    48772
+   ],
+   "tracked_pids": 50,
+   "attributed_samples": 551,
+   "attributed_numeric_samples": 551,
+   "partial_samples": 0,
+   "process_peak_mib": 2220.0,
+   "process_peak_timestamp": "2026/11/19 07:43:29.117",
+   "device_peak_used_mib": 2253.0,
+   "device_peak_timestamp": "2026/11/19 07:43:29.149",
+   "device_total_mib": 12288.0,
+   "gpu_names": [
+    "NVIDIA GeForce RTX 3060"
+   ],
+   "power_peak_w": 132.11,
+   "utilization_peak_pct": 100.0,
+   "cap_bytes": 8000000000,
+   "cap_mib": 7629.39453125,
+   "memory_status": "PASS",
+   "memory_reason": "per-process peak 2220 MiB <= cap 7629 MiB over 551 samples",
+   "violation": null,
+   "note": "nvidia-smi was sampled every 200 ms; allocations that rise and fall between two samples are not seen, so a measured peak is a lower bound on the true peak",
+   "sampling": {
+    "device_samples": 585,
+    "first_sample_utc": "2026-11-19T07:41:51.941000+00:00",
+    "last_sample_utc": "2026-11-19T07:43:49.462000+00:00",
+    "max_gap_s": 0.69,
+    "gaps_over_1s": 0,
+    "gaps_over_max": 0,
+    "max_gap_limit_s": 5.0,
+    "workload_started_utc": "2026-11-19T07:41:52.522+00:00",
+    "workload_ended_utc": "2026-11-19T07:43:48.805+00:00",
+    "problems": []
+   },
+   "monitor_failures": [],
+   "expect_gpu": true,
+   "utc_offset_s": 0,
+   "scope": "process_peak_mib: sum of used_gpu_memory over this item's process group per sample (CUDA context included); device_peak_used_mib: memory.used of the whole GPU (every process, may include others)"
+  },
+  "memory_status": "PASS"
+ },
+ "kill": {
+  "killed_utc": "2026-11-19T07:43:47.800+00:00",
+  "last_step_line": 3,
+  "checkpoints_at_kill": [
+   0,
+   2
+  ],
+  "signal": "SIGKILL",
+  "pgid": 48772
+ },
+ "B2": {
+  "argv": [
+   "/venv/main/bin/python",
+   "/workspace/qwen-grpo/scripts/resume_kill_test.py",
+   "child",
+   "--device",
+   "cuda",
+   "--config",
+   "/workspace/qwen-grpo/runs/qwen3_4b_resume_kill_killB/config.yaml",
+   "--resume",
+   "latest"
+  ],
+  "started_utc": "2026-11-19T07:43:49.718+00:00",
+  "stdout": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B2/stdout.log",
+  "stderr": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B2/stderr.log",
+  "raw_dir": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B2",
+  "cap_bytes": 8000000000,
+  "expect_gpu": true,
+  "exit": 0,
+  "ended_utc": "2026-11-19T07:46:26.288+00:00",
+  "seconds": 156.6,
+  "signals_sent": [],
+  "stop_reason": null,
+  "violation": null,
+  "children_max_rss_bytes": 15512727552,
+  "children_max_rss_note": "ru_maxrss of the largest waited-for descendant of this supervisor (Linux, KiB)",
+  "telemetry": {
+   "raw_files": {
+    "apps": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B2/telemetry/nvidia_smi_apps.csv",
+    "gpu": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B2/telemetry/nvidia_smi_gpu.csv",
+    "pids": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B2/telemetry/pids.csv",
+    "meta": "/workspace/qwen-grpo/research/l2l/experiments/t09_resume_kill_qwen3_4b_resume_kill_r20261119T073842Z_raw/B2/telemetry/telemetry.json"
+   },
+   "interval_ms": 200,
+   "started_utc": "2026-11-19T07:43:49.719+00:00",
+   "stopped_utc": "2026-11-19T07:46:26.286+00:00",
+   "nvidia_smi_version": "NVIDIA-SMI version  : 595.99.02\nNVML version        : 595.99\nDRIVER version      : 595.99.02\nCUDA Version        : 13.2",
+   "exit_codes": {
+    "apps": 0,
+    "gpu": 0
+   },
+   "stderr_nonempty": {
+    "apps": false,
+    "gpu": false
+   },
+   "apps_rows": 744,
+   "apps_numeric_rows": 744,
+   "apps_unparsed_lines": 0,
+   "gpu_rows": 781,
+   "gpu_unparsed_lines": 0,
+   "attributed_pids": [
+    49737
+   ],
+   "tracked_pids": 64,
+   "attributed_samples": 744,
+   "attributed_numeric_samples": 744,
+   "partial_samples": 0,
+   "process_peak_mib": 2126.0,
+   "process_peak_timestamp": "2026/11/19 07:45:23.339",
+   "device_peak_used_mib": 2159.0,
+   "device_peak_timestamp": "2026/11/19 07:45:23.357",
+   "device_total_mib": 12288.0,
+   "gpu_names": [
+    "NVIDIA GeForce RTX 3060"
+   ],
+   "power_peak_w": 133.72,
+   "utilization_peak_pct": 100.0,
+   "cap_bytes": 8000000000,
+   "cap_mib": 7629.39453125,
+   "memory_status": "PASS",
+   "memory_reason": "per-process peak 2126 MiB <= cap 7629 MiB over 744 samples",
+   "violation": null,
+   "note": "nvidia-smi was sampled every 200 ms; allocations that rise and fall between two samples are not seen, so a measured peak is a lower bound on the true peak",
+   "sampling": {
+    "device_samples": 781,
+    "first_sample_utc": "2026-11-19T07:43:49.772000+00:00",
+    "last_sample_utc": "2026-11-19T07:46:26.053000+00:00",
+    "max_gap_s": 0.219,
+    "gaps_over_1s": 0,
+    "gaps_over_max": 0,
+    "max_gap_limit_s": 5.0,
+    "workload_started_utc": "2026-11-19T07:43:50.350+00:00",
+    "workload_ended_utc": "2026-11-19T07:46:25.251+00:00",
+    "problems": []
+   },
+   "monitor_failures": [],
+   "expect_gpu": true,
+   "utc_offset_s": 0,
+   "scope": "process_peak_mib: sum of used_gpu_memory over this item's process group per sample (CUDA context included); device_peak_used_mib: memory.used of the whole GPU (every process, may include others)"
+  },
+  "memory_status": "PASS"
+ },
+ "checks": {
+  "both_completed": true,
+  "resumed_session_recorded": true,
+  "committed_rows_equal": true,
+  "rollout_records_equal": true,
+  "no_epoch_problems_A": true,
+  "no_epoch_problems_B": true,
+  "sample_multiset_equal_no_gap_no_duplicate": true,
+  "checkpoints_identical_adapter_and_adamw": true,
+  "final_torch_rng_equal": true,
+  "python_rng_restored_from_resume_checkpoint": true,
+  "final_counters_equal": true,
+  "no_leftover_tmp_or_invalid": true
+ },
+ "compared": [
+  "training rows (step, attempt, prompt ids, rollout sha256, rewards, loss, grad/update norms, iteration, clip_frac, init_diff)",
+  "zero-signal attempts (attempt, rollout sha256)",
+  "subset-evaluation predictions",
+  "attempt and optimizer-step counters",
+  "rollout records on disk (group ids, policy versions, ordered occurrences, response token ids, rewards)",
+  "(epoch, sample) occurrence multiset",
+  "every common checkpoint's LoRA tensors and AdamW state (compare_runs)",
+  "final checkpoint torch (and CUDA) RNG state vs A",
+  "B's Python RNG state vs the state saved in its resume checkpoint"
+ ],
+ "not_compared": [
+  "Python's global RNG across A and B (unseeded and unused by training: different per process)",
+  "wall-clock timings and memory samples (differ by construction)",
+  "the exact instant of the kill (recorded, not compared)",
+  "per-token log-probs and gradient tensors (not recorded by the trainer)"
+ ],
+ "pass": true,
+ "memory_status": {
+  "A": "PASS",
+  "B1": "PASS",
+  "B2": "PASS"
+ },
+ "ended_utc": "2026-11-19T07:46:26.981+00:00"
+}

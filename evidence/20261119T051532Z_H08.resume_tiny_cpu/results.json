@@ -1,0 +1,19 @@
+{
+ "experiment_id": "20261119T051532Z_H08.resume_tiny_cpu",
+ "entry": "H08.resume_tiny_cpu",
+ "hypothesis": "H08",
+ "evidence_name": "t09_resume_tiny_cpu_r20261119T051532Z",
+ "status": "PASS",
+ "criterion": "MET",
+ "detail": "research/l2l/experiments/t09_resume_tiny_cpu_r20261119T051532Z.json: pass True",
+ "supplementary": false,
+ "diagnostic": false,
+ "outputs": [
+  {
+   "output": "research/l2l/experiments/t09_resume_tiny_cpu_r20261119T051532Z.json",
+   "exists": true,
+   "file": "research/l2l/experiments/t09_resume_tiny_cpu_r20261119T051532Z.json",
+   "sha256_uncompressed": "efe33bc86c15a5808b09118d1ca9ace750f548825cfb1068c750e782e74c9db3"
+  }
+ ]
+}

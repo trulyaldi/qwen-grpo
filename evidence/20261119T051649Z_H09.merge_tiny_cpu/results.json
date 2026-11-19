@@ -1,0 +1,19 @@
+{
+ "experiment_id": "20261119T051649Z_H09.merge_tiny_cpu",
+ "entry": "H09.merge_tiny_cpu",
+ "hypothesis": "H09",
+ "evidence_name": "t10_merge_equivalence_tiny_r20261119T051649Z",
+ "status": "PASS",
+ "criterion": "MET",
+ "detail": "status PASS, execution PASS, hypothesis_result SUPPORTED: all 30 comparisons within predefined thresholds",
+ "supplementary": false,
+ "diagnostic": false,
+ "outputs": [
+  {
+   "output": "research/l2l/experiments/t10_merge_equivalence_tiny_r20261119T051649Z",
+   "exists": true,
+   "file": "research/l2l/experiments/t10_merge_equivalence_tiny_r20261119T051649Z/result.json",
+   "sha256_uncompressed": "91fddec1617e4fcb5c20f4eb751daf5598e1be205017727a17a2c4986247ac98"
+  }
+ ]
+}

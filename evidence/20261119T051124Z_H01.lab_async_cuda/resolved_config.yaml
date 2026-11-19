@@ -1,0 +1,59 @@
+--- # research/l2l/configs/async.yaml sha256 f3d2268fb2f68f9b3535a65d483f9a3d92cbd795107c7a2831c6aa395cf9e863
+run:
+  name: l2l_lab_async
+  gpu_budget_gib: 4.0
+  overwrite: false
+model:
+  name: Qwen/Qwen3-0.6B
+  dtype: float32
+lora:
+  rank: 32
+  alpha: 64
+  targets: last2-attention
+data:
+  train_samples: 512
+  val_subset: 512
+  subset_seed: 42
+training:
+  batch_size: 5
+  group_size: 6
+  learning_rate: 0.0005
+  max_steps: 100
+  max_attempts: 1000
+  max_new_tokens: 4
+  seed: 42
+  clip_eps: 0.2
+  num_iterations: 1
+  micro_batch_size: null
+evaluation:
+  every: 10
+  full_validation: true
+  max_new_tokens: 4
+  batch_size: 32
+  score_batch_size: 8
+  bootstrap_samples: 10000
+  subset_label_scores: false
+verification:
+  split: validation
+  control_checkpoint: null
+  train_control: false
+execution:
+  backend: l2l_async
+  weight_storage: pinned
+  resident_layers: 0
+  weight_buffers: 2
+  prefetch_depth: 1
+  activation_checkpointing: true
+  vocab_chunk_size: null
+  kv_cache: gpu
+streaming:
+  enabled: false
+  directory: null
+dflash:
+  enabled: false
+  draft_model: null
+memory:
+  guard: false
+  interval_s: 0.5
+  allocator_cap: false
+  budget_bytes: null

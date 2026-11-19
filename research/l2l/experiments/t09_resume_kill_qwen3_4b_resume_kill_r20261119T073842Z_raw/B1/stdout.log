@@ -1,0 +1,7 @@
+LoRA modules (6): ['model.layers.34.self_attn.q_proj', 'model.layers.34.self_attn.v_proj', 'model.layers.34.self_attn.o_proj', 'model.layers.35.self_attn.q_proj', 'model.layers.35.self_attn.v_proj', 'model.layers.35.self_attn.o_proj']
+trainable parameters: 1,081,344 of 4,023,549,440 (0.0269%)
+  [val subset, step 0] acc 0.9375  F1 0.9373  rec POS 0.8750 NEG 1.0000  invalid 0.0000  pred POS 0.4375  (n=16)
+step  1 (attempt   2) 5N,649P,1363N,1267N,954P mixed 2  R 0.73  loss -0.0000  |g| 2.720e-01 (A 0.00e+00, B 2.72e-01)  |dtheta| 1.40e-01  |(a/r)BA| 1.621e-01  alloc 1.13  peak res 1.87 GiB
+step  2 (attempt   4) 1213P,993P,575P,1446N,1156N mixed 1  R 0.77  loss -0.0000  |g| 2.762e-01 (A 7.69e-02, B 2.65e-01)  |dtheta| 1.43e-01  |(a/r)BA| 2.300e-01  alloc 1.13  peak res 1.87 GiB
+  [val subset, step 2] acc 0.9375  F1 0.9373  rec POS 0.8750 NEG 1.0000  invalid 0.0000  pred POS 0.4375  (n=16)
+step  3 (attempt   9) 342N,644P,609P,1130P,142N mixed 1  R 0.83  loss -0.0000  |g| 2.964e-01 (A 8.33e-02, B 2.84e-01)  |dtheta| 1.29e-01  |(a/r)BA| 2.884e-01  alloc 1.13  peak res 2.00 GiB
