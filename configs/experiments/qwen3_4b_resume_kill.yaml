@@ -1,0 +1,19 @@
+# GPU-realistic external kill/resume test (scripts/resume_kill_test.py --config <this> --device cuda; never run by the
+# full experiment): Qwen3-4B with the 150-update experiment's settings (async L2L, streaming, 8e9-byte guard), 6 updates
+# with a checkpoint every 2 on a 16-prompt validation subset. Run A uninterrupted; run B SIGKILLed from outside after
+# its step-2 checkpoint with uncommitted progress, then resumed by a new process; A and B compared bitwise.
+extends: qwen3_4b_final_plain_150_v2.yaml
+
+run:
+  name: qwen3_4b_resume_kill
+
+data:
+  val_subset: 16
+
+training:
+  max_steps: 6
+  max_attempts: 80
+
+evaluation:
+  every: 2
+  subset_label_scores: false

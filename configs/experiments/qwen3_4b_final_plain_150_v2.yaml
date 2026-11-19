@@ -1,0 +1,43 @@
+# The 150-update Qwen3-4B GRPO + LoRA experiment (2026-11-19; docs/FINAL_150_STEP_EXPERIMENT.md). It extends the
+# 60-update plain-L2L run qwen3_4b_final_plain.yaml and changes only what the new protocol requires; model, data
+# (1024 balanced training prompts, the same 128-prompt validation subset), seed, B = 5, G = 6, micro-batch 6,
+# max_new_tokens 4, LoRA r 32 / alpha 64 on q/v/o of the last 2 layers, LR 2e-4, clip 0.2, async L2L (depth 1,
+# 2 buffers, pinned store), disk streaming and DFlash disabled are inherited unchanged.
+#   training.max_steps 150        successful optimizer updates (zero-signal rollout batches are not updates)
+#   training.max_attempts 1200    rollout batches, zero-signal ones included. The 60-update run accepted 60 of 266
+#                                 batches (22.6%; Wilson 95% lower bound ~17.9%): 150 updates need ~665 attempts at
+#                                 that rate, ~840 at the lower bound. 1200 still reaches 150 updates at an acceptance of
+#                                 12.5% (the rate may fall as the policy becomes more often right on all 6 samples).
+#                                 If it runs out, the run stops with fewer updates and says so (training.json
+#                                 "Attempt budget exhausted"); nothing resamples or alters rewards to manufacture
+#                                 updates. ~1200 x 5 = 6000 prompt selections over the 1024-prompt pool: several
+#                                 passes (the run records its coverage; it claims no epoch).
+#   evaluation.every 10           subset evaluation + crash-consistent checkpoint at steps 0, 10, ..., 150 (16 points,
+#                                 the same 128 validation prompts each time; the test split is never touched in
+#                                 training)
+#   evaluation.subset_label_scores  label scores and AUC at every subset evaluation (same backend, deterministic)
+#   memory.budget_bytes 8e9       the assignment's "8 GB" as bytes, CUDA context included: the in-process guard and
+#                                 the allocator cap use it (the profile's 8 GiB gpu_budget_gib is not used by this
+#                                 run). The external nvidia-smi supervisor (scripts/guarded_run.py) enforces the same
+#                                 number from outside the process.
+# A NEW run name: runs/qwen3_4b_final_plain_150_v2/ cannot collide with the 60-update run, and run.overwrite stays
+# false (train refuses an existing run directory).
+extends: qwen3_4b_final_plain.yaml
+
+run:
+  name: qwen3_4b_final_plain_150_v2
+  overwrite: false
+
+training:
+  max_steps: 150
+  max_attempts: 1200
+
+evaluation:
+  every: 10
+  full_validation: false
+  subset_label_scores: true
+
+memory:
+  guard: true
+  allocator_cap: true
+  budget_bytes: 8000000000

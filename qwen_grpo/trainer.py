@@ -37,7 +37,8 @@ from qwen_grpo import runs
 from qwen_grpo.checkpointing import (load_adapter, load_training_state, rel, save_checkpoint, set_rng_state,
                                      training_lock)
 from qwen_grpo.evidence import code_sha256
-from qwen_grpo.config import DTYPES, Config, as_dict, differences, normalized, require_implemented, sha256
+from qwen_grpo.config import (DTYPES, Config, as_dict, budget_bytes, differences, normalized, require_implemented,
+                              sha256)
 from qwen_grpo.evaluation import (BOOTSTRAP_SEED, evaluate, label_scores, metrics, paired_auc_bootstrap, paired_bootstrap,
                                   paired_changes, paired_compare, predictions_path, settings, summary, win_matrix)
 from qwen_grpo.model import EOS_IDS, digest, expected_lora_params, lora_model, lora_modules
@@ -73,6 +74,23 @@ class InjectedCrash(KeyboardInterrupt):
 
 
 _CRASH_SEEN = Counter()
+_STALL_SEEN = Counter()
+
+
+def stall_point(point):
+    """External-kill test hook (scripts/resume_kill_test.py): when QWEN_GRPO_STALL is "point@N:seconds", the N-th
+    occurrence of `point` prints a marker line and sleeps, so that a supervisor can SIGKILL the process at a known
+    position. It raises nothing and changes no state: the process is killed from outside, not by an exception."""
+    spec = os.environ.get("QWEN_GRPO_STALL")
+    if not spec:
+        return
+    where, _, seconds = spec.partition(":")
+    name, _, nth = where.partition("@")
+    if name == point:
+        _STALL_SEEN[point] += 1
+        if _STALL_SEEN[point] == int(nth or 1):
+            print(f"QWEN_GRPO_STALL reached {point}@{_STALL_SEEN[point]} pid {os.getpid()}", flush=True)
+            time.sleep(float(seconds or 600))
 
 
 def crash_point(point):
@@ -80,6 +98,7 @@ def crash_point(point):
     variable QWEN_GRPO_CRASH is "point" (N = 1) or "point@N". Points: prompt_read, rollouts_generated, update (an
     applied but uncommitted optimizer update), files_written / committed_before_rename (inside checkpoint publication),
     after_checkpoint. Tests may replace this function. A no-op when the variable is unset."""
+    stall_point(point)
     spec = os.environ.get("QWEN_GRPO_CRASH")
     if not spec:
         return
@@ -363,6 +382,7 @@ def train(cfg: Config, resume=None, device="cuda"):
         _HELD.clear()  # resources _train acquires (the backend), released below whatever happens
         try:
             guard = memory_guard(cfg, device)  # inside: a CUDA error here marks the run failed, not "running"
+            _GUARD[:] = [guard] if guard is not None else []
             with tee(runs.training_dir(name) / "training.log"), guard or nullcontext():
                 result = _train(cfg, resume, state, device)
         except BaseException as e:
@@ -380,6 +400,7 @@ def train(cfg: Config, resume=None, device="cuda"):
                                  f"{rel(runs.training_dir(name) / 'memory')}/)") from e
             raise
         finally:
+            _GUARD.clear()
             while _HELD:  # the L2L weight store unregisters its pinned memory (GBs for Qwen3-4B)
                 _HELD.pop().close()
             if guard is not None and cfg.memory.allocator_cap:
@@ -405,7 +426,7 @@ def memory_guard(cfg, device):
             print(f"memory.guard: not enforced on device {device!r} (no CUDA)")
         return None
     from qwen_grpo.execution.profiler import Profiler
-    budget = int(cfg.run.gpu_budget_gib * 2**30)
+    budget = budget_bytes(cfg)  # exact bytes (memory.budget_bytes) or run.gpu_budget_gib GiB
     dev = torch.device(device)
     if dev.index is None:  # set_per_process_memory_fraction needs an index: "cuda" means the current device
         dev = torch.device("cuda", torch.cuda.current_device())
@@ -422,7 +443,9 @@ def save_memory(cfg, guard):
         return None
     out = runs.training_dir(cfg.run.name) / "memory"
     stamp = datetime.fromtimestamp(guard.samples[0]["t"] if guard.samples else time.time(), timezone.utc)
-    rep = {"budget_gib": cfg.run.gpu_budget_gib, "memory": as_dict(cfg)["memory"], **guard.report(raw=True)}
+    rep = {"budget_gib": cfg.run.gpu_budget_gib, "budget_bytes": budget_bytes(cfg),
+           "budget_source": "memory.budget_bytes" if cfg.memory.budget_bytes is not None else "run.gpu_budget_gib * 2**30",
+           "memory": as_dict(cfg)["memory"], **guard.report(raw=True)}
     return runs.write_json(out / f"{stamp.strftime('%Y%m%dT%H%M%SZ')}.json", rep)
 
 
@@ -480,9 +503,33 @@ def weight_bytes_copied(backend):
     ex = getattr(backend, "executor", None)
     if ex is None:
         return None
-    if hasattr(ex, "stats"):  # async prefetching executor: counts every copy it issued
-        return ex.stats["bytes_copied"]
-    return sum(t["slab_bytes"] for t in getattr(ex, "trace", []) if t.get("loaded", True))
+    from qwen_grpo.execution.prefetch import executor_bytes
+    return executor_bytes(ex)  # async: every copy issued, prefetches included
+
+
+_GUARD = []  # the memory.guard Profiler of the training session in progress (per-step nvidia-smi peaks), or empty
+
+
+def guard_peak_since(t0):
+    """(max nvidia-smi per-process bytes, max cudaMemGetInfo device bytes, samples) of the running guard's samples
+    taken since wall time t0; Nones without a guard. A step shorter than the sampling interval may have no sample."""
+    if not _GUARD:
+        return {"smi_process_peak_bytes": None, "device_used_peak_bytes": None, "guard_samples": 0}
+    win = [x for x in list(_GUARD[0].samples) if x["t"] >= t0]
+    proc = [x["process_used"] for x in win if x.get("process_used") is not None]
+    dev = [x["device_used"] for x in win if x.get("device_used") is not None]
+    return {"smi_process_peak_bytes": max(proc) if proc else None, "device_used_peak_bytes": max(dev) if dev else None,
+            "guard_samples": len(win)}
+
+
+def adapter_digest(params):
+    """sha256 of the LoRA tensors (names, dtypes, shapes and bytes, in name order): the identity of the evaluated
+    adapter, equal to that of the checkpoint saved right after it."""
+    h = hashlib.sha256()
+    for n in sorted(params):
+        t = params[n].detach().to("cpu").contiguous()
+        h.update(f"{n}|{t.dtype}|{list(t.shape)}|".encode() + t.view(torch.uint8).numpy().tobytes())
+    return h.hexdigest()
 
 
 _HELD = []  # closeable resources of the training session in progress (one per process; train() empties it)
@@ -546,9 +593,24 @@ def _train(cfg: Config, resume, state, device):
     optimizer = torch.optim.AdamW(params.values(), lr=t.learning_rate, weight_decay=0.0)
 
     def eval_subset(step, ckpt=None):
+        started = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        t_eval = time.time()
         preds = evaluate(model, tok, val_sub, generator=backend.greedy, **gen_kw)
-        result["evaluations"].append({"step": step, "checkpoint": ckpt, "split": "validation", "metrics": metrics(preds), "predictions": preds})
-        print(f"  [val subset, step {step}] {summary(metrics(preds))}")
+        rec = {"step": step, "checkpoint": ckpt, "split": "validation", "metrics": metrics(preds), "predictions": preds}
+        if ev.subset_label_scores:  # deterministic: label scores and AUC of the same adapter on the same subset
+            sc = label_scores(model, tok, val_sub, logprobs=backend.logprobs, **score_kw)
+            rec["label_scores"] = {"ids": [e["id"] for e in val_sub], "scores": sc}
+            rec["metrics"]["auc"] = win_matrix(sc, [e["label"] for e in val_sub]).mean().item()
+        rec["adapter_sha256"] = adapter_digest(params)
+        result["evaluations"].append(rec)
+        # wall-clock facts kept apart from the evaluation records, which resumed runs compare bitwise
+        result.setdefault("evaluation_times", []).append({
+            "step": step, "checkpoint": ckpt, "started_utc": started, "seconds": time.time() - t_eval,
+            "settings": {**gen_kw, **({"score": score_kw} if ev.subset_label_scores else {})},
+            "n": len(val_sub), "val_subset_ids_sha256": hashlib.sha256(
+                json.dumps([e["id"] for e in val_sub]).encode()).hexdigest()})
+        print(f"  [val subset, step {step}] {summary(rec['metrics'])}"
+              + (f"  AUC {rec['metrics']['auc']:.4f}" if "auc" in rec["metrics"] else ""))
 
     if resume is None:
         if cfg.streaming.enabled:  # initial adapter (reference for parameter deltas), published crash-consistently
@@ -716,11 +778,19 @@ def _train(cfg: Config, resume, state, device):
                 # kept apart from the zero_signal records, which runs compare bitwise
                 result.setdefault("zero_signal_rollout_generators", []).append(
                     {"attempt": attempts, "rollout_generator": timing["rollout_generator"]})
+                copied = weight_bytes_copied(backend)
+                result.setdefault("zero_signal_timings", []).append({  # end-to-end throughput includes these attempts
+                    "attempt": attempts, "after_step": step, **{k: v for k, v in timing.items() if k != "rollout_generator"},
+                    "attempt_s": time.time() - t_step, "cpu_rss_bytes": rss_bytes(),
+                    "weight_bytes_copied": None if copied is None else copied - copied0, **guard_peak_since(t_step)})
                 continue
             pending = {"rollouts": rollouts, "adv": targets[0], "old_logp": targets[1], "group": group, "iteration": 0,
                        "policy_version": step}
             del rollouts, targets
         group = pending["group"]
+        adv = pending["adv"].detach().float()
+        adv_stats = {"adv_mean": adv.mean().item(), "adv_std": adv.std().item() if adv.numel() > 1 else 0.0,
+                     "adv_abs_max": adv.abs().max().item(), "adv_nonzero": int((adv != 0).sum())}
         t0_phase = time.time()
         out = grpo_update(model, params, optimizer, pending["rollouts"], pending["adv"], pending["old_logp"],
                           clip_eps=t.clip_eps, iteration=pending["iteration"], micro_batch_size=t.micro_batch_size,
@@ -733,7 +803,7 @@ def _train(cfg: Config, resume, state, device):
             pending = None
         step += 1
         with torch.no_grad():  # norms over several modules aggregate as sqrt(sum of squares)
-            row = {"step": step, **group, **{k: v for k, v in out.items() if k != "grad_norms"},
+            row = {"step": step, **group, **adv_stats, **{k: v for k, v in out.items() if k != "grad_norms"},
                    "grad_norm_A": l2(out["grad_norms"][n] for n in names_A), "grad_norm_B": l2(out["grad_norms"][n] for n in names_B),
                    "learning_rate": optimizer.param_groups[0]["lr"],
                    "step_seconds": time.time() - t_step,  # GRPO update (+ rollout generation and rewards at iteration 0)
@@ -753,7 +823,7 @@ def _train(cfg: Config, resume, state, device):
         result.setdefault("timings", []).append({
             "step": step, **timing, "step_s": time.time() - t_step,
             "cpu_rss_bytes": rss_bytes(), "backend": backend.name,
-            "weight_bytes_copied": None if copied is None else copied - copied0})
+            "weight_bytes_copied": None if copied is None else copied - copied0, **guard_peak_since(t_step)})
         ids = ",".join(f"{i}{label[0]}" for i, label in zip(group["prompt_ids"], group["labels"]))
         mem = f"alloc {row['cuda_allocated_gib']:.2f}  peak res {row['peak_reserved_gib']:.2f} GiB" if on_cuda else ""
         clip = (f"it {out['iteration']}  r [{out['ratio_min']:.3f}, {out['ratio_max']:.3f}]  clip {out['clip_frac']:.3f}  "
@@ -797,7 +867,9 @@ def _train(cfg: Config, resume, state, device):
             torch.cuda.synchronize()
             mem.update(peak_allocated_gib=gib(torch.cuda.max_memory_allocated), peak_reserved_gib=gib(torch.cuda.max_memory_reserved),
                        device_gib=torch.cuda.mem_get_info()[1] / 2**30)
-            mem["within_budget"] = mem["peak_reserved_gib"] < cfg.run.gpu_budget_gib
+            mem["budget_bytes"] = budget_bytes(cfg)
+            # allocator figure only (no CUDA context): never the compliance evidence, which is nvidia-smi
+            mem["within_budget"] = mem["peak_reserved_gib"] * 2**30 < budget_bytes(cfg)
         result["status"], result["memory"] = status, mem
         runs.write_json(runs.training_dir(name) / "training.json", result)
         return mem

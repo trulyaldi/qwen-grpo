@@ -1,0 +1,106 @@
+$ soup --no-telemetry adapters check runs/qwen/checkpoints/step90 --json
+exit 0
+--- stdout
+{
+  "adapter": "<repo>/runs/qwen/checkpoints/step90",
+  "all_zero_lora_b_layers": [],
+  "inner_keys": [],
+  "live_fraction": 1.0,
+  "live_layers": 6,
+  "orphaned_layers": [],
+  "per_layer": [
+    {
+      "frobenius": 0.7223658841992929,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.26.self_attn.o_proj.__LORA__.weight",
+      "shape_a": [
+        32,
+        2048
+      ],
+      "shape_b": [
+        1024,
+        32
+      ]
+    },
+    {
+      "frobenius": 1.8613108191704886,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.26.self_attn.q_proj.__LORA__.weight",
+      "shape_a": [
+        32,
+        1024
+      ],
+      "shape_b": [
+        2048,
+        32
+      ]
+    },
+    {
+      "frobenius": 0.8617624960856038,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.26.self_attn.v_proj.__LORA__.weight",
+      "shape_a": [
+        32,
+        1024
+      ],
+      "shape_b": [
+        1024,
+        32
+      ]
+    },
+    {
+      "frobenius": 0.8942565993258206,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.27.self_attn.o_proj.__LORA__.weight",
+      "shape_a": [
+        32,
+        2048
+      ],
+      "shape_b": [
+        1024,
+        32
+      ]
+    },
+    {
+      "frobenius": 1.6584106617684802,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.27.self_attn.q_proj.__LORA__.weight",
+      "shape_a": [
+        32,
+        1024
+      ],
+      "shape_b": [
+        2048,
+        32
+      ]
+    },
+    {
+      "frobenius": 0.9547780053625953,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.27.self_attn.v_proj.__LORA__.weight",
+      "shape_a": [
+        32,
+        1024
+      ],
+      "shape_b": [
+        1024,
+        32
+      ]
+    }
+  ],
+  "reason": null,
+  "shape_mismatches": [],
+  "standalone_tensors": [],
+  "total_frobenius": 3.0315914737815772,
+  "total_layers": 6,
+  "verdict": "alive",
+  "verdict_line": "alive"
+}
+
+--- stderr

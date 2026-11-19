@@ -37,6 +37,7 @@ from qwen_grpo import config, lab  # noqa: E402
 from qwen_grpo.config import DTYPES  # noqa: E402
 from qwen_grpo.evaluation import evaluate, metrics  # noqa: E402
 from qwen_grpo.execution.backend import make_backend  # noqa: E402
+from qwen_grpo.execution.prefetch import executor_bytes  # noqa: E402
 from qwen_grpo.execution.profiler import Profiler, h2d_bandwidth  # noqa: E402
 from qwen_grpo.grpo import grpo_loss  # noqa: E402
 from qwen_grpo.model import lora_model, lora_modules  # noqa: E402
@@ -48,7 +49,10 @@ PREDICTED_PHASE = {"setup": "initialization", "rollout": "rollout", "old_logp": 
 
 
 def copied_bytes(ex, since):
-    return sum(t["slab_bytes"] for t in ex.trace[since:] if t.get("loaded", True))
+    """Weight bytes copied since the counter reading `since` (executor_bytes: prefetches included). Before
+    2026-11-19 this summed only the trace entries whose use was not a hit, so every layer an async prefetch had
+    already delivered counted 0 bytes (t11 transfers under-counted; tests/test_h2d_accounting.py)."""
+    return executor_bytes(ex) - since
 
 
 def main(argv=None):
@@ -79,7 +83,8 @@ def main(argv=None):
     if a.micro_batch_size:
         t = dataclasses.replace(t, micro_batch_size=a.micro_batch_size)
     cfg = dataclasses.replace(cfg, execution=x, training=t)
-    budget = int((a.budget_gib or cfg.run.gpu_budget_gib) * 2**30)
+    # an explicit --budget-gib wins; else the config's budget (memory.budget_bytes exact bytes, or run.gpu_budget_gib)
+    budget = int(a.budget_gib * 2**30) if a.budget_gib else config.budget_bytes(cfg)
     device = torch.device(a.device)
     rep = {"config": str(a.config), "model": cfg.model.name, "dtype": cfg.model.dtype, "execution": dataclasses.asdict(x),
            "micro_batch_size": t.micro_batch_size, "B": t.batch_size, "G": t.group_size, "max_new": t.max_new_tokens,
@@ -109,14 +114,14 @@ def main(argv=None):
             for step in range(a.steps):
                 batch = train[step * t.batch_size:(step + 1) * t.batch_size]
                 prompts = build_prompts(tok, [e["text"] for e in batch])
-                n0 = len(ex.trace)
+                n0 = executor_bytes(ex)
                 with prof.phase("rollout"):
                     r = be.generate_rollouts(tok, prompts, t.group_size, t.max_new_tokens)
                 transfers.append(("rollout", copied_bytes(ex, n0)))
                 rewards = group_rewards(decode(tok, r), [e["label"] for e in batch], t.group_size)
                 if (rewards == rewards[:, :1]).all():
                     rewards = torch.tensor([[float((b + k) % 2) for k in range(t.group_size)] for b in range(t.batch_size)])
-                n0 = len(ex.trace)
+                n0 = executor_bytes(ex)
                 with prof.phase("old_logp"):
                     adv, old = prepare(model, r, rewards, t.micro_batch_size, logprobs=be.logprobs)
                 transfers.append(("old_logp", copied_bytes(ex, n0)))
@@ -124,12 +129,12 @@ def main(argv=None):
                 N, losses = r["input_ids"].shape[0], []
                 fwd_bytes = bwd_bytes = 0
                 for rows, c in micro_batches(r, t.micro_batch_size):
-                    n0 = len(ex.trace)
+                    n0 = executor_bytes(ex)
                     with prof.phase("forward"):
                         lp = be.logprobs(model, c)
                         loss = grpo_loss(lp, old[rows], adv[rows], c["completion_mask"], t.clip_eps) * (lp.shape[0] / N)
                     fwd_bytes += copied_bytes(ex, n0)
-                    n0 = len(ex.trace)
+                    n0 = executor_bytes(ex)
                     with prof.phase("backward"):
                         loss.backward()
                     bwd_bytes += copied_bytes(ex, n0)
@@ -146,7 +151,7 @@ def main(argv=None):
                         merge_rep = stream_merge(cfg.model.name, Path(tmp) / "adapter", Path(tmp) / "merged")
                     rep["merge"] = {k: merge_rep[k] for k in ("scale", "copied", "shards", "total_bytes")}
             val = [{"id": i, **e} for i, e in enumerate(load_splits()["validation"][: a.eval_n])]
-            n0 = len(ex.trace)
+            n0 = executor_bytes(ex)
             with prof.phase("evaluation"):
                 preds = evaluate(model, tok, val, generator=be.greedy)
             transfers.append(("evaluation", copied_bytes(ex, n0)))
@@ -191,7 +196,7 @@ def main(argv=None):
     out = (a.out_dir or ROOT / "research" / "l2l" / "experiments") / f"{a.out or f't11_profile_{cfg.run.name}_{backend_name}'}.json"
     out.write_text(json.dumps(rep, indent=1, default=str) + "\n")
     print(f"{cfg.model.name} {backend_name} mb={t.micro_batch_size}: verdict {rep['verdict']} (evidence {ev}, "
-          f"{len(viol)} violations, budget {budget / 2**30:.1f} GiB)")
+          f"{len(viol)} violations, budget {budget} B = {budget / 2**30:.3f} GiB)")
     for p in rep["profile"]["phases"]:
         print(f"  {p['phase']:10s} {p['seconds']:7.2f} s  alloc {(p.get('peak_allocated') or 0) / 2**20:7.0f} MiB  "
               f"reserved {(p.get('peak_reserved') or 0) / 2**20:7.0f}  device {(p.get('device_used_peak') or 0) / 2**20:7.0f}"

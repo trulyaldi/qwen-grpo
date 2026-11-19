@@ -280,6 +280,20 @@ entries:
       - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, prefetch_timing, --config, research/l2l/configs/async_qwen3_0.6b.yaml, --device, cuda, --trials, "9", --warmup, "2", --max-new, "16", --hypothesis, H06]
     judge: lab
 
+  # Supplementary (2026-11-19, the 150-update experiment, scripts/final150.py profile): the same case on Qwen3-4B with
+  # the final run's batch shape; sync vs async on one model, store and inputs, verify off (performance mode), CUDA-event
+  # timeline with copy / compute / overlap / stall / submit-to-ready accounting. Never the H06 criterion's evidence.
+  - id: H06.prefetch_timing_4b
+    name: t08_prefetch_timing_qwen3_4b
+    model: Qwen3-4B
+    precision: [bfloat16]
+    requires: [cuda, bf16, fixture_packages]
+    min_vram_gib: 8
+    supplementary: true
+    steps:
+      - argv: [scripts/l2l_lab.py, run, --name, "{name}", --case, prefetch_timing, --config, research/l2l/configs/async_qwen3_4b.yaml, --device, cuda, --trials, "7", --warmup, "2", --max-new, "4", --hypothesis, H06]
+    judge: lab
+
   # ------------------------------------------------------------------------------------ H07 bounded GPU residency
   # t02_store_depth supports the Ticket 02 statement only (copy-only, allocator statistics). The execution-level
   # statement (statement_ticket11) needs t11_depth_residency.

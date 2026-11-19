@@ -1,0 +1,17 @@
+# LR = 0 negative control of qwen3_4b_final_plain_150_v2.yaml: identical except the learning rate, the run name and the
+# update budget (30 updates, subset evaluations and checkpoints at steps 0, 10, 20, 30).
+# Why 30 and not 150: LoRA B starts at exactly 0 and AdamW with lr 0 never changes a parameter, so the adapter (and the
+# policy, = the base model) is bitwise identical at every step whatever the number of updates; the trainer asserts it
+# (training.json params_equal_init). 120 more updates would cost GPU time and cannot produce a different artifact.
+# What this control tests: the evaluation pipeline (same prompts, backend, decoding, batch shapes) attributes no change
+# to a model that did not change, i.e. "trained vs base" differences are not artifacts of the training loop, of
+# checkpoint save/reload or of evaluation nondeterminism. What it does NOT test: whether the reward caused the change
+# (a shuffled-reward control would; not implemented, docs/REMAINING_LIMITATIONS.md).
+extends: qwen3_4b_final_plain_150_v2.yaml
+
+run:
+  name: qwen3_4b_final_plain_150_v2_lr0
+
+training:
+  learning_rate: 0.0
+  max_steps: 30

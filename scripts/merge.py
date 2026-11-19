@@ -28,7 +28,21 @@ def main(argv=None):
     a = ap.parse_args(argv)
     from qwen_grpo.export.merge import load_merged_l2l, stream_merge
     base = a.base or json.loads((a.adapter / "adapter_config.json").read_text())["base_model_name_or_path"]
+    if a.out.exists():
+        raise SystemExit(f"{a.out} exists: merged checkpoints are never overwritten")
+    import hashlib
+    import time
+    from datetime import datetime, timezone
+    from qwen_grpo.evidence import file_sha256
+    started, t0 = datetime.now(timezone.utc).isoformat(timespec="milliseconds"), time.time()
     rep = stream_merge(base, a.adapter, a.out, shard_bytes=int(a.shard_gib * 2**30))
+    import resource
+    prov = {"adapter": str(a.adapter), "adapter_sha256": file_sha256(a.adapter / "adapter_model.safetensors"),
+            "base": base, "started_utc": started, "seconds": time.time() - t0,
+            "device": "cpu (export/merge.py: tensor by tensor, no CUDA context)",
+            "max_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
+            "shards_sha256": {p.name: file_sha256(p) for p in sorted(a.out.glob("*.safetensors"))}}
+    (a.out / "merge_provenance.json").write_text(json.dumps(prov, indent=1) + "\n")
     worst = max(v["max_residual"] for v in rep["merged"].values())
     print(f"merged {len(rep['merged'])} tensors (scale {rep['scale']}), copied {rep['copied']}, {len(rep['shards'])} "
           f"shards, {rep['total_bytes'] / 2**20:.0f} MiB; worst residual {worst:.3e}, all within half an ulp: "

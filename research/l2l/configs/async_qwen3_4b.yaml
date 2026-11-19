@@ -1,0 +1,24 @@
+# L2L lab, H06 on the assignment model (added 2026-11-19 for the 150-update experiment): prefetch_timing on the real
+# Qwen3-4B in bf16 with the final run's batch shape (B = 5, G = 6, micro-batch 6), LoRA (r 32, alpha 64, q/v/o of the
+# last 2 layers) and L2L settings (depth 1, 2 GPU buffers per executor, pinned store), asynchronous prefetching against
+# the synchronous executor on the same model, store and inputs. Performance mode: verify off on both sides (verify=True
+# checksums every buffer use on the host, which synchronizes and would hide or destroy the overlap being measured);
+# the first trial's tokens, log-probs, loss and LoRA gradients must still be bitwise equal between the sides.
+# Supplementary to H06 (whose criterion is defined on Qwen3-0.6B): research/l2l/hypotheses.yaml is unchanged.
+extends: async_qwen3_0.6b.yaml
+run:
+  name: l2l_lab_async_qwen3_4b
+model:
+  name: Qwen/Qwen3-4B
+  dtype: bfloat16
+lora:
+  rank: 32
+  alpha: 64
+  targets:
+    modules: [q_proj, v_proj, o_proj]
+    num_layers: 2
+training:
+  batch_size: 5
+  group_size: 6
+  learning_rate: 2.0e-4
+  micro_batch_size: 6

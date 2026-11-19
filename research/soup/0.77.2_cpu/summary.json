@@ -1,0 +1,709 @@
+{
+ "soup": "soup",
+ "version": "soup v0.77.2",
+ "started_utc": "2026-11-17T13:42:08+00:00",
+ "evidence_dir": "research/soup/0.77.2_cpu",
+ "checks": [
+  {
+   "name": "doctor",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "doctor"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 14.52,
+   "stdout": "Soup Doctor - checking your environment...\n\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 System \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Python:   3.12.3                                                             \u2502\n\u2502 Platform: Linux 6.6.87.2-microsoft-standard-WSL2                             \u2502\n\u2502 Arch:     x86_64                                                             \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 GPU \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 Backend:  CPU only                                                           \u2502\n\u2502 Warning:  Training will be slow without GPU.                                 \u2502\n\u2502 GPU hardware present (Quadro P1000) but CUDA_VISIBLE_DEVICES= hides it from  \u2502\n\u2502 torch. Unset CUDA_VISIBLE_DEVICES to use the GPU.                            \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n     System Resources     \n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 Resource \u2503 Value       \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 RAM      \u2502 31 GB       \u2502\n\u2502 Disk     \u2502 875 GB free \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n                              Dependencies                              \n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 Package      \u2503 Required \u2503  Installed   \u2503 Min Version \u2503 Status        \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 pydantic     \u2502   yes    \u2502    2.14.3    \u2502 >=2.0.0     \u2502 OK            \u2502\n\u2502 typer        \u2502   yes    \u2502    0.27.3    \u2502 >=0.15.4    \u2502 OK            \u2502\n\u2502 rich         \u2502   yes    \u2502    15.0.0    \u2502 >=13.0.0    \u2502 OK            \u2502\n\u2502 pyyaml       \u2502   yes    \u2502    6.0.3     \u2502 >=6.0       \u2502 OK            \u2502\n\u2502 plotext      \u2502   yes    \u2502    6.1.0     \u2502 >=5.2.0     \u2502 OK            \u2502\n\u2502 fastapi      \u2502 optional \u2502      -       \u2502 >=0.104.0   \u2502 not installed \u2502\n\u2502 uvicorn      \u2502 optional \u2502      -       \u2502 >=0.24.0    \u2502 not installed \u2502\n\u2502 datasketch   \u2502 optional \u2502      -       \u2502 >=1.6.0     \u2502 not installed \u2502\n\u2502 lm-eval      \u2502 optional \u2502      -       \u2502 >=0.4.0     \u2502 not installed \u2502\n\u2502 wandb        \u2502 optional \u2502      -       \u2502 >=0.15.0    \u2502 not installed \u2502\n\u2502 deepspeed    \u2502 optional \u2502      -       \u2502 >=0.12.0    \u2502 not installed \u2502\n\u2502 httpx        \u2502 optional \u2502      -       \u2502 >=0.24.0    \u2502 not installed \u2502\n\u2502 unsloth      \u2502 optional \u2502      -       \u2502 >=2024.8    \u2502 not installed \u2502\n\u2502 Pillow       \u2502 optional \u2502      -       \u2502 >=9.0.0     \u2502 not installed \u2502\n\u2502 torchao      \u2502 optional \u2502      -       \u2502 >=0.18.0    \u2502 not installed \u2502\n\u2502 sglang       \u2502 optional \u2502      -       \u2502 >=0.5.1     \u2502 not installed \u2502\n\u2502 librosa      \u2502 optional \u2502      -       \u2502 >=0.10.0    \u2502 not installed \u2502\n\u2502 torch        \u2502 [train]  \u2502 2.15.0+cu132 \u2502 >=2.6.0     \u2502 OK            \u2502\n\u2502 transformers \u2502 [train]  \u2502    5.22.2    \u2502 >=5.16.1    \u2502 OK            \u2502\n\u2502 peft         \u2502 [train]  \u2502    0.21.2    \u2502 >=0.20.0    \u2502 OK            \u2502\n\u2502 trl          \u2502 [train]  \u2502    0.29.1    \u2502 >=0.29.0    \u2502 OK            \u2502\n\u2502 datasets     \u2502 [train]  \u2502    5.2.0     \u2502 >=2.14.0    \u2502 OK            \u2502\n\u2502 bitsandbytes \u2502 [train]  \u2502    0.50.2    \u2502 >=0.41.0    \u2502 OK            \u2502\n\u2502 accelerate   \u2502 [train]  \u2502    1.15.0    \u2502 >=0.27.0    \u2502 OK            \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\nAll checks passed! Your environment is ready.\n\nGitHub: https://github.com/MakazhanAlpamys/Soup\n",
+   "stderr": "",
+   "same_interpreter_as_training": false,
+   "note": "Soup runs in another interpreter: its doctor/env checks describe Soup's environment, not the training environment (install soup-cli into the training venv to use them there)"
+  },
+  {
+   "name": "data_doctor",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.77.2_cpu/data_doctor_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-0.6B",
+    "--max-length",
+    "256",
+    "--sample",
+    "200",
+    "-o",
+    "research/soup/0.77.2_cpu/data_doctor.json"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 7.6,
+   "stdout": "                                soup data doctor                                \n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 Check              \u2503 Verdict \u2503 Message               \u2503 Evidence              \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 chat_template      \u2502 OK      \u2502 tokenizer has a       \u2502 4168 chars            \u2502\n\u2502                    \u2502         \u2502 chat_template         \u2502                       \u2502\n\u2502 template_render    \u2502 OK      \u2502 0/200 rows failed to  \u2502                       \u2502\n\u2502                    \u2502         \u2502 render through the    \u2502                       \u2502\n\u2502                    \u2502         \u2502 chat template         \u2502                       \u2502\n\u2502 generation_markers \u2502 MINOR   \u2502 template lacks {%     \u2502                       \u2502\n\u2502                    \u2502         \u2502 generation %} markers \u2502                       \u2502\n\u2502                    \u2502         \u2502 \u2014 assistant-only      \u2502                       \u2502\n\u2502                    \u2502         \u2502 masking falls back to \u2502                       \u2502\n\u2502                    \u2502         \u2502 a heuristic that may  \u2502                       \u2502\n\u2502                    \u2502         \u2502 include role-prefix   \u2502                       \u2502\n\u2502                    \u2502         \u2502 tokens in the loss    \u2502                       \u2502\n\u2502 eos_in_labels      \u2502 OK      \u2502 0/200 rows (0.0%)     \u2502 eos_token_id=[151645] \u2502\n\u2502                    \u2502         \u2502 never train an        \u2502                       \u2502\n\u2502                    \u2502         \u2502 EOS/EOT token \u2014 the   \u2502                       \u2502\n\u2502                    \u2502         \u2502 model will not learn  \u2502                       \u2502\n\u2502                    \u2502         \u2502 to stop generating    \u2502                       \u2502\n\u2502 bos_duplication    \u2502 OK      \u2502 tokenizer has no      \u2502                       \u2502\n\u2502                    \u2502         \u2502 bos_token_id          \u2502                       \u2502\n\u2502 system_role        \u2502 OK      \u2502 no rows use a system  \u2502                       \u2502\n\u2502                    \u2502         \u2502 message               \u2502                       \u2502\n\u2502 unknown_roles      \u2502 OK      \u2502 0/200 rows (0.0%)     \u2502                       \u2502\n\u2502                    \u2502         \u2502 contain a message     \u2502                       \u2502\n\u2502                    \u2502         \u2502 role outside          \u2502                       \u2502\n\u2502                    \u2502         \u2502 ['assistant',         \u2502                       \u2502\n\u2502                    \u2502         \u2502 'function', 'system', \u2502                       \u2502\n\u2502                    \u2502         \u2502 'tool', 'user']       \u2502                       \u2502\n\u2502 truncation_risk    \u2502 OK      \u2502 p95 length = 81       \u2502 p50=61, max=92        \u2502\n\u2502                    \u2502         \u2502 tokens vs             \u2502                       \u2502\n\u2502                    \u2502         \u2502 max_length=256; 0/200 \u2502                       \u2502\n\u2502                    \u2502         \u2502 rows (0.0%) would be  \u2502                       \u2502\n\u2502                    \u2502         \u2502 truncated             \u2502                       \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 overall \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 MINOR \u2014 200/200 rows scanned \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\nWrote research/soup/0.77.2_cpu/data_doctor.json\n",
+   "stderr": "[transformers] return_assistant_tokens_mask==True but chat template does not contain `{% generation %}` keyword.\n",
+   "input": "research/soup/0.77.2_cpu/data_doctor_input.jsonl",
+   "report": {
+    "overall": "MINOR",
+    "rows_scanned": 200,
+    "total_rows": 200,
+    "checks": [
+     {
+      "name": "chat_template",
+      "verdict": "OK",
+      "message": "tokenizer has a chat_template",
+      "evidence": "4168 chars"
+     },
+     {
+      "name": "template_render",
+      "verdict": "OK",
+      "message": "0/200 rows failed to render through the chat template",
+      "evidence": ""
+     },
+     {
+      "name": "generation_markers",
+      "verdict": "MINOR",
+      "message": "template lacks {% generation %} markers \u2014 assistant-only masking falls back to a heuristic that may include role-prefix tokens in the loss",
+      "evidence": ""
+     },
+     {
+      "name": "eos_in_labels",
+      "verdict": "OK",
+      "message": "0/200 rows (0.0%) never train an EOS/EOT token \u2014 the model will not learn to stop generating",
+      "evidence": "eos_token_id=[151645]"
+     },
+     {
+      "name": "bos_duplication",
+      "verdict": "OK",
+      "message": "tokenizer has no bos_token_id",
+      "evidence": ""
+     },
+     {
+      "name": "system_role",
+      "verdict": "OK",
+      "message": "no rows use a system message",
+      "evidence": ""
+     },
+     {
+      "name": "unknown_roles",
+      "verdict": "OK",
+      "message": "0/200 rows (0.0%) contain a message role outside ['assistant', 'function', 'system', 'tool', 'user']",
+      "evidence": ""
+     },
+     {
+      "name": "truncation_risk",
+      "verdict": "OK",
+      "message": "p95 length = 81 tokens vs max_length=256; 0/200 rows (0.0%) would be truncated",
+      "evidence": "p50=61, max=92"
+     }
+    ]
+   }
+  },
+  {
+   "name": "data_doctor_fault_no_assistant",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "data",
+    "doctor",
+    "research/soup/0.77.2_cpu/data_doctor_fault_no_assistant_input.jsonl",
+    "--model",
+    "Qwen/Qwen3-0.6B",
+    "--max-length",
+    "256",
+    "--sample",
+    "50",
+    "-o",
+    "research/soup/0.77.2_cpu/data_doctor_fault_no_assistant.json"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 7.03,
+   "stdout": "                                soup data doctor                                \n\u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513\n\u2503 Check              \u2503 Verdict \u2503 Message                      \u2503 Evidence       \u2503\n\u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529\n\u2502 chat_template      \u2502 OK      \u2502 tokenizer has a              \u2502 4168 chars     \u2502\n\u2502                    \u2502         \u2502 chat_template                \u2502                \u2502\n\u2502 template_render    \u2502 OK      \u2502 0/50 rows failed to render   \u2502                \u2502\n\u2502                    \u2502         \u2502 through the chat template    \u2502                \u2502\n\u2502 generation_markers \u2502 MINOR   \u2502 template lacks {% generation \u2502                \u2502\n\u2502                    \u2502         \u2502 %} markers \u2014 assistant-only  \u2502                \u2502\n\u2502                    \u2502         \u2502 masking falls back to a      \u2502                \u2502\n\u2502                    \u2502         \u2502 heuristic that may include   \u2502                \u2502\n\u2502                    \u2502         \u2502 role-prefix tokens in the    \u2502                \u2502\n\u2502                    \u2502         \u2502 loss                         \u2502                \u2502\n\u2502 eos_in_labels      \u2502 OK      \u2502 no assistant turns to check  \u2502                \u2502\n\u2502 bos_duplication    \u2502 OK      \u2502 tokenizer has no             \u2502                \u2502\n\u2502                    \u2502         \u2502 bos_token_id                 \u2502                \u2502\n\u2502 system_role        \u2502 OK      \u2502 no rows use a system message \u2502                \u2502\n\u2502 unknown_roles      \u2502 OK      \u2502 0/50 rows (0.0%) contain a   \u2502                \u2502\n\u2502                    \u2502         \u2502 message role outside         \u2502                \u2502\n\u2502                    \u2502         \u2502 ['assistant', 'function',    \u2502                \u2502\n\u2502                    \u2502         \u2502 'system', 'tool', 'user']    \u2502                \u2502\n\u2502 truncation_risk    \u2502 OK      \u2502 p95 length = 66 tokens vs    \u2502 p50=48, max=81 \u2502\n\u2502                    \u2502         \u2502 max_length=256; 0/50 rows    \u2502                \u2502\n\u2502                    \u2502         \u2502 (0.0%) would be truncated    \u2502                \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 overall \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 MINOR \u2014 50/50 rows scanned \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\nWrote research/soup/0.77.2_cpu/data_doctor_fault_no_assistant.json\n",
+   "stderr": "[transformers] return_assistant_tokens_mask==True but chat template does not contain `{% generation %}` keyword.\n",
+   "input": "research/soup/0.77.2_cpu/data_doctor_fault_no_assistant_input.jsonl",
+   "report": {
+    "overall": "MINOR",
+    "rows_scanned": 50,
+    "total_rows": 50,
+    "checks": [
+     {
+      "name": "chat_template",
+      "verdict": "OK",
+      "message": "tokenizer has a chat_template",
+      "evidence": "4168 chars"
+     },
+     {
+      "name": "template_render",
+      "verdict": "OK",
+      "message": "0/50 rows failed to render through the chat template",
+      "evidence": ""
+     },
+     {
+      "name": "generation_markers",
+      "verdict": "MINOR",
+      "message": "template lacks {% generation %} markers \u2014 assistant-only masking falls back to a heuristic that may include role-prefix tokens in the loss",
+      "evidence": ""
+     },
+     {
+      "name": "eos_in_labels",
+      "verdict": "OK",
+      "message": "no assistant turns to check",
+      "evidence": ""
+     },
+     {
+      "name": "bos_duplication",
+      "verdict": "OK",
+      "message": "tokenizer has no bos_token_id",
+      "evidence": ""
+     },
+     {
+      "name": "system_role",
+      "verdict": "OK",
+      "message": "no rows use a system message",
+      "evidence": ""
+     },
+     {
+      "name": "unknown_roles",
+      "verdict": "OK",
+      "message": "0/50 rows (0.0%) contain a message role outside ['assistant', 'function', 'system', 'tool', 'user']",
+      "evidence": ""
+     },
+     {
+      "name": "truncation_risk",
+      "verdict": "OK",
+      "message": "p95 length = 66 tokens vs max_length=256; 0/50 rows (0.0%) would be truncated",
+      "evidence": "p50=48, max=81"
+     }
+    ]
+   }
+  },
+  {
+   "name": "reward_stress",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "reward",
+    "stress",
+    "research/soup/0.77.2_cpu/reward_stress_verifier.py",
+    "--references",
+    "research/soup/0.77.2_cpu/reward_stress_references.jsonl",
+    "--output-report",
+    "research/soup/0.77.2_cpu/reward_stress.json"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 0.79,
+   "stdout": "Warning: Loading custom reward function from: \n<repo>/research/soup/0.77.2_cpu/reward_stress_verifier.py\nThis will execute arbitrary Python code. Only use reward files you trust.\n\u256d\u2500\u2500\u2500\u2500\u2500 reward stress: research/soup/0.77.2_cpu/reward_stress_verifier.py \u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 attack           n  accepted  accept-rate                                    \u2502\n\u2502 empty          600         0           0%                                    \u2502\n\u2502 length         600         0           0%                                    \u2502\n\u2502 repetition     600         0           0%                                    \u2502\n\u2502 sentinel       600         0           0%                                    \u2502\n\u2502 wrapped_junk  1400         0           0%                                    \u2502\n\u2502 answer_spray   800         0           0%                                    \u2502\n\u2502                                                                              \u2502\n\u2502 reference accept: 100%   gameability: 0%   verdict: robust (not gameable)    \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+   "stderr": "",
+   "verifier": "research/soup/0.77.2_cpu/reward_stress_verifier.py",
+   "permissive_fault": false,
+   "verdict": "robust",
+   "report": {
+    "reference_accept": 1.0,
+    "attacks": [
+     {
+      "kind": "empty",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "length",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "repetition",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "sentinel",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "wrapped_junk",
+      "n": 1400,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "answer_spray",
+      "n": 800,
+      "accepted": 0,
+      "accept_rate": 0.0
+     }
+    ],
+    "gameability": 0.0,
+    "gameable": false,
+    "threshold": 0.5,
+    "max_gameable": 0.0,
+    "sentinel": "GOLD"
+   }
+  },
+  {
+   "name": "reward_stress_permissive",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "reward",
+    "stress",
+    "research/soup/0.77.2_cpu/reward_stress_permissive_verifier.py",
+    "--references",
+    "research/soup/0.77.2_cpu/reward_stress_permissive_references.jsonl",
+    "--output-report",
+    "research/soup/0.77.2_cpu/reward_stress_permissive.json"
+   ],
+   "cwd": ".",
+   "exit": 2,
+   "seconds": 0.95,
+   "stdout": "Warning: Loading custom reward function from: \n<repo>/research/soup/0.77.2_cpu/reward_stress_permissive_veri\nfier.py\nThis will execute arbitrary Python code. Only use reward files you trust.\n\u256d\u2500 reward stress: research/soup/0.77.2_cpu/reward_stress_permissive_verifier.p\u2500\u256e\n\u2502 attack           n  accepted  accept-rate                                    \u2502\n\u2502 empty          600         0           0%                                    \u2502\n\u2502 length         600         0           0%                                    \u2502\n\u2502 repetition     600         0           0%                                    \u2502\n\u2502 sentinel       600         0           0%                                    \u2502\n\u2502 wrapped_junk  1400         0           0%                                    \u2502\n\u2502 answer_spray   800       800         100%                                    \u2502\n\u2502                                                                              \u2502\n\u2502 reference accept: 100%   gameability: 100%   verdict: GAMEABLE               \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n",
+   "stderr": "",
+   "verifier": "research/soup/0.77.2_cpu/reward_stress_permissive_verifier.py",
+   "permissive_fault": true,
+   "verdict": "gameable",
+   "report": {
+    "reference_accept": 1.0,
+    "attacks": [
+     {
+      "kind": "empty",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "length",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "repetition",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "sentinel",
+      "n": 600,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "wrapped_junk",
+      "n": 1400,
+      "accepted": 0,
+      "accept_rate": 0.0
+     },
+     {
+      "kind": "answer_spray",
+      "n": 800,
+      "accepted": 800,
+      "accept_rate": 1.0
+     }
+    ],
+    "gameability": 1.0,
+    "gameable": true,
+    "threshold": 0.5,
+    "max_gameable": 0.0,
+    "sentinel": "GOLD"
+   }
+  },
+  {
+   "name": "adapter_check_step0",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "adapters",
+    "check",
+    "runs/qwen/checkpoints/step0",
+    "--json"
+   ],
+   "cwd": ".",
+   "exit": 2,
+   "seconds": 0.93,
+   "stdout": "{\n  \"adapter\": \"<repo>/runs/qwen/checkpoints/step0\",\n  \"all_zero_lora_b_layers\": [\n    \"base_model.model.model.layers.26.self_attn.o_proj.__LORA__.weight\",\n    \"base_model.model.model.layers.26.self_attn.q_proj.__LORA__.weight\",\n    \"base_model.model.model.layers.26.self_attn.v_proj.__LORA__.weight\",\n    \"base_model.model.model.layers.27.self_attn.o_proj.__LORA__.weight\",\n    \"base_model.model.model.layers.27.self_attn.q_proj.__LORA__.weight\",\n    \"base_model.model.model.layers.27.self_attn.v_proj.__LORA__.weight\"\n  ],\n  \"inner_keys\": [],\n  \"live_fraction\": 0.0,\n  \"live_layers\": 0,\n  \"orphaned_layers\": [],\n  \"per_layer\": [\n    {\n      \"frobenius\": 0.0,\n      \"has_non_finite\": false,\n      \"is_b_zero\": true,\n      \"name\": \"base_model.model.model.layers.26.self_attn.o_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        2048\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.0,\n      \"has_non_finite\": false,\n      \"is_b_zero\": true,\n      \"name\": \"base_model.model.model.layers.26.self_attn.q_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        2048,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.0,\n      \"has_non_finite\": false,\n      \"is_b_zero\": true,\n      \"name\": \"base_model.model.model.layers.26.self_attn.v_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.0,\n      \"has_non_finite\": false,\n      \"is_b_zero\": true,\n      \"name\": \"base_model.model.model.layers.27.self_attn.o_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        2048\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.0,\n      \"has_non_finite\": false,\n      \"is_b_zero\": true,\n      \"name\": \"base_model.model.model.layers.27.self_attn.q_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        2048,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.0,\n      \"has_non_finite\": false,\n      \"is_b_zero\": true,\n      \"name\": \"base_model.model.model.layers.27.self_attn.v_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    }\n  ],\n  \"reason\": \"all lora_B layers are zero (6/6)\",\n  \"shape_mismatches\": [],\n  \"standalone_tensors\": [],\n  \"total_frobenius\": 0.0,\n  \"total_layers\": 6,\n  \"verdict\": \"inactive\",\n  \"verdict_line\": \"inactive: all lora_B layers are zero (6/6)\"\n}\n",
+   "stderr": "",
+   "adapter": "runs/qwen/checkpoints/step0",
+   "report": {
+    "adapter": "<repo>/runs/qwen/checkpoints/step0",
+    "all_zero_lora_b_layers": [
+     "base_model.model.model.layers.26.self_attn.o_proj.__LORA__.weight",
+     "base_model.model.model.layers.26.self_attn.q_proj.__LORA__.weight",
+     "base_model.model.model.layers.26.self_attn.v_proj.__LORA__.weight",
+     "base_model.model.model.layers.27.self_attn.o_proj.__LORA__.weight",
+     "base_model.model.model.layers.27.self_attn.q_proj.__LORA__.weight",
+     "base_model.model.model.layers.27.self_attn.v_proj.__LORA__.weight"
+    ],
+    "inner_keys": [],
+    "live_fraction": 0.0,
+    "live_layers": 0,
+    "orphaned_layers": [],
+    "per_layer": [
+     {
+      "frobenius": 0.0,
+      "has_non_finite": false,
+      "is_b_zero": true,
+      "name": "base_model.model.model.layers.26.self_attn.o_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       2048
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.0,
+      "has_non_finite": false,
+      "is_b_zero": true,
+      "name": "base_model.model.model.layers.26.self_attn.q_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       2048,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.0,
+      "has_non_finite": false,
+      "is_b_zero": true,
+      "name": "base_model.model.model.layers.26.self_attn.v_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.0,
+      "has_non_finite": false,
+      "is_b_zero": true,
+      "name": "base_model.model.model.layers.27.self_attn.o_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       2048
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.0,
+      "has_non_finite": false,
+      "is_b_zero": true,
+      "name": "base_model.model.model.layers.27.self_attn.q_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       2048,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.0,
+      "has_non_finite": false,
+      "is_b_zero": true,
+      "name": "base_model.model.model.layers.27.self_attn.v_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     }
+    ],
+    "reason": "all lora_B layers are zero (6/6)",
+    "shape_mismatches": [],
+    "standalone_tensors": [],
+    "total_frobenius": 0.0,
+    "total_layers": 6,
+    "verdict": "inactive",
+    "verdict_line": "inactive: all lora_B layers are zero (6/6)"
+   }
+  },
+  {
+   "name": "adapter_check_step90",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "adapters",
+    "check",
+    "runs/qwen/checkpoints/step90",
+    "--json"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 0.99,
+   "stdout": "{\n  \"adapter\": \"<repo>/runs/qwen/checkpoints/step90\",\n  \"all_zero_lora_b_layers\": [],\n  \"inner_keys\": [],\n  \"live_fraction\": 1.0,\n  \"live_layers\": 6,\n  \"orphaned_layers\": [],\n  \"per_layer\": [\n    {\n      \"frobenius\": 0.7223658841992929,\n      \"has_non_finite\": false,\n      \"is_b_zero\": false,\n      \"name\": \"base_model.model.model.layers.26.self_attn.o_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        2048\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 1.8613108191704886,\n      \"has_non_finite\": false,\n      \"is_b_zero\": false,\n      \"name\": \"base_model.model.model.layers.26.self_attn.q_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        2048,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.8617624960856038,\n      \"has_non_finite\": false,\n      \"is_b_zero\": false,\n      \"name\": \"base_model.model.model.layers.26.self_attn.v_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.8942565993258206,\n      \"has_non_finite\": false,\n      \"is_b_zero\": false,\n      \"name\": \"base_model.model.model.layers.27.self_attn.o_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        2048\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 1.6584106617684802,\n      \"has_non_finite\": false,\n      \"is_b_zero\": false,\n      \"name\": \"base_model.model.model.layers.27.self_attn.q_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        2048,\n        32\n      ]\n    },\n    {\n      \"frobenius\": 0.9547780053625953,\n      \"has_non_finite\": false,\n      \"is_b_zero\": false,\n      \"name\": \"base_model.model.model.layers.27.self_attn.v_proj.__LORA__.weight\",\n      \"shape_a\": [\n        32,\n        1024\n      ],\n      \"shape_b\": [\n        1024,\n        32\n      ]\n    }\n  ],\n  \"reason\": null,\n  \"shape_mismatches\": [],\n  \"standalone_tensors\": [],\n  \"total_frobenius\": 3.0315914737815772,\n  \"total_layers\": 6,\n  \"verdict\": \"alive\",\n  \"verdict_line\": \"alive\"\n}\n",
+   "stderr": "",
+   "adapter": "runs/qwen/checkpoints/step90",
+   "report": {
+    "adapter": "<repo>/runs/qwen/checkpoints/step90",
+    "all_zero_lora_b_layers": [],
+    "inner_keys": [],
+    "live_fraction": 1.0,
+    "live_layers": 6,
+    "orphaned_layers": [],
+    "per_layer": [
+     {
+      "frobenius": 0.7223658841992929,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.26.self_attn.o_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       2048
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     },
+     {
+      "frobenius": 1.8613108191704886,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.26.self_attn.q_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       2048,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.8617624960856038,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.26.self_attn.v_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.8942565993258206,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.27.self_attn.o_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       2048
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     },
+     {
+      "frobenius": 1.6584106617684802,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.27.self_attn.q_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       2048,
+       32
+      ]
+     },
+     {
+      "frobenius": 0.9547780053625953,
+      "has_non_finite": false,
+      "is_b_zero": false,
+      "name": "base_model.model.model.layers.27.self_attn.v_proj.__LORA__.weight",
+      "shape_a": [
+       32,
+       1024
+      ],
+      "shape_b": [
+       1024,
+       32
+      ]
+     }
+    ],
+    "reason": null,
+    "shape_mismatches": [],
+    "standalone_tensors": [],
+    "total_frobenius": 3.0315914737815772,
+    "total_layers": 6,
+    "verdict": "alive",
+    "verdict_line": "alive"
+   }
+  },
+  {
+   "name": "ship_reference_run",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "ship",
+    "--evidence",
+    "research/soup/0.77.2_cpu/ship_reference_run_evidence.json",
+    "-o",
+    "research/soup/0.77.2_cpu/ship_reference_run_verdict.json"
+   ],
+   "cwd": ".",
+   "exit": 2,
+   "seconds": 0.92,
+   "stdout": "\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 soup ship \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 DON'T SHIP                                                                   \u2502\n\u2502 Leg 1 task win (metric): 0.7486 -> 0.8096  [won]                             \u2502\n\u2502 Judge numerics: unstamped                                                    \u2502\n\u2502                                                                              \u2502\n\u2502 Leg 2 general suite (threshold 5.00%)                                        \u2502\n\u2502 \u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513                             \u2502\n\u2502 \u2503 Benchmark       \u2503 Base \u2503 Tuned \u2503 \u0394 \u2503 Verdict \u2503                             \u2502\n\u2502 \u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529                             \u2502\n\u2502 \u2502 (none measured) \u2502    - \u2502     - \u2502 - \u2502 missing \u2502                             \u2502\n\u2502 \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518                             \u2502\n\u2502                                                                              \u2502\n\u2502 No general-suite benchmarks were measured \u2014 cannot verify the model didn't   \u2502\n\u2502 regress. Supply a general suite or --baseline.                               \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\nWrote research/soup/0.77.2_cpu/ship_reference_run_verdict.json\n",
+   "stderr": "",
+   "evidence": {
+    "task": {
+     "mode": "metric",
+     "base": 0.7486,
+     "tuned": 0.8096
+    },
+    "benchmarks": {}
+   },
+   "verdict": "DON'T SHIP",
+   "report": {
+    "decision": "DON'T SHIP",
+    "task_win": {
+     "mode": "metric",
+     "base": 0.7486,
+     "tuned": 0.8096,
+     "won": true
+    },
+    "benchmark_deltas": [],
+    "failed_rule": "missing_baseline",
+    "forgetting_threshold": 0.05,
+    "soup_version": "0.77.2",
+    "noise_floor": null,
+    "numerics": null
+   }
+  },
+  {
+   "name": "ship_reference_run_synthetic_leg2",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "ship",
+    "--evidence",
+    "research/soup/0.77.2_cpu/ship_reference_run_synthetic_leg2_evidence.json",
+    "-o",
+    "research/soup/0.77.2_cpu/ship_reference_run_synthetic_leg2_verdict.json"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 0.95,
+   "stdout": "\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 soup ship \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 SHIP                                                                         \u2502\n\u2502 Leg 1 task win (metric): 0.7486 -> 0.8096  [won]                             \u2502\n\u2502 Judge numerics: unstamped                                                    \u2502\n\u2502                                                                              \u2502\n\u2502 Leg 2 general suite (threshold 5.00%)                                        \u2502\n\u2502 \u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513                \u2502\n\u2502 \u2503 Benchmark           \u2503   Base \u2503  Tuned \u2503       \u0394 \u2503 Verdict \u2503                \u2502\n\u2502 \u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529                \u2502\n\u2502 \u2502 synthetic_unchanged \u2502 0.5000 \u2502 0.5000 \u2502 +0.0000 \u2502 ok      \u2502                \u2502\n\u2502 \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518                \u2502\n\u2502                                                                              \u2502\n\u2502 Task improved AND no general benchmark regressed past 5.00%.                 \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\nWrote research/soup/0.77.2_cpu/ship_reference_run_synthetic_leg2_verdict.json\n",
+   "stderr": "",
+   "evidence": {
+    "task": {
+     "mode": "metric",
+     "base": 0.7486,
+     "tuned": 0.8096
+    },
+    "benchmarks": {
+     "synthetic_unchanged": {
+      "base": 0.5,
+      "tuned": 0.5
+     }
+    }
+   },
+   "verdict": "SHIP",
+   "report": {
+    "decision": "SHIP",
+    "task_win": {
+     "mode": "metric",
+     "base": 0.7486,
+     "tuned": 0.8096,
+     "won": true
+    },
+    "benchmark_deltas": [
+     {
+      "name": "synthetic_unchanged",
+      "base": 0.5,
+      "tuned": 0.5,
+      "delta": 0.0,
+      "regressed": false
+     }
+    ],
+    "failed_rule": null,
+    "forgetting_threshold": 0.05,
+    "soup_version": "0.77.2",
+    "noise_floor": null,
+    "numerics": null
+   }
+  },
+  {
+   "name": "ship_insignificant_gain",
+   "argv": [
+    "soup",
+    "--no-telemetry",
+    "ship",
+    "--evidence",
+    "research/soup/0.77.2_cpu/ship_insignificant_gain_evidence.json",
+    "-o",
+    "research/soup/0.77.2_cpu/ship_insignificant_gain_verdict.json"
+   ],
+   "cwd": ".",
+   "exit": 0,
+   "seconds": 0.86,
+   "stdout": "\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 soup ship \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 SHIP                                                                         \u2502\n\u2502 Leg 1 task win (metric): 0.7486 -> 0.7495  [won]                             \u2502\n\u2502 Judge numerics: unstamped                                                    \u2502\n\u2502                                                                              \u2502\n\u2502 Leg 2 general suite (threshold 5.00%)                                        \u2502\n\u2502 \u250f\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2533\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2513                \u2502\n\u2502 \u2503 Benchmark           \u2503   Base \u2503  Tuned \u2503       \u0394 \u2503 Verdict \u2503                \u2502\n\u2502 \u2521\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2547\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2529                \u2502\n\u2502 \u2502 synthetic_unchanged \u2502 0.5000 \u2502 0.5000 \u2502 +0.0000 \u2502 ok      \u2502                \u2502\n\u2502 \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518                \u2502\n\u2502                                                                              \u2502\n\u2502 Task improved AND no general benchmark regressed past 5.00%.                 \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\nWrote research/soup/0.77.2_cpu/ship_insignificant_gain_verdict.json\n",
+   "stderr": "",
+   "evidence": {
+    "task": {
+     "mode": "metric",
+     "base": 0.7486,
+     "tuned": 0.74953808630394
+    },
+    "benchmarks": {
+     "synthetic_unchanged": {
+      "base": 0.5,
+      "tuned": 0.5
+     }
+    }
+   },
+   "verdict": "SHIP",
+   "report": {
+    "decision": "SHIP",
+    "task_win": {
+     "mode": "metric",
+     "base": 0.7486,
+     "tuned": 0.74953808630394,
+     "won": true
+    },
+    "benchmark_deltas": [
+     {
+      "name": "synthetic_unchanged",
+      "base": 0.5,
+      "tuned": 0.5,
+      "delta": 0.0,
+      "regressed": false
+     }
+    ],
+    "failed_rule": null,
+    "forgetting_threshold": 0.05,
+    "soup_version": "0.77.2",
+    "noise_floor": null,
+    "numerics": null
+   }
+  }
+ ]
+}

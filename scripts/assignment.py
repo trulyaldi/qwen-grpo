@@ -474,57 +474,15 @@ def run_item(out_dir, argv, env=None, cap=None, telemetry_on=True):
 
 
 def run_item_quiet(out_dir, argv, env=None, cap=None, telemetry_on=True):
-    """Run `argv` from the repository root in its own process group, under telemetry. Returns the record. On a
-    watchdog violation or a stop signal: SIGINT to the group, SIGTERM after GRACE_S, SIGKILL after 1.5 GRACE_S."""
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=False)  # never reused: an attempt gets a new directory
-    rec = {"argv": [rel(a) if str(a).startswith(str(ROOT)) else str(a) for a in argv], "started_utc": utc(),
-           "stdout": rel(out_dir / "stdout.log"), "stderr": rel(out_dir / "stderr.log"), "raw_dir": rel(out_dir)}
-    run_env = {**os.environ, "PYTHONHASHSEED": "0", "TOKENIZERS_PARALLELISM": "false", "PYTHONUNBUFFERED": "1",
-               **(env or {})}
-    violation = {}
-    tel = telemetry.Telemetry(out_dir / "telemetry", cap_bytes=cap, on_violation=violation.update) if telemetry_on \
-        else None
-    t0 = time.time()
-    with open(out_dir / "stdout.log", "wb") as so, open(out_dir / "stderr.log", "wb") as se:
-        if tel:
-            tel.start()
-        try:
-            child = subprocess.Popen(argv, cwd=ROOT, env=run_env, stdout=so, stderr=se, stdin=subprocess.DEVNULL,
-                                     start_new_session=True)
-        except OSError as e:
-            if tel:
-                tel.stop()
-            rec.update(exit=None, error=f"{type(e).__name__}: {e}", ended_utc=utc(), seconds=0.0)
-            return rec
-        if tel:
-            tel.attach(child.pid)
-        escalation, sent = None, []
-        while child.poll() is None:
-            if (violation or STOP["signal"]) and escalation is None:
-                escalation = time.time()
-                sent.append(("SIGINT", utc()))
-                _killpg(child.pid, signal.SIGINT)
-            elif escalation is not None:
-                waited = time.time() - escalation
-                if waited > GRACE_S and len(sent) == 1:
-                    sent.append(("SIGTERM", utc()))
-                    _killpg(child.pid, signal.SIGTERM)
-                elif waited > 1.5 * GRACE_S and len(sent) == 2:
-                    sent.append(("SIGKILL", utc()))
-                    _killpg(child.pid, signal.SIGKILL)
-            time.sleep(0.2)
-        # the group may still hold processes (a child that outlived its parent): end them before telemetry stops
-        _killpg(child.pid, signal.SIGTERM)
-        if tel:
-            tel.stop()
-    rec.update(exit=child.returncode, ended_utc=utc(), seconds=round(time.time() - t0, 1),
-               signals_sent=sent, interrupted=bool(STOP["signal"]), stop_signal=STOP["signal"],
-               violation=violation or None)
-    if tel:
-        rec["telemetry"] = telemetry.summarize(out_dir / "telemetry", cap_bytes=cap)
-        if cap is not None:
-            rec["memory_status"] = rec["telemetry"]["memory_status"]
+    """Run `argv` from the repository root in its own process group, under telemetry (qwen_grpo.telemetry.run_guarded,
+    the supervisor shared with scripts/guarded_run.py). Returns the record. On a watchdog violation, a monitor failure
+    or a stop signal: SIGINT to the group, SIGTERM after GRACE_S, SIGKILL after 1.5 GRACE_S."""
+    rec = telemetry.run_guarded(out_dir, [str(a) for a in argv], cap_bytes=cap, cwd=ROOT, env=env,
+                                telemetry_on=telemetry_on, grace_s=GRACE_S, should_stop=lambda: STOP["signal"],
+                                require_smi=False, rel=lambda a: rel(a) if str(a).startswith(str(ROOT)) else str(a))
+    rec.update(interrupted=bool(STOP["signal"]), stop_signal=STOP["signal"])
+    if cap is None:
+        rec.pop("memory_status", None)
     return rec
 
 

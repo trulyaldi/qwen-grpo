@@ -231,8 +231,24 @@ def run_buffers(result, ref, cand, store, ex, residency, off, tag, shape, attn, 
 
 
 def fixture_tie_back(cfg, result, perturbation, tol):
-    """CPU, inside fixtures.isolated(): L2L on each Ticket 00 fixture model reproduces the saved resident logits."""
+    """CPU, inside fixtures.isolated(): L2L on each Ticket 00 fixture model against the resident reference.
+
+    Same-host methodology (2026-11-19, docs/FINAL_150_STEP_READINESS.md "H01"): the resident reference is recomputed
+    on THIS host with the unchanged resident code (fixtures.reference, same threads, dtype and seed) and the L2L logits
+    must equal it bitwise (`logits.fixture.<shape>.cpu.same_host`, gating, atol = rtol = 0). The saved logits were
+    computed once on another CPU; CPU kernels can choose another reduction order on another CPU (ISA, vector width),
+    so bitwise equality with them is a property of the host, not of L2L. They are compared as before
+    (`logits.fixture.<shape>.cpu`, bound 0): when fixtures.saved_environment_differences() is empty (same packages and
+    a recorded, identical CPU) that comparison stays gating; otherwise it is kept, with the same bound and its result,
+    under result["diagnostics"] (cross-host drift: never gating, never deleted), together with the drift of the fresh
+    resident reference itself, which must equal the L2L drift bitwise (else L2L differs from resident on this host,
+    and the gating row fails anyway)."""
     for shape in F.SHAPES:
+        env_diff = F.saved_environment_differences(shape, F.DIR)  # of the fixture file actually loaded
+        ref_model, ref_fixture = F.load(shape)
+        with F.isolated():
+            fresh = F.reference(ref_model, ref_fixture)["logits"]
+        del ref_model
         model, fixture = F.load(shape)
         store = WeightStore.build(model, cfg.execution.weight_storage)
         try:
@@ -249,8 +265,23 @@ def fixture_tie_back(cfg, result, perturbation, tol):
                 residency.remove()
                 continue
             key = f"logits.fixture.{shape}.cpu"
-            rows = [{"model": f"fixture.{shape}", **row}
-                    for row in lab.compare_all({key: fixture["reference"]["logits"]}, {key: got}, tol)]
+            same = [{"model": f"fixture.{shape}", "reference": "resident recomputed on this host", **row}
+                    for row in lab.compare_all({key + ".same_host": fresh}, {key + ".same_host": got}, tol)]
+            saved = [{"model": f"fixture.{shape}", "reference": "saved fixture logits", **row}
+                     for row in lab.compare_all({key: fixture["reference"]["logits"]}, {key: got}, tol)]
+            if env_diff:  # the saved reference was computed on another CPU / stack: drift is recorded, not gating
+                drift = [{"model": f"fixture.{shape}", "reference": "saved fixture logits", "candidate": "resident, this host",
+                          **row} for row in lab.compare_all({key + ".resident_drift": fixture["reference"]["logits"]},
+                                                            {key + ".resident_drift": fresh}, tol)]
+                result.setdefault("diagnostics", []).append({
+                    "kind": "cross_host_fixture_drift", "fixture": shape, "environment_differences": env_diff,
+                    "gating": False, "rows": saved + drift,
+                    "l2l_drift_equals_resident_drift": bool(torch.equal(got, fresh)),
+                    "why": "the saved logits are a bitwise CPU reference of another host; the gating comparison is "
+                           "the same-host one (logits.fixture.<shape>.cpu.same_host)"})
+                rows = same
+            else:
+                rows = same + saved
             result["comparisons"] += rows
             lab.check_fault_detected(result, perturbation, "unsafe_reuse", f"fixture.{shape}", rows,
                                      getattr(ex, "injected", None))

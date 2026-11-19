@@ -106,6 +106,8 @@ class Evaluation:
     batch_size: int = BATCH
     score_batch_size: int = SCORE_BATCH
     bootstrap_samples: int = BOOTSTRAP
+    subset_label_scores: bool = False  # also label scores (log P(POSITIVE) - log P(NEGATIVE)) and AUC at every subset
+                                       # evaluation, through the same backend
 
 
 @dataclass(frozen=True)
@@ -168,6 +170,8 @@ class Memory:
     guard: bool = False
     interval_s: float = 0.5
     allocator_cap: bool = False
+    budget_bytes: int | None = None  # exact budget in bytes (e.g. 8000000000 = the assignment's "8 GB"); overrides
+                                     # run.gpu_budget_gib for the guard and the allocator cap; null: gpu_budget_gib GiB
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -187,6 +191,17 @@ class Config:
 
 OPTIONAL_SECTIONS = {"execution": Execution, "streaming": Streaming, "dflash": DFlash,  # added after runs were saved;
                      "memory": Memory}  # left out of the hash while at their defaults (sha256)
+# Fields added to an existing section after runs were saved: left out of the hash while they hold this default, so
+# every earlier config keeps its recorded sha256 (tests/test_config.py pins the historical hashes).
+LATER_FIELDS = {("memory", "budget_bytes"): None, ("evaluation", "subset_label_scores"): False}
+
+
+def budget_bytes(cfg) -> int:
+    """The GPU memory budget in bytes, CUDA context included: memory.budget_bytes when set (exact), else
+    run.gpu_budget_gib GiB. The one number the in-process guard, the allocator cap and the reports use."""
+    if cfg.memory.budget_bytes is not None:
+        return cfg.memory.budget_bytes
+    return int(cfg.run.gpu_budget_gib * 2**30)
 
 
 def _build(cls, raw, where):
@@ -281,6 +296,9 @@ def execution_checks(cfg: Config) -> list:
         (f.draft_model not in DRAFTERS or DRAFTERS[f.draft_model] == cfg.model.name,
          f"dflash.draft_model {f.draft_model!r} drafts for {DRAFTERS.get(f.draft_model)}, not model.name {cfg.model.name!r}"),
         (mem.interval_s > 0, "memory.interval_s: > 0"),
+        (mem.budget_bytes is None or mem.budget_bytes > 0, "memory.budget_bytes: null or > 0"),
+        (mem.budget_bytes is None or mem.guard,
+         "memory.budget_bytes needs memory.guard (an exact budget that is not enforced would only be a claim)"),
         (not mem.allocator_cap or mem.guard,
          "memory.allocator_cap needs memory.guard (the allocator cap excludes the CUDA context: it cannot enforce the "
          "budget alone)"),
@@ -454,6 +472,9 @@ def sha256(cfg: Config) -> str:
     hash differs from this one. A section added later (OPTIONAL_SECTIONS) is left out while it equals its defaults
     exactly, so configs that do not use it keep the hash they had before it existed."""
     out = as_dict(cfg)
+    for (section, key), default in LATER_FIELDS.items():
+        if out[section].get(key, default) == default:
+            out[section].pop(key, None)
     for name, cls in OPTIONAL_SECTIONS.items():
         if getattr(cfg, name) == cls():
             del out[name]

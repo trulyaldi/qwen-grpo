@@ -22,15 +22,34 @@ exceeds the cap, it records the violation once and calls on_violation(). The cal
 
 summarize() derives numbers from the raw files only. Unavailable readings stay None, never 0. Sampling every 200 ms
 can miss transient spikes shorter than the interval; every summary says so.
+
+Fail-closed supervision (Telemetry(on_monitor_failure=...)): the workload is stopped, and the item is INCONCLUSIVE,
+when an nvidia-smi sampler exits while the workload runs, or when `attribution_timeout_s` seconds after attach() no
+attributed numeric per-process sample exists (nvidia-smi hides this workload's PIDs or reports [N/A]: the cap could
+not be verified). summarize() also checks the device CSV's timestamps: sample count, largest gap between consecutive
+samples, and coverage of the workload's own start/end (recorded by run_guarded); a gap above `max_gap_s` or missing
+coverage makes a PASS INCONCLUSIVE. nvidia-smi timestamps are local time: the host's UTC offset at start is recorded
+(telemetry.json utc_offset_s) and used to place them on the UTC axis.
+
+A workload that never creates a CUDA context (the CPU tensor-by-tensor merge) has no compute-app row. With
+expect_gpu=False such an item is PASS when the samplers ran with complete coverage and no row of its process group
+ever appeared (0 bytes attributed over N samples); any attributed row is judged against the cap as usual.
+
+run_guarded(out_dir, argv, cap_bytes=...) is the one supervisor used by scripts/guarded_run.py (and, through it, by
+the 150-update experiment driver scripts/final150.py): monitoring starts before the workload process exists (so
+before any model is initialised), the process runs in its own session, violations and monitor failures stop it
+(SIGINT, then SIGTERM, then SIGKILL), and the record keeps argv, start/end UTC, exit code, signals, the child's peak
+RSS and the telemetry summary. Raw CSVs are never rewritten.
 """
 import json
 import os
+import resource
 import shutil
 import signal
 import subprocess
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 APPS_FIELDS = "timestamp,pid,process_name,used_gpu_memory"
@@ -44,6 +63,67 @@ SAMPLING_NOTE = (f"nvidia-smi was sampled every {INTERVAL_MS} ms; allocations th
 
 def utc():
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+MAX_GAP_S = 5.0  # a device-CSV gap above this (no sample for > 25 intervals) makes a PASS INCONCLUSIVE
+COVERAGE_SLACK_S = 5.0  # the first/last device sample must lie within this of the workload's start/end
+
+
+def smi_time(ts, utc_offset_s):
+    """nvidia-smi's local 'YYYY/MM/DD HH:MM:SS.mmm' -> aware UTC datetime, or None if unparsable."""
+    try:
+        local = datetime.strptime(ts.strip(), "%Y/%m/%d %H:%M:%S.%f")
+    except ValueError:
+        return None
+    return (local - timedelta(seconds=utc_offset_s or 0)).replace(tzinfo=timezone.utc)
+
+
+def sampling_quality(gpu_rows, meta, max_gap_s=MAX_GAP_S, slack_s=COVERAGE_SLACK_S):
+    """Sample count, largest gap and coverage of the workload window, from the device CSV (one row per sample per GPU,
+    present whether or not a process exists). problems: why the record cannot certify the whole window."""
+    off = meta.get("utc_offset_s")
+    times = sorted({t for t in (smi_time(r["timestamp"], off) for r in gpu_rows) if t is not None})
+    out = {"device_samples": len(times), "first_sample_utc": times[0].isoformat() if times else None,
+           "last_sample_utc": times[-1].isoformat() if times else None, "max_gap_s": None, "gaps_over_1s": 0,
+           "gaps_over_max": 0, "max_gap_limit_s": max_gap_s, "workload_started_utc": meta.get("workload_started_utc"),
+           "workload_ended_utc": meta.get("workload_ended_utc"), "problems": []}
+    if not times:
+        out["problems"].append("no parsable device sample (nvidia_smi_gpu.csv)")
+        return out
+    gaps = [(b - a).total_seconds() for a, b in zip(times, times[1:])]
+    out.update(max_gap_s=max(gaps) if gaps else 0.0, gaps_over_1s=sum(g > 1 for g in gaps),
+               gaps_over_max=sum(g > max_gap_s for g in gaps))
+    if out["gaps_over_max"]:
+        out["problems"].append(f"{out['gaps_over_max']} sampling gaps > {max_gap_s} s (largest {out['max_gap_s']:.1f} s)")
+    for key, edge, cmp in (("workload_started_utc", times[0], lambda w, e: (e - w).total_seconds() <= slack_s),
+                           ("workload_ended_utc", times[-1], lambda w, e: (w - e).total_seconds() <= slack_s)):
+        if meta.get(key):
+            w = datetime.fromisoformat(meta[key])
+            if not cmp(w, edge):
+                out["problems"].append(f"{key} {meta[key]} not covered (nearest device sample {edge.isoformat()})")
+    return out
+
+
+def phase_peaks(out_dir, phases):
+    """Per-phase maxima from the raw files of one item: phases [{name, start_utc, end_utc}] (recorded by the workload,
+    e.g. scripts/final_eval.py) -> [{name, process_peak_mib, device_peak_mib, attributed_samples, device_samples}].
+    A phase without an attributed numeric sample has process_peak_mib None (never 0)."""
+    d = Path(out_dir)
+    meta = json.loads((d / "telemetry.json").read_text()) if (d / "telemetry.json").exists() else {}
+    off = meta.get("utc_offset_s")
+    apps, _ = parse_apps((d / "nvidia_smi_apps.csv").read_text(errors="replace") if (d / "nvidia_smi_apps.csv").exists() else "")
+    gpu, _ = parse_gpu((d / "nvidia_smi_gpu.csv").read_text(errors="replace") if (d / "nvidia_smi_gpu.csv").exists() else "")
+    samples = attributed_samples(apps, read_pids(d / "pids.csv"))
+    out = []
+    for ph in phases:
+        a, b = datetime.fromisoformat(ph["start_utc"]), datetime.fromisoformat(ph["end_utc"])
+        inside = lambda ts: (t := smi_time(ts, off)) is not None and a <= t <= b
+        proc = [s["used_mib"] for s in samples if s["used_mib"] is not None and inside(s["timestamp"])]
+        dev = [r["memory_used_mib"] for r in gpu if r["memory_used_mib"] is not None and inside(r["timestamp"])]
+        out.append({"name": ph["name"], "start_utc": ph["start_utc"], "end_utc": ph["end_utc"],
+                    "process_peak_mib": max(proc) if proc else None, "device_peak_mib": max(dev) if dev else None,
+                    "attributed_samples": len(proc), "device_samples": len(dev)})
+    return out
 
 
 def smi_binary():
@@ -152,10 +232,12 @@ def read_pids(path):
     return pids
 
 
-def summarize(out_dir, cap_bytes=None):
+def summarize(out_dir, cap_bytes=None, expect_gpu=True, max_gap_s=MAX_GAP_S):
     """Derived numbers from one item's raw telemetry files. Every figure names its source file; unavailable stays None.
     memory_status: PASS (attributed numeric per-process samples exist and none exceeds the cap), FAIL (one does),
-    INCONCLUSIVE (no attributed numeric per-process sample: nvidia-smi absent, [N/A], or PIDs not visible)."""
+    INCONCLUSIVE (no attributed numeric per-process sample: nvidia-smi absent, [N/A], or PIDs not visible; a monitor
+    failure; a sampling gap or uncovered workload start/end). expect_gpu=False: a workload without any attributed row
+    (no CUDA context) is PASS at 0 bytes when sampling was complete."""
     d = Path(out_dir)
     meta = json.loads((d / "telemetry.json").read_text()) if (d / "telemetry.json").exists() else {}
     apps_text = (d / "nvidia_smi_apps.csv").read_text(errors="replace") if (d / "nvidia_smi_apps.csv").exists() else ""
@@ -169,8 +251,12 @@ def summarize(out_dir, cap_bytes=None):
     dev = [r for r in gpu if r["memory_used_mib"] is not None]
     dpeak = max(dev, key=lambda r: r["memory_used_mib"]) if dev else None
     cap_mib = cap_bytes / MIB if cap_bytes else None
+    quality = sampling_quality(gpu, meta, max_gap_s=max_gap_s)
     if meta.get("status") == "unavailable":
         status, why = "INCONCLUSIVE", f"nvidia-smi unavailable: {meta.get('reason')}"
+    elif not expect_gpu and not samples and not quality["problems"] and cap_mib is not None:
+        status, why = "PASS", (f"no row of this item's process group in {len(apps)} compute-app rows over "
+                               f"{quality['device_samples']} device samples: no CUDA context, 0 bytes attributed")
     elif not numeric:
         why = ("no nvidia-smi compute-app row belongs to this item's process group"
                + (f" ({len(apps)} rows of other PIDs: the container may hide host PIDs)" if apps else "")
@@ -184,6 +270,9 @@ def summarize(out_dir, cap_bytes=None):
         status, why = "PASS", f"per-process peak {peak['used_mib']:.0f} MiB <= cap {cap_mib:.0f} MiB over {len(numeric)} samples"
     if meta.get("violation") and status != "FAIL":  # the live watchdog saw it; the raw file is the same data
         status, why = "FAIL", f"watchdog: {meta['violation']}"
+    if status == "PASS" and (meta.get("monitor_failures") or quality["problems"]):
+        status, why = "INCONCLUSIVE", ("monitoring incomplete: " + "; ".join(
+            [str(m) for m in meta.get("monitor_failures", [])] + quality["problems"]) + f" (would be: {why})")
     return {
         "raw_files": {"apps": str(d / "nvidia_smi_apps.csv"), "gpu": str(d / "nvidia_smi_gpu.csv"),
                       "pids": str(d / "pids.csv"), "meta": str(d / "telemetry.json")},
@@ -205,6 +294,8 @@ def summarize(out_dir, cap_bytes=None):
         "utilization_peak_pct": max((r["utilization_pct"] for r in gpu if r["utilization_pct"] is not None), default=None),
         "cap_bytes": cap_bytes, "cap_mib": cap_mib, "memory_status": status, "memory_reason": why,
         "violation": meta.get("violation"), "note": SAMPLING_NOTE,
+        "sampling": quality, "monitor_failures": meta.get("monitor_failures", []), "expect_gpu": expect_gpu,
+        "utc_offset_s": meta.get("utc_offset_s"),
         "scope": "process_peak_mib: sum of used_gpu_memory over this item's process group per sample (CUDA context "
                  "included); device_peak_used_mib: memory.used of the whole GPU (every process, may include others)",
     }
@@ -251,10 +342,13 @@ def stop_group(proc, grace=5.0):
 
 
 class Telemetry:
-    def __init__(self, out_dir, cap_bytes=None, on_violation=None, interval_ms=INTERVAL_MS, smi=None):
+    def __init__(self, out_dir, cap_bytes=None, on_violation=None, interval_ms=INTERVAL_MS, smi=None,
+                 on_monitor_failure=None, attribution_timeout_s=None):
         self.dir = Path(out_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.cap, self.on_violation, self.interval_ms = cap_bytes, on_violation, interval_ms
+        self.on_monitor_failure, self.attribution_timeout_s = on_monitor_failure, attribution_timeout_s
+        self._attached_at, self._attributed, self._failed = None, False, set()
         self.smi = smi if smi is not None else smi_binary()
         self.procs, self.files, self.pgid = {}, [], None
         self.seen, self.violation = {}, None
@@ -262,7 +356,8 @@ class Telemetry:
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._apps_offset, self._apps_partial = 0, ""
-        self.meta = {"interval_ms": interval_ms, "cap_bytes": cap_bytes, "note": SAMPLING_NOTE}
+        self.meta = {"interval_ms": interval_ms, "cap_bytes": cap_bytes, "note": SAMPLING_NOTE,
+                     "attribution_timeout_s": attribution_timeout_s}
 
     def __enter__(self):
         self.start()
@@ -274,6 +369,7 @@ class Telemetry:
 
     def start(self):
         self.meta["started_utc"] = utc()
+        self.meta["utc_offset_s"] = time.localtime().tm_gmtoff  # nvidia-smi timestamps are local time
         if not self.smi:
             self.meta.update(status="unavailable", reason="nvidia-smi not found on PATH")
         else:
@@ -304,7 +400,33 @@ class Telemetry:
         """Attribute the process group `pgid` (a child started with start_new_session=True: pgid == its PID)."""
         self.pgid = pgid
         self.meta["pgid"] = pgid
+        self._attached_at = time.time()
         self._track()
+
+    def mark(self, key, value=None):
+        """Record a workload fact in telemetry.json (e.g. workload_started_utc), now."""
+        self.meta[key] = value if value is not None else utc()
+        self._write_meta()
+
+    def _monitor_failure(self, what):
+        if what in self._failed:
+            return
+        self._failed.add(what)
+        self.meta.setdefault("monitor_failures", []).append({"utc": utc(), "what": what})
+        self._write_meta()
+        if self.on_monitor_failure:
+            self.on_monitor_failure(what)
+
+    def _supervise(self):
+        """Fail closed: a sampler that died, or no per-process attribution after attribution_timeout_s."""
+        for name, proc in self.procs.items():
+            if proc.poll() is not None:
+                self._monitor_failure(f"nvidia-smi {name} sampler exited with {proc.returncode} while the workload ran")
+        if (self.attribution_timeout_s is not None and self._attached_at is not None and not self._attributed
+                and time.time() - self._attached_at > self.attribution_timeout_s):
+            self._monitor_failure(f"no numeric per-process nvidia-smi sample of the workload's process group within "
+                                  f"{self.attribution_timeout_s} s of its start (PIDs hidden or [N/A]): the cap "
+                                  "cannot be verified")
 
     def _track(self):
         if self.pgid is None:
@@ -326,7 +448,7 @@ class Telemetry:
 
     def _check(self):
         """Watchdog: parse the complete lines appended to the apps CSV since the last check."""
-        if self.cap is None or self.violation is not None or "apps" not in self.procs:
+        if self.violation is not None or "apps" not in self.procs or (self.cap is None and self._attributed):
             return
         p = self.dir / "nvidia_smi_apps.csv"
         try:
@@ -342,7 +464,9 @@ class Telemetry:
         with self._lock:
             pids = set(self.seen)
         for s in attributed_samples(rows, pids):
-            if s["used_mib"] is not None and s["used_mib"] * MIB > self.cap:
+            if s["used_mib"] is not None:
+                self._attributed = True
+            if s["used_mib"] is not None and self.cap is not None and s["used_mib"] * MIB > self.cap:
                 self.violation = {"timestamp": s["timestamp"], "used_mib": s["used_mib"], "pids": s["pids"],
                                   "cap_bytes": self.cap, "cap_mib": self.cap / MIB, "detected_utc": utc(),
                                   "source": "nvidia-smi --query-compute-apps (per process, CUDA context included)"}
@@ -356,6 +480,8 @@ class Telemetry:
         while not self._stop.is_set():
             self._track()
             self._check()
+            if self.pgid is not None:
+                self._supervise()
             self._stop.wait(self.interval_ms / 1000)
 
     def stop(self):
@@ -382,3 +508,99 @@ class Telemetry:
         tmp = self.dir / "telemetry.json.tmp"
         tmp.write_text(json.dumps(self.meta, indent=1, default=str) + "\n")
         tmp.replace(self.dir / "telemetry.json")
+
+
+# --- one supervised workload ---------------------------------------------------------------------------------------
+
+def _killpg(pgid, sig):
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def run_guarded(out_dir, argv, cap_bytes=None, cwd=None, env=None, telemetry_on=True, expect_gpu=True,
+                attribution_timeout_s=None, grace_s=60.0, should_stop=lambda: None, require_smi=True,
+                on_started=None, rel=str):
+    """Run `argv` in its own session under telemetry (started first, so it covers model initialisation). On a cap
+    violation, a monitor failure or should_stop() returning a reason: SIGINT to the group, SIGTERM after grace_s,
+    SIGKILL after 1.5 grace_s. Returns the record (also the caller's to save). out_dir must not exist yet: an attempt
+    is never written into another's directory. require_smi: refuse to start the workload without nvidia-smi
+    (fail closed); the record then says why and no workload ran."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=False)
+    rec = {"argv": [rel(a) for a in argv], "started_utc": utc(), "stdout": rel(out_dir / "stdout.log"),
+           "stderr": rel(out_dir / "stderr.log"), "raw_dir": rel(out_dir), "cap_bytes": cap_bytes,
+           "expect_gpu": expect_gpu}
+    if telemetry_on and require_smi and smi_binary() is None:
+        rec.update(exit=None, error="nvidia-smi not found: refusing to run an unmonitored workload (fail closed)",
+                   ended_utc=utc(), seconds=0.0, memory_status="INCONCLUSIVE")
+        return rec
+    run_env = {**os.environ, "PYTHONHASHSEED": "0", "TOKENIZERS_PARALLELISM": "false", "PYTHONUNBUFFERED": "1",
+               **(env or {})}
+    stop_reason = {}
+    tel = Telemetry(out_dir / "telemetry", cap_bytes=cap_bytes,
+                    on_violation=lambda v: stop_reason.setdefault("violation", v),
+                    # an uncapped item (cap None) only records a monitor failure; a capped one is stopped
+                    on_monitor_failure=(lambda w: stop_reason.setdefault("monitor_failure", w))
+                    if cap_bytes is not None else None,
+                    attribution_timeout_s=attribution_timeout_s if expect_gpu else None) if telemetry_on else None
+    t0 = time.time()
+    with open(out_dir / "stdout.log", "wb") as so, open(out_dir / "stderr.log", "wb") as se:
+        if tel:
+            tel.start()
+            time.sleep(min(1.0, 3 * INTERVAL_MS / 1000))  # a few device samples before the workload exists
+        try:
+            if tel:
+                tel.mark("workload_started_utc")
+            child = subprocess.Popen(argv, cwd=cwd, env=run_env, stdout=so, stderr=se, stdin=subprocess.DEVNULL,
+                                     start_new_session=True)
+        except OSError as e:
+            if tel:
+                tel.stop()
+            rec.update(exit=None, error=f"{type(e).__name__}: {e}", ended_utc=utc(), seconds=0.0)
+            return rec
+        if tel:
+            tel.attach(child.pid)
+        if on_started:
+            on_started(child)
+        escalation, sent = None, []
+        while child.poll() is None:
+            reason = stop_reason or ({"requested": r} if (r := should_stop()) else {})
+            if reason and escalation is None:
+                escalation = time.time()
+                sent.append(("SIGINT", utc()))
+                _killpg(child.pid, signal.SIGINT)
+            elif escalation is not None:
+                waited = time.time() - escalation
+                if waited > grace_s and len(sent) == 1:
+                    sent.append(("SIGTERM", utc()))
+                    _killpg(child.pid, signal.SIGTERM)
+                elif waited > 1.5 * grace_s and len(sent) == 2:
+                    sent.append(("SIGKILL", utc()))
+                    _killpg(child.pid, signal.SIGKILL)
+            time.sleep(0.2)
+        _killpg(child.pid, signal.SIGTERM)  # a group member that outlived the leader
+        if tel:
+            tel.mark("workload_ended_utc")
+            time.sleep(min(1.0, 3 * INTERVAL_MS / 1000))  # samples after the end: coverage of the shutdown
+            tel.stop()
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    rec.update(exit=child.returncode, ended_utc=utc(), seconds=round(time.time() - t0, 1), signals_sent=sent,
+               stop_reason=stop_reason or None, violation=stop_reason.get("violation"),
+               children_max_rss_bytes=usage.ru_maxrss * 1024,
+               children_max_rss_note="ru_maxrss of the largest waited-for descendant of this supervisor (Linux, KiB)")
+    if tel:
+        rec["telemetry"] = summarize(out_dir / "telemetry", cap_bytes=cap_bytes, expect_gpu=expect_gpu)
+        rec["memory_status"] = rec["telemetry"]["memory_status"] if cap_bytes is not None else "NOT_JUDGED"
+    return rec
+
+
+def required_files_present(tel_dir):
+    """The raw evidence an item must have: {file: exists and non-empty} (pids.csv and telemetry.json always written;
+    the CSVs only when nvidia-smi ran)."""
+    d = Path(tel_dir)
+    out = {f: (d / f).exists() and (d / f).stat().st_size > 0
+           for f in ("nvidia_smi_apps.csv", "nvidia_smi_gpu.csv", "pids.csv", "telemetry.json")}
+    out.update({f: (d / f).exists() for f in ("nvidia_smi_apps.stderr", "nvidia_smi_gpu.stderr")})  # empty is normal
+    return out

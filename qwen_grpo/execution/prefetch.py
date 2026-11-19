@@ -110,6 +110,7 @@ class PrefetchMixin:
         self._claim(index, slot)
         nbytes = self.store.slabs[index].nbytes
         if self.cuda:
+            submit = self._event()  # on the compute stream: how far compute had got when this copy was issued
             if slot.free is not None:
                 self.copy_stream.wait_event(slot.free)
             with torch.cuda.stream(self.copy_stream):
@@ -119,7 +120,7 @@ class PrefetchMixin:
                 slot.ready = torch.cuda.Event()
                 slot.ready.record(self.copy_stream)
             if self._events is not None:
-                self._events.append(("copy", index, kind, start, end))
+                self._events.append(("copy", index, kind, start, end, submit, nbytes))
         else:
             self.store.copy_nonblocking(index, slot.buffer)
         slot.index = index
@@ -240,23 +241,62 @@ class PrefetchMixin:
 
 
 def timeline_report(events):
-    """[(kind 'copy'|'compute', layer, phase, start event, end event)] -> intervals in ms from the first event, the
-    union lengths of copy time and compute time, and the measured overlap: the time during which at least one copy
-    and at least one compute block run at once, from the GPU timestamps. Synchronizes."""
+    """[(kind 'copy'|'compute', layer, phase, start event, end event[, submit event, bytes])] -> intervals in ms from
+    the first event, the union lengths of copy time and compute time, and the measured overlap: the time during which
+    at least one copy and at least one compute block run at once, from the GPU timestamps (completed work, not CPU
+    enqueue times). Synchronizes. Derived from the same intervals (timeline_metrics): bytes and bandwidth of the
+    copies, compute idle time inside the window, the part of it spent waiting for a layer's copy, and the latency from
+    a prefetch's submission (an event on the compute stream when it was issued) to its completion."""
     torch.cuda.synchronize()
     events = [e for e in events if e[3] is not None]
     if not events:
         return {"intervals": [], "copy_ms": 0.0, "compute_ms": 0.0, "overlap_ms": 0.0, "copies": 0,
                 "overlap_fraction_of_copy": 0.0}
     t0 = min((e[3] for e in events), key=lambda ev: events[0][3].elapsed_time(ev))
-    rows = [{"kind": k, "layer": i, "phase": ph, "start_ms": t0.elapsed_time(a), "end_ms": t0.elapsed_time(b)}
-            for k, i, ph, a, b in events]
+    rows = []
+    for k, i, ph, a, b, *extra in events:
+        row = {"kind": k, "layer": i, "phase": ph, "start_ms": t0.elapsed_time(a), "end_ms": t0.elapsed_time(b)}
+        if extra:
+            submit, nbytes = (extra + [None, None])[:2]
+            row.update(submit_ms=t0.elapsed_time(submit) if submit is not None else None, bytes=nbytes)
+        rows.append(row)
+    return timeline_metrics(rows)
+
+
+def timeline_metrics(rows):
+    """Overlap and stall accounting from timeline rows ({kind, layer, start_ms, end_ms[, submit_ms, bytes]}); pure,
+    so it is tested without a GPU. stall_on_copy_ms: for each compute block, the idle time since the previous compute
+    block ended that lies before the end of the latest copy of the same layer which completed by the block's start
+    (time the compute stream waited for weights). compute_idle_ms: every gap between compute blocks inside the window
+    (weights, launch overhead, host work)."""
     copies = _union([(r["start_ms"], r["end_ms"]) for r in rows if r["kind"] == "copy"])
     compute = _union([(r["start_ms"], r["end_ms"]) for r in rows if r["kind"] == "compute"])
     overlap = sum(max(0.0, min(a1, b1) - max(a0, b0)) for a0, a1 in copies for b0, b1 in compute)
     out = {"intervals": rows, "copy_ms": sum(b - a for a, b in copies), "compute_ms": sum(b - a for a, b in compute),
            "overlap_ms": overlap, "copies": sum(r["kind"] == "copy" for r in rows)}
     out["overlap_fraction_of_copy"] = overlap / out["copy_ms"] if out["copy_ms"] else 0.0
+    out["compute_idle_ms"] = sum(b0 - a1 for (_, a1), (b0, _) in zip(compute, compute[1:]))
+    blocks = sorted((r for r in rows if r["kind"] == "compute"), key=lambda r: r["start_ms"])
+    cps = [r for r in rows if r["kind"] == "copy"]
+    stall, prev_end = 0.0, None
+    for blk in blocks:
+        mine = [c for c in cps if c["layer"] == blk["layer"] and c["end_ms"] <= blk["start_ms"] + 1e-6]
+        if prev_end is not None and mine:
+            ready = max(c["end_ms"] for c in mine)
+            stall += max(0.0, min(ready, blk["start_ms"]) - prev_end)
+        prev_end = blk["end_ms"] if prev_end is None else max(prev_end, blk["end_ms"])
+    out["stall_on_copy_ms"] = stall
+    nbytes = [c.get("bytes") for c in cps]
+    out["bytes_copied"] = sum(nbytes) if cps and all(b is not None for b in nbytes) else None
+    durations = sorted(c["end_ms"] - c["start_ms"] for c in cps)
+    out["copy_ms_median"] = durations[len(durations) // 2] if durations else None
+    out["h2d_bytes_per_s"] = (out["bytes_copied"] / (sum(durations) / 1000)
+                              if out["bytes_copied"] and sum(durations) > 0 else None)
+    lat = sorted(c["end_ms"] - c["submit_ms"] for c in cps if c.get("submit_ms") is not None)
+    out["submit_to_ready_ms_median"] = lat[len(lat) // 2] if lat else None
+    out["submit_to_ready_ms_max"] = lat[-1] if lat else None
+    if blocks:
+        out["window_ms"] = max(r["end_ms"] for r in rows) - min(r["start_ms"] for r in rows)
     return out
 
 
@@ -314,6 +354,16 @@ def no_prefetch_timeline(executor):
         yield
     finally:
         executor._events = saved
+
+
+def executor_bytes(ex):
+    """Frozen-weight bytes an L2L executor has copied host -> device so far: every copy it ISSUED, prefetches included
+    (the prefetching executors count them in stats when they are enqueued). The synchronous executors copy exactly at
+    each use that was not a hit (trace 'loaded'). Subtract two readings to account a phase; a prefetch issued at the
+    end of one phase for the next is counted in the phase that issued it, so per-step totals are exact."""
+    if hasattr(ex, "stats"):
+        return ex.stats["bytes_copied"]
+    return sum(t["slab_bytes"] for t in getattr(ex, "trace", []) if t.get("loaded", True))
 
 
 def is_async(execution):

@@ -1,0 +1,19 @@
+# GPU smoke test of qwen3_4b_final_plain_150_v2.yaml before the full run (scripts/final150.py smoke): the same model,
+# batch shape, L2L settings, streaming, label scores and 8e9-byte guard, 4 updates with a subset evaluation and
+# checkpoint every 2 on a 16-prompt validation subset. Its purpose is to prove, on the rented GPU, that the raw
+# nvidia-smi telemetry files are produced and attributed, that the guard runs, and that checkpoints publish; its
+# numbers are not results.
+extends: qwen3_4b_final_plain_150_v2.yaml
+
+run:
+  name: qwen3_4b_final_plain_150_v2_smoke
+
+data:
+  val_subset: 16
+
+training:
+  max_steps: 4
+  max_attempts: 60
+
+evaluation:
+  every: 2

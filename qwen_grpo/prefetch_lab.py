@@ -53,7 +53,8 @@ class TimedSync(CheckpointedLayerExecutor):
         out = super()._acquire(index, phase)                                       # the copy (synchronous)
         end = torch.cuda.Event(enable_timing=True)
         end.record()
-        self._events.append(("copy", index, phase, start, end))
+        loaded = self.trace[-1].get("loaded", True) if self.trace else True  # a hit copies nothing
+        self._events.append(("copy", index, phase, start, end, start, self.store.slabs[index].nbytes if loaded else 0))
         self._block = (index, phase, end)
         return out
 
@@ -70,10 +71,15 @@ class TimedSync(CheckpointedLayerExecutor):
         return out
 
 
+TIMELINE_KEYS = ("copy_ms", "compute_ms", "overlap_ms", "overlap_fraction_of_copy", "copies", "bytes_copied",
+                 "h2d_bytes_per_s", "copy_ms_median", "compute_idle_ms", "stall_on_copy_ms", "submit_to_ready_ms_median",
+                 "submit_to_ready_ms_max", "window_ms")
+
+
 def timeline_summary(rep):
     if rep is None:  # CPU buffers (smoke test): no CUDA timeline
-        return {"copy_ms": None, "compute_ms": None, "overlap_ms": None, "overlap_fraction_of_copy": None, "copies": None}
-    return {k: rep[k] for k in ("copy_ms", "compute_ms", "overlap_ms", "overlap_fraction_of_copy", "copies")}
+        return {k: None for k in TIMELINE_KEYS}
+    return {k: rep.get(k) for k in TIMELINE_KEYS}
 
 
 def prefetch_timing(cfg, result, trials=7, warmup=2, device="cuda", max_new=16, perturbation=None, smoke=False, **_):

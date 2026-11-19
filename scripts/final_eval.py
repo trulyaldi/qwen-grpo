@@ -19,10 +19,13 @@ overwrite an existing result. `scripts/run.py verify --run <run>` calls this for
 backend (with --step and --out under runs/<run>/verification/).
 """
 import argparse
+import contextlib
 import dataclasses
 import json
 import sys
 import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,6 +105,9 @@ def main(argv=None):
     ap.add_argument("--storage", choices=["pinned", "pageable"], help="L2L weight storage (default: the run's)")
     ap.add_argument("--step", type=int, help="checkpoint step of --run (default: the latest)")
     ap.add_argument("--out", type=Path, help="result file (default research/l2l/experiments/t13_final_eval_<run>.json)")
+    ap.add_argument("--merged-dir", type=Path, help="a merged checkpoint written beforehand by scripts/merge.py (its own "
+                    "monitored process); its merge_provenance.json must name this checkpoint's adapter sha256. Default: "
+                    "merge here into a temporary directory (removed afterwards)")
     a = ap.parse_args(argv)
     out = a.out or ROOT / "research" / "l2l" / "experiments" / f"t13_final_eval_{a.run}.json"
     if out.exists():
@@ -128,11 +134,19 @@ def main(argv=None):
                         "zero_signal": log.get("zero_signal_groups"), "frozen_changed": log.get("frozen_changed"),
                         "reward_curve": [r.get("mean_reward") for r in log.get("training", [])]}, "models": {}}
     preds, scores = {}, {}
+    now = lambda: datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    rep["phases"] = []  # UTC windows of each model's inference: scripts/final150.py slices the raw nvidia-smi CSVs by them
 
     def run_model(name, model, be):
+        start, t0 = now(), time.time()
         preds[name] = evaluate(model, tok, test, generator=be.greedy, **gen_kw)
         scores[name] = label_scores(model, tok, test, logprobs=be.logprobs, **score_kw)
         rep.setdefault("backends", {})[name] = be.name
+        rep["phases"].append({"name": name, "start_utc": start, "end_utc": now(), "seconds": time.time() - t0,
+                              "peak_allocated_bytes": torch.cuda.max_memory_allocated() if torch.cuda.is_available()
+                              else None})
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
 
     ckpt = runs.checkpoint_path(a.run, a.step) if a.step is not None else runs.latest_checkpoint(a.run)
     rep["checkpoint"] = runs.rel(ckpt)
@@ -145,14 +159,27 @@ def main(argv=None):
         rep["peak_gpu_allocated_bytes_eval"] = torch.cuda.max_memory_allocated()
     be.close()
     del model, be
-    with tempfile.TemporaryDirectory(prefix="t13_merged_") as tmp:
-        merge_rep = stream_merge(cfg.model.name, ckpt, Path(tmp) / "merged")
-        merged, mbe = merged_policy(cfg, Path(tmp) / "merged", a.device)
+    with (tempfile.TemporaryDirectory(prefix="t13_merged_") if a.merged_dir is None else contextlib.nullcontext()) as tmp:
+        if a.merged_dir is None:
+            start = now()
+            merge_rep = stream_merge(cfg.model.name, ckpt, Path(tmp) / "merged")
+            rep["phases"].append({"name": "merge", "start_utc": start, "end_utc": now()})
+            mdir = Path(tmp) / "merged"
+        else:
+            mdir = a.merged_dir
+            prov = json.loads((mdir / "merge_provenance.json").read_text())
+            from qwen_grpo.evidence import file_sha256
+            if prov.get("adapter_sha256") != file_sha256(Path(ckpt) / "adapter_model.safetensors"):
+                raise SystemExit(f"{mdir} was merged from another adapter ({prov.get('adapter')}), not {runs.rel(ckpt)}")
+            merge_rep = json.loads((mdir / "merge_report.json").read_text())
+            rep["merged_dir"] = {"path": str(mdir), "provenance": prov}
+        merged, mbe = merged_policy(cfg, mdir, a.device)
         run_model("merged", merged, mbe)
         mbe.close()
         del merged, mbe
     rep["merge"] = {"all_within_half_ulp": all(v["within_half_ulp"] for v in merge_rep["merged"].values()),
-                    "adapted_tensors": len(merge_rep["merged"])}
+                    "adapted_tensors": len(merge_rep["merged"]),
+                    "max_residual": max(v["max_residual"] for v in merge_rep["merged"].values())}
     rep["lora_change"] = {"trained": adapter_change(ckpt, runs.checkpoint_path(a.run, 0))}
     if a.control:
         cckpt = runs.latest_checkpoint(a.control)
@@ -171,6 +198,12 @@ def main(argv=None):
     rep["paired"] = {f"{x}_minus_{y}": dict(zip(("diff", "ci_low", "ci_high"), paired_bootstrap(correct[y], correct[x])))
                      for x, y in pairs}
     rep["paired_auc"] = {f"{x}_minus_{y}": paired_auc_bootstrap(W[x], W[y], seed=BOOTSTRAP_SEED) for x, y in pairs}
+    import statistics
+    diffs = [abs(x - y) for x, y in zip(scores["merged"], scores["trained"])]
+    rep["merged_vs_trained_score_abs_diff"] = {"max": max(diffs), "median": statistics.median(diffs),
+                                               "mean": sum(diffs) / len(diffs), "n": len(diffs)}
+    rep["changed_predictions"] = {k: [i for i, (p, q) in enumerate(zip(v, preds["base"])) if p["response"] != q["response"]]
+                                  for k, v in preds.items() if k != "base"}
     rep["merged_vs_trained_prediction_agreement"] = sum(
         p["response"] == q["response"] for p, q in zip(preds["merged"], preds["trained"])) / len(test)
     rep["predictions"] = {k: [p["response"] for p in v] for k, v in preds.items()}

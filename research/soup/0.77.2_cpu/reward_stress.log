@@ -1,0 +1,19 @@
+$ soup --no-telemetry reward stress research/soup/0.77.2_cpu/reward_stress_verifier.py --references research/soup/0.77.2_cpu/reward_stress_references.jsonl --output-report research/soup/0.77.2_cpu/reward_stress.json
+exit 0
+--- stdout
+Warning: Loading custom reward function from: 
+<repo>/research/soup/0.77.2_cpu/reward_stress_verifier.py
+This will execute arbitrary Python code. Only use reward files you trust.
+╭───── reward stress: research/soup/0.77.2_cpu/reward_stress_verifier.py ──────╮
+│ attack           n  accepted  accept-rate                                    │
+│ empty          600         0           0%                                    │
+│ length         600         0           0%                                    │
+│ repetition     600         0           0%                                    │
+│ sentinel       600         0           0%                                    │
+│ wrapped_junk  1400         0           0%                                    │
+│ answer_spray   800         0           0%                                    │
+│                                                                              │
+│ reference accept: 100%   gameability: 0%   verdict: robust (not gameable)    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+--- stderr
